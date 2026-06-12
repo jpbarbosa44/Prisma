@@ -15,6 +15,7 @@ const ajuda = `prisma — gerenciador de finanças pessoais
 
 USO
   prisma                                  abre a interface no terminal
+  prisma --web [--porta N]                abre a interface no navegador
   prisma <comando> [subcomando] [opções]  modo linha de comando
 
 COMANDOS
@@ -91,6 +92,8 @@ func main() {
 
 	cmd, args := os.Args[1], os.Args[2:]
 	switch cmd {
+	case "--web", "web":
+		err = tui.RunWeb(conn, args)
 	case "conta":
 		err = app.Conta(conn, args)
 	case "carteira":

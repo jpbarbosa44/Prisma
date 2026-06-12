@@ -39,6 +39,8 @@ Nas tabelas, `↑/↓` selecionam a linha e as ações usam o item selecionado (
 
 Tudo também funciona como comandos diretos (`prisma saldo`, `prisma pagar add ...`), útil para scripts — veja os exemplos abaixo.
 
+Prefere o navegador? `prisma --web` sobe um servidor local (só em `127.0.0.1`, nada sai da sua máquina) e abre as mesmas telas no browser, com os mesmos atalhos de teclado. Opções: `--porta N` muda a porta (padrão 7747) e `--sem-abrir` não chama o navegador.
+
 **Documentação:** [MANUAL.md](MANUAL.md) tem o guia de uso completo (todas as telas, comandos, filtros e receitas prontas); [INSTALL.md](INSTALL.md) cobre a instalação em cada sistema.
 
 ## Instalação
@@ -214,7 +216,9 @@ internal/app/      um arquivo por funcionalidade: conta, carteira,
                    lancamento, emergencia, plano, previsao
 internal/tui/      interface de terminal (Bubble Tea): cabeçalho em ASCII
                    art, menu, telas e formulários — as telas capturam a
-                   saída dos comandos da CLI, reaproveitando toda a lógica
+                   saída dos comandos da CLI, reaproveitando toda a lógica;
+                   a interface web (--web) serve essas mesmas telas no
+                   navegador via API JSON + página única embutida no binário
 internal/bot/      bot de Telegram (long polling, só stdlib): traduz
                    mensagens de texto em lançamentos
 

@@ -1,5 +1,6 @@
 // Package tui implementa a interface de terminal do Prisma (estilo btop):
 // cabeçalho com ASCII art, menu de funcionalidades e telas interativas.
+// As mesmas telas alimentam a interface web (prisma --web), em web.go.
 package tui
 
 import (

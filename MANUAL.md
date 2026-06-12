@@ -7,9 +7,10 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 1. [Conceitos](#conceitos)
 2. [Formatos aceitos](#formatos-aceitos)
 3. [A interface de terminal (TUI)](#a-interface-de-terminal-tui)
-4. [Comandos](#comandos)
-5. [Receitas prontas](#receitas-prontas)
-6. [Dados e backup](#dados-e-backup)
+4. [A interface web (--web)](#a-interface-web---web)
+5. [Comandos](#comandos)
+6. [Receitas prontas](#receitas-prontas)
+7. [Dados e backup](#dados-e-backup)
 
 ---
 
@@ -69,6 +70,26 @@ Telas e seus atalhos específicos:
 | 7 Planejamento | `a`, `e`, `s` status, `l`, `x` |
 | 8 Relatório | `m` meses |
 | 9 Previsão | `m` meses |
+
+## A interface web (--web)
+
+As mesmas telas da TUI, no navegador:
+
+```sh
+prisma --web                      # sobe o servidor e abre o navegador
+prisma --web --porta 8080         # outra porta (padrão: 7747)
+prisma --web --sem-abrir          # só sobe o servidor, sem abrir o navegador
+```
+
+O servidor escuta **somente em `127.0.0.1`** — nada fica acessível pela rede e nenhum dado sai da sua máquina. A página inteira vai embutida no binário; não há dependências nem arquivos extras. `ctrl+c` no terminal encerra.
+
+A navegação espelha a TUI:
+
+- O menu lateral lista as mesmas 9 telas (`1`-`9` trocam de tela pelo teclado).
+- As teclas dos botões de ação funcionam como atalhos (`a` adiciona, `e` edita, `x` remove...).
+- `↑/↓` ou um clique selecionam a linha da tabela, e o id selecionado já vem preenchido nos formulários de quitar, editar e remover.
+- Nos formulários, `enter` confirma e `esc` cancela; campos com `*` são obrigatórios; em edições, campos vazios mantêm o valor atual.
+- Remoções e o "zerar banco" pedem confirmação, como na TUI.
 
 ## Comandos
 
