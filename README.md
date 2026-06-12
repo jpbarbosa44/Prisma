@@ -230,3 +230,7 @@ Decisões:
 - **Somente biblioteca padrão** além do driver SQLite e do Bubble Tea (TUI).
 
 Testes: `go test ./...` cobre dinheiro (parse/format), períodos ISO, simulação de dívida, parcelas, transferências, recorrências, edição e importação OFX/CSV.
+
+## Licença
+
+© 2026 João Pedro Barbosa. Distribuído sob a licença [GPL-3.0](LICENSE): use, estude e modifique à vontade; quem distribuir uma versão modificada deve mantê-la sob a mesma licença, com o código aberto.
