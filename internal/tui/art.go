@@ -19,21 +19,66 @@ var (
 	corOK      = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 )
 
-// cabecalho monta o prisma (com feixe de luz entrando e o espectro saindo)
-// ao lado da palavra PRISMA em letras grandes.
+// arte é o prisma em 3D; o feixe entra na face esquerda e o espectro sai da
+// face frontal, à direita.
+var arte = []string{
+	`               /=\\`,
+	`              /===\ \`,
+	`             /=====\ ' \`,
+	`            /=======\ ' ' \`,
+	`           /=========\ ' ' '\`,
+	`          /===========\ ' ' ' \`,
+	`         /=============\ ' ' ' '\`,
+	`        /===============\ ' ' ' ' \`,
+	`       /=================\ ' ' ' ' '\`,
+	`      /===================\ ' ' ' ' ' \`,
+	`     /=====================\ ' ' ' ' ' /`,
+	`    /=======================\ ' ' ' ' /`,
+	`   /=========================\ ' ' ' /`,
+	`  /===========================\ ' ' /`,
+	` /=============================\ ' /`,
+	`/===============================\/`,
+}
+
+const (
+	margem     = 8 // folga à esquerda, atravessada pelo feixe que entra
+	linhaFeixe = 8 // linha em que o feixe branco atinge a face esquerda
+)
+
+// raios é o espectro que sai da face frontal: linha → cor.
+var raios = map[int]lipgloss.Style{8: corVerm, 9: corAmar, 10: corMagenta}
+
+// cabecalho monta o prisma 3D (com feixe de luz entrando e o espectro saindo)
+// ao lado da palavra PRISMA em letras grandes; em telas estreitas, versões
+// mais compactas.
 func cabecalho(largura int) string {
-	if largura < 78 {
+	if largura < 60 {
 		return corTitulo.Render(" ◆ P R I S M A ") + corApagada.Render("— finanças pessoais")
 	}
 
-	p := corPrisma.Render
-	prisma := []string{
-		p("           /\\"),
-		p("          /  \\"),
-		p("         /    \\"),
-		corFeixe.Render(" ───────") + p("/      \\") + " " + corVerm.Render("━━━━━"),
-		p("       /        \\") + " " + corAmar.Render("━━━━━"),
-		p("      /__________\\") + " " + corMagenta.Render("━━━━━"),
+	linhas := make([]string, len(arte))
+	for i, l := range arte {
+		var b strings.Builder
+		if i == linhaFeixe {
+			brancos := len(l) - len(strings.TrimLeft(l, " "))
+			b.WriteString(corFeixe.Render(strings.Repeat("─", margem+brancos)))
+			b.WriteString(corPrisma.Render(strings.TrimLeft(l, " ")))
+		} else {
+			b.WriteString(strings.Repeat(" ", margem))
+			b.WriteString(corPrisma.Render(l))
+		}
+		// o raio sai colado na borda, acompanhando a inclinação da face
+		if cor, ok := raios[i]; ok {
+			b.WriteString(" " + cor.Render("━━━━━━━━━━━━"))
+		}
+		linhas[i] = b.String()
+	}
+	prisma := strings.Join(linhas, "\n")
+
+	// sem espaço para as letras grandes: título sob o prisma
+	if largura < 110 {
+		return prisma + "\n\n" + strings.Repeat(" ", margem) +
+			corTitulo.Render("P R I S M A ") + corApagada.Render("— finanças pessoais")
 	}
 
 	letras := []string{
@@ -48,7 +93,5 @@ func cabecalho(largura int) string {
 		letras[i] = corTitulo.Render(letras[i])
 	}
 
-	esq := strings.Join(prisma, "\n")
-	dir := strings.Join(letras, "\n")
-	return lipgloss.JoinHorizontal(lipgloss.Top, esq, "   ", dir)
+	return lipgloss.JoinHorizontal(lipgloss.Center, prisma, "   ", strings.Join(letras, "\n"))
 }

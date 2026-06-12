@@ -37,3 +37,7 @@ dist/
 
 # configuração local do Claude Code
 .claude/settings.local.json
+
+# rascunhos locais (arte e prints de referência)
+/prisma.txt
+/Imagem colada.png
