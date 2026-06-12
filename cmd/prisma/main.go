@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"prisma/internal/app"
+	"prisma/internal/bot"
 	"prisma/internal/db"
 	"prisma/internal/tui"
 )
@@ -33,6 +34,7 @@ COMANDOS
   saldo        Posição geral consolidada
   exportar     Lançamentos em CSV          [--saida arq.csv] [--mes AAAA-MM]
   importar     Extrato bancário OFX/CSV    --arquivo extrato.ofx --conta 1
+  bot          Bot de Telegram             [--token X] [--chat N]  registra lançamentos por mensagem
   resetar      Apaga TODOS os dados        pede confirmação e faz backup antes
   ajuda        Mostra esta mensagem
 
@@ -121,6 +123,8 @@ func main() {
 		err = app.Exportar(conn, args)
 	case "importar":
 		err = app.Importar(conn, args)
+	case "bot":
+		err = bot.Run(conn, args)
 	case "resetar":
 		err = app.Resetar(conn, args)
 	default:

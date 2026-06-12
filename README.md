@@ -170,6 +170,15 @@ prisma importar --arquivo extrato.ofx --conta 1  # extrato do banco (OFX ou CSV)
 
 A importação cria os movimentos como quitados na conta indicada (negativo = pagar, positivo = receber), ignora duplicados e usa a categoria `importado`. CSV esperado: colunas data, descrição e valor.
 
+### Bot de Telegram
+
+```sh
+prisma bot --token SEU_TOKEN   # primeira vez (token do @BotFather)
+prisma bot                     # depois, é só rodar
+```
+
+Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita. Também responde consultas: `/saldo`, `/pendentes`, `/mes`, `/relatorio`, `/previsao`, `/plano` e `#categoria`. Só o chat autorizado tem acesso, e cada confirmação vem com botão de desfazer. Formato completo no [MANUAL.md](MANUAL.md#bot-telegram).
+
 ## Dados
 
 O banco fica no diretório de dados padrão de cada sistema:
@@ -197,6 +206,9 @@ internal/app/      um arquivo por funcionalidade: conta, carteira,
 internal/tui/      interface de terminal (Bubble Tea): cabeçalho em ASCII
                    art, menu, telas e formulários — as telas capturam a
                    saída dos comandos da CLI, reaproveitando toda a lógica
+internal/bot/      bot de Telegram (long polling, só stdlib): traduz
+                   mensagens de texto em lançamentos
+
 ```
 
 Decisões:

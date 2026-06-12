@@ -25,6 +25,113 @@ func NovoLancamento(conn *sql.DB, tipo string, args []string) error {
 	}
 }
 
+// LancamentoParams descreve um lançamento a criar por código (CLI, bot etc.),
+// sem nenhuma interação com o terminal.
+type LancamentoParams struct {
+	Tipo     string // "pagar" ou "receber"
+	Desc     string
+	Valor    int64  // centavos, sempre positivo
+	Cat      string // vazio vira "geral"
+	Venc     string // AAAA-MM-DD
+	ContaID  int64
+	CartID   int64
+	Repetir  int // repete o lançamento por N meses (0 ou 1 = não repete)
+	Parcelas int // divide o valor TOTAL em N parcelas (0 ou 1 = à vista)
+	Quitado  bool
+}
+
+// LancamentoCriado resume um lançamento inserido por CriarLancamentos.
+type LancamentoCriado struct {
+	ID    int64
+	Desc  string
+	Valor int64
+	Venc  string
+}
+
+// CriarLancamentos valida os parâmetros e insere os lançamentos (um ou mais,
+// conforme parcelas/repetir). Retorna os criados e se a categoria é inédita.
+func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, bool, error) {
+	if p.Repetir < 1 {
+		p.Repetir = 1
+	}
+	if p.Parcelas < 1 {
+		p.Parcelas = 1
+	}
+	if p.Cat == "" {
+		p.Cat = "geral"
+	}
+	if p.Desc == "" {
+		return nil, false, fmt.Errorf("a descrição é obrigatória")
+	}
+	if p.Valor <= 0 {
+		return nil, false, fmt.Errorf("o valor deve ser positivo")
+	}
+	if p.ContaID != 0 && p.CartID != 0 {
+		return nil, false, fmt.Errorf("vincule a uma conta OU a uma carteira, não ambas")
+	}
+	if p.Repetir > 120 {
+		return nil, false, fmt.Errorf("repetir deve estar entre 1 e 120")
+	}
+	if p.Parcelas > 120 {
+		return nil, false, fmt.Errorf("parcelas deve estar entre 1 e 120")
+	}
+	if p.Parcelas > 1 && p.Repetir > 1 {
+		return nil, false, fmt.Errorf("use parcelas (divide o total) OU repetir (repete o valor), não ambos")
+	}
+	if _, err := parseDataT(p.Venc); err != nil {
+		return nil, false, fmt.Errorf("vencimento inválido: %q", p.Venc)
+	}
+	categoriaNova := avisaCategoriaNova(conn, p.Cat)
+
+	var conta, carteira any
+	if p.ContaID != 0 {
+		if err := existe(conn, "contas", p.ContaID); err != nil {
+			return nil, false, err
+		}
+		conta = p.ContaID
+	}
+	if p.CartID != 0 {
+		if err := existe(conn, "carteiras", p.CartID); err != nil {
+			return nil, false, err
+		}
+		carteira = p.CartID
+	}
+
+	status, quitadoEm := "pendente", any(nil)
+	if p.Quitado {
+		status, quitadoEm = "quitado", p.Venc
+	}
+
+	n := p.Repetir
+	if p.Parcelas > 1 {
+		n = p.Parcelas
+	}
+	criados := make([]LancamentoCriado, 0, n)
+	for i := 0; i < n; i++ {
+		valorItem, descItem := p.Valor, p.Desc
+		if p.Parcelas > 1 {
+			// divide o total; a última parcela absorve o resto da divisão
+			valorItem = p.Valor / int64(n)
+			if i == n-1 {
+				valorItem = p.Valor - valorItem*int64(n-1)
+			}
+			descItem = fmt.Sprintf("%s (%d/%d)", p.Desc, i+1, n)
+		}
+		vencItem := somaMeses(p.Venc, i)
+		res, err := conn.Exec(`
+			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id)
+			VALUES (?,?,?,?,?,?,?,?,?)`,
+			p.Tipo, descItem, valorItem, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira,
+		)
+		if err != nil {
+			return criados, categoriaNova, err
+		}
+		id, _ := res.LastInsertId()
+		criados = append(criados, LancamentoCriado{id, descItem, valorItem, vencItem})
+	}
+	return criados, categoriaNova, nil
+}
+
 func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	fs := flag.NewFlagSet(tipo+" add", flag.ContinueOnError)
 	desc := fs.String("desc", "", "descrição (obrigatório)")
@@ -42,77 +149,31 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	if *desc == "" || *valor == "" {
 		return fmt.Errorf("--desc e --valor são obrigatórios")
 	}
-	if *contaID != 0 && *cartID != 0 {
-		return fmt.Errorf("vincule a uma conta OU a uma carteira, não ambas")
-	}
-	if *repetir < 1 || *repetir > 120 {
+	if *repetir < 1 {
 		return fmt.Errorf("--repetir deve estar entre 1 e 120")
 	}
-	if *parcelas < 1 || *parcelas > 120 {
+	if *parcelas < 1 {
 		return fmt.Errorf("--parcelas deve estar entre 1 e 120")
-	}
-	if *parcelas > 1 && *repetir > 1 {
-		return fmt.Errorf("use --parcelas (divide o total) OU --repetir (repete o valor), não ambos")
 	}
 	centavos, err := money.Parse(*valor)
 	if err != nil {
 		return err
 	}
-	if centavos <= 0 {
-		return fmt.Errorf("o valor deve ser positivo")
-	}
 	data, err := parseData(*venc)
 	if err != nil {
 		return err
 	}
-	categoriaNova := avisaCategoriaNova(conn, *cat)
-
-	var conta, carteira any
-	if *contaID != 0 {
-		if err := existe(conn, "contas", *contaID); err != nil {
-			return err
-		}
-		conta = *contaID
+	criados, categoriaNova, err := CriarLancamentos(conn, LancamentoParams{
+		Tipo: tipo, Desc: *desc, Valor: centavos, Cat: *cat, Venc: data,
+		ContaID: *contaID, CartID: *cartID, Repetir: *repetir, Parcelas: *parcelas, Quitado: *quitado,
+	})
+	if err != nil {
+		return err
 	}
-	if *cartID != 0 {
-		if err := existe(conn, "carteiras", *cartID); err != nil {
-			return err
-		}
-		carteira = *cartID
-	}
-
-	status, quitadoEm := "pendente", any(nil)
-	if *quitado {
-		status, quitadoEm = "quitado", data
-	}
-
 	rotulo := map[string]string{"pagar": "a pagar", "receber": "a receber"}[tipo]
-	n := *repetir
-	if *parcelas > 1 {
-		n = *parcelas
-	}
-	for i := 0; i < n; i++ {
-		valorItem, descItem := centavos, *desc
-		if *parcelas > 1 {
-			// divide o total; a última parcela absorve o resto da divisão
-			valorItem = centavos / int64(n)
-			if i == n-1 {
-				valorItem = centavos - valorItem*int64(n-1)
-			}
-			descItem = fmt.Sprintf("%s (%d/%d)", *desc, i+1, n)
-		}
-		vencItem := somaMeses(data, i)
-		res, err := conn.Exec(`
-			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id)
-			VALUES (?,?,?,?,?,?,?,?,?)`,
-			tipo, descItem, valorItem, strings.ToLower(*cat), vencItem, status, quitadoEm, conta, carteira,
-		)
-		if err != nil {
-			return err
-		}
-		id, _ := res.LastInsertId()
+	for _, c := range criados {
 		fmt.Printf("Lançamento #%d (%s) %q de %s com vencimento em %s criado.\n",
-			id, rotulo, descItem, money.Format(valorItem), dataBR(vencItem))
+			c.ID, rotulo, c.Desc, money.Format(c.Valor), dataBR(c.Venc))
 	}
 	if categoriaNova {
 		fmt.Printf("Aviso: primeira vez usando a categoria %q — confira se não é um erro de digitação.\n",

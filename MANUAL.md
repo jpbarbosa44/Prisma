@@ -209,6 +209,64 @@ prisma importar --arquivo extrato.csv --carteira 1 --cat mercado
 - Exporta CSV com `;` e vírgula decimal (abre direto no Excel/LibreOffice pt-BR).
 - Importa OFX (formato padrão dos bancos) ou CSV com colunas data, descrição e valor (negativo = pagamento). Os movimentos entram **quitados** na conta indicada, com categoria `importado` (mude com `--cat`). Reimportar o mesmo arquivo não duplica.
 
+### bot (Telegram)
+
+Registra gastos e receitas mandando mensagem para um bot do Telegram — útil para anotar na hora, pelo celular. Configuração (uma vez só):
+
+1. No Telegram, fale com o **@BotFather**, mande `/newbot` e copie o token.
+2. `prisma bot --token SEU_TOKEN` — o bot conecta e fica aguardando (o token fica salvo em `telegram.json`, ao lado do banco).
+3. Mande qualquer mensagem ao seu bot; ele responde com o seu *chat id*.
+4. Pare o bot (Ctrl+C) e rode `prisma bot --chat SEU_CHAT_ID`. Pronto: daqui em diante basta `prisma bot`.
+
+Por segurança, o bot só aceita lançamentos do chat autorizado — mensagens de qualquer outra pessoa são ignoradas. Ele usa *long polling*, então funciona em qualquer máquina com internet, sem IP público nem porta aberta. O processo precisa estar rodando para receber as mensagens (mensagens enviadas com o bot parado ficam na fila do Telegram por até 24h e são processadas quando ele voltar).
+
+O formato das mensagens:
+
+```
+[+] valor [#categoria] [descrição] [marcadores]
+```
+
+| Elemento | Significado | Se omitido |
+|---|---|---|
+| `+` antes do valor | receita (a receber) | gasto (a pagar) |
+| `25,50` | valor (formatos usuais do Prisma) | obrigatório |
+| `#mercado` | categoria | `geral` |
+| `@15`, `@15/07`, `@15/07/2026`, `@hoje`, `@ontem`, `@amanha` | vencimento (`@15` = dia 15 do mês atual) | hoje |
+| `!` (token isolado) | já quitado | pendente |
+| `3x` | divide o total em 3 parcelas mensais | à vista |
+| `rep:6` | repete por 6 meses | não repete |
+| `conta:2` / `cart:1` | vincula a conta ou carteira | sem vínculo |
+
+O que não tem prefixo vira descrição; sem descrição, ela herda o nome da categoria. Os marcadores podem vir em qualquer ordem. Exemplos:
+
+```
+25,50 #mercado pão e leite !
++3500 #salario salário de junho @05/07
+899,70 #eletronicos fone novo 3x
+1200 #moradia aluguel @05 rep:6
+12
+```
+
+Cada lançamento confirmado vem com um botão **🗑 Desfazer** que o remove na hora. Mande `/ajuda` ao bot para ver o formato a qualquer momento.
+
+O bot também responde consultas — a saída é a mesma dos comandos da CLI, em bloco monoespaçado:
+
+| Mensagem | Equivale a |
+|---|---|
+| `/saldo` | `prisma saldo` |
+| `/pendentes` | `prisma lancamentos --pendentes` |
+| `/mes` | `prisma lancamentos --mes <mês atual>` |
+| `/relatorio` | `prisma relatorio` |
+| `/previsao` | `prisma previsao` |
+| `/plano` | `prisma plano status` |
+| `#mercado` (sozinha) | `prisma lancamentos --cat mercado --mes <mês atual>` |
+
+Para deixar o bot sempre ativo, rode-o como serviço do systemd (modo usuário):
+
+```sh
+systemd-run --user --unit=prisma-bot ~/.local/bin/prisma bot
+```
+
 ## Receitas prontas
 
 **Começando do zero:**
