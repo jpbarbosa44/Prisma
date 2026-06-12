@@ -326,6 +326,7 @@ Um único arquivo SQLite:
 | macOS | `~/Library/Application Support/prisma/prisma.db` |
 | Windows | `%AppData%\prisma\prisma.db` |
 
-- **Backup** = copiar o arquivo. **Restaurar** = colocar de volta.
+- **Backup automático**: a cada dia de uso, uma cópia do banco é salva em `backups/` ao lado dele (ex.: `backups/prisma-2026-06-12.db`), antes da primeira sessão do dia; as 7 mais recentes ficam guardadas. **Restaurar** = copiar a cópia de volta sobre o `prisma.db`.
+- O backup protege contra erro e corrupção local, mas mora no mesmo disco — para proteção real contra perda da máquina, copie a pasta de vez em quando para um pendrive ou nuvem.
 - A variável `PRISMA_DB` aponta para outro arquivo — útil para testar sem mexer nos seus dados: `PRISMA_DB=/tmp/teste.db prisma`.
 - O Prisma funciona 100% offline; nada sai da sua máquina.

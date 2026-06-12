@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -32,7 +34,8 @@ func Path() (string, error) {
 	return filepath.Join(home, ".local", "share", "prisma", "prisma.db"), nil
 }
 
-// Open abre (criando se necessário) o banco e aplica o schema.
+// Open abre (criando se necessário) o banco e aplica o schema. Antes de
+// abrir, faz o backup diário — a cópia retrata o banco antes da sessão.
 func Open() (*sql.DB, error) {
 	p, err := Path()
 	if err != nil {
@@ -40,6 +43,10 @@ func Open() (*sql.DB, error) {
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return nil, fmt.Errorf("criando diretório do banco: %w", err)
+	}
+	if err := backupDiario(p); err != nil {
+		// backup falho não pode impedir o uso; só avisa
+		fmt.Fprintf(os.Stderr, "aviso: backup diário falhou: %v\n", err)
 	}
 	conn, err := sql.Open("sqlite", p+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
@@ -50,6 +57,51 @@ func Open() (*sql.DB, error) {
 		return nil, fmt.Errorf("aplicando schema: %w", err)
 	}
 	return conn, nil
+}
+
+// maxBackups é quantas cópias diárias ficam guardadas.
+const maxBackups = 7
+
+// Backup força a checagem do backup diário — usado pelo bot, que fica dias
+// rodando sem reabrir o banco.
+func Backup() error {
+	p, err := Path()
+	if err != nil {
+		return err
+	}
+	return backupDiario(p)
+}
+
+// backupDiario copia o banco para backups/ ao lado dele, no máximo uma vez
+// por dia, e apaga as cópias além das maxBackups mais recentes.
+func backupDiario(caminho string) error {
+	if _, err := os.Stat(caminho); err != nil {
+		return nil // banco ainda não existe (primeiro uso)
+	}
+	dir := filepath.Join(filepath.Dir(caminho), "backups")
+	alvo := filepath.Join(dir, "prisma-"+time.Now().Format("2006-01-02")+".db")
+	if _, err := os.Stat(alvo); err == nil {
+		return nil // o de hoje já existe
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	dados, err := os.ReadFile(caminho)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(alvo, dados, 0o600); err != nil {
+		return err
+	}
+	nomes, err := filepath.Glob(filepath.Join(dir, "prisma-*.db"))
+	if err != nil || len(nomes) <= maxBackups {
+		return nil
+	}
+	sort.Strings(nomes) // nomes datados (AAAA-MM-DD) ordenam por idade
+	for _, n := range nomes[:len(nomes)-maxBackups] {
+		os.Remove(n)
+	}
+	return nil
 }
 
 const schema = `

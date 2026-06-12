@@ -197,11 +197,10 @@ O banco fica no diretório de dados padrão de cada sistema:
 - macOS: `~/Library/Application Support/prisma/prisma.db`
 - Windows: `%AppData%\prisma\prisma.db`
 
-Para usar outro arquivo (ou fazer backup), use a variável `PRISMA_DB`:
+A cada dia de uso, o Prisma guarda sozinho uma cópia do banco em `backups/` ao lado dele (as 7 mais recentes). Para usar outro arquivo, use a variável `PRISMA_DB`:
 
 ```sh
 PRISMA_DB=/tmp/teste.db prisma saldo
-cp ~/.local/share/prisma/prisma.db backup-$(date +%F).db
 ```
 
 ## Arquitetura

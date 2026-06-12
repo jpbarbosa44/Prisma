@@ -528,6 +528,10 @@ func (s *sessao) verificaAgenda(agora time.Time) {
 	}
 	hoje := agora.Format("2006-01-02")
 	if agora.Hour() >= horaLembrete && s.cfg.UltimoLembrete != hoje {
+		// sessões longas do bot não reabrem o banco; o backup diário sai daqui
+		if err := db.Backup(); err != nil {
+			fmt.Fprintf(os.Stderr, "aviso: backup diário falhou: %v\n", err)
+		}
 		s.enviaLembretes(hoje)
 		s.cfg.UltimoLembrete = hoje
 		if err := salvaConfig(*s.cfg); err != nil {
