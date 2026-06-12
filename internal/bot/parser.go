@@ -94,6 +94,134 @@ func parseMensagem(msg string, agora time.Time) (app.LancamentoParams, error) {
 	return p, nil
 }
 
+// correcao são os campos que uma mensagem `corrigir ...` quer mudar no
+// último lançamento; ponteiros nil significam "não mexer".
+type correcao struct {
+	Valor   *int64
+	Cat     *string
+	Venc    *string
+	Desc    *string
+	Quitado bool
+}
+
+// parseCorrecao interpreta os tokens após "corrigir" com a mesma gramática
+// dos lançamentos: valor, #categoria, @data, ! e texto livre (nova descrição).
+func parseCorrecao(resto string, agora time.Time) (correcao, error) {
+	var c correcao
+	var desc []string
+	for _, tok := range strings.Fields(resto) {
+		switch {
+		case tok == "!":
+			c.Quitado = true
+		case strings.HasPrefix(tok, "#") && len(tok) > 1:
+			cat := strings.ToLower(strings.TrimPrefix(tok, "#"))
+			c.Cat = &cat
+		case strings.HasPrefix(tok, "@") && len(tok) > 1:
+			data, err := parseDataRelativa(strings.TrimPrefix(tok, "@"), agora)
+			if err != nil {
+				return c, err
+			}
+			c.Venc = &data
+		case c.Valor == nil && pareceValor(tok):
+			centavos, err := money.Parse(strings.TrimPrefix(tok, "+"))
+			if err != nil {
+				return c, err
+			}
+			c.Valor = &centavos
+		default:
+			desc = append(desc, tok)
+		}
+	}
+	if d := strings.Join(desc, " "); d != "" {
+		c.Desc = &d
+	}
+	if c.Valor == nil && c.Cat == nil && c.Venc == nil && c.Desc == nil && !c.Quitado {
+		return c, fmt.Errorf("nada para corrigir (ex.: corrigir 27,90 ou corrigir #mercado)")
+	}
+	return c, nil
+}
+
+// transferencia é o resultado de `transferir <valor> <origem> <destino> [descrição]`.
+type transferencia struct {
+	Valor    int64
+	De, Para string // "conta:N" ou "carteira:N"
+	Desc     string
+}
+
+var reLocal = regexp.MustCompile(`^(conta|cart|carteira):(\d+)$`)
+
+// parseTransferencia interpreta `transferir 200 conta:1 cart:2 [descrição]`.
+func parseTransferencia(resto string) (transferencia, error) {
+	var t transferencia
+	var desc []string
+	temValor := false
+	for _, tok := range strings.Fields(resto) {
+		switch {
+		case reLocal.MatchString(tok):
+			m := reLocal.FindStringSubmatch(tok)
+			local := m[1] + ":" + m[2]
+			if m[1] == "cart" {
+				local = "carteira:" + m[2]
+			}
+			if t.De == "" {
+				t.De = local
+			} else if t.Para == "" {
+				t.Para = local
+			}
+		case !temValor && pareceValor(tok):
+			centavos, err := money.Parse(tok)
+			if err != nil {
+				return t, err
+			}
+			t.Valor = centavos
+			temValor = true
+		default:
+			desc = append(desc, tok)
+		}
+	}
+	if !temValor || t.De == "" || t.Para == "" {
+		return t, fmt.Errorf("uso: transferir <valor> <origem> <destino> (ex.: transferir 200 conta:1 cart:2)")
+	}
+	t.Desc = strings.Join(desc, " ")
+	return t, nil
+}
+
+var meses = map[string]time.Month{
+	"janeiro": 1, "fevereiro": 2, "marco": 3, "março": 3, "abril": 4,
+	"maio": 5, "junho": 6, "julho": 7, "agosto": 8, "setembro": 9,
+	"outubro": 10, "novembro": 11, "dezembro": 12,
+}
+
+var reUltimosMeses = regexp.MustCompile(`^(\d{1,2})m$`)
+
+// parsePeriodoConsulta converte o período de uma consulta `#categoria [período]`
+// nos filtros do comando lancamentos. Aceita: nome de mês ("maio"), "3m"
+// (últimos 3 meses), "AAAA-MM" e "tudo"; vazio é o mês atual.
+func parsePeriodoConsulta(s string, agora time.Time) ([]string, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch {
+	case s == "":
+		return []string{"--mes", agora.Format("2006-01")}, nil
+	case s == "tudo":
+		return nil, nil
+	case reUltimosMeses.MatchString(s):
+		n, _ := strconv.Atoi(reUltimosMeses.FindStringSubmatch(s)[1])
+		de := agora.AddDate(0, -n, 0).Format("2006-01-02")
+		return []string{"--de", de}, nil
+	}
+	if mes, ok := meses[s]; ok {
+		ano := agora.Year()
+		if mes > agora.Month() { // "dezembro" em junho = dezembro passado
+			ano--
+		}
+		return []string{"--mes", fmt.Sprintf("%d-%02d", ano, mes)}, nil
+	}
+	if _, err := time.Parse("2006-01", s); err == nil {
+		return []string{"--mes", s}, nil
+	}
+	return nil, fmt.Errorf("período inválido: %q (use um mês como \"maio\", \"3m\", \"2026-05\" ou \"tudo\")", s)
+}
+
 // pareceValor diz se o token é um número monetário (com + opcional), sem
 // engolir datas tipo 12/06 nem palavras com dígitos.
 func pareceValor(tok string) bool {

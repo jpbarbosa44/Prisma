@@ -177,7 +177,7 @@ prisma bot --token SEU_TOKEN   # primeira vez (token do @BotFather)
 prisma bot                     # depois, é só rodar
 ```
 
-Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita. Também responde consultas: `/saldo`, `/pendentes`, `/mes`, `/relatorio`, `/previsao`, `/plano` e `#categoria`. Só o chat autorizado tem acesso, e cada confirmação vem com botão de desfazer. Formato completo no [MANUAL.md](MANUAL.md#bot-telegram).
+Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita. Dá para quitar (`quitar 142`), corrigir o último lançamento (`corrigir 27,90`), transferir entre conta e carteira, e guardar comprovante mandando a foto. Também responde consultas (`/saldo`, `/pendentes`, `/relatorio`, `/previsao`, `#categoria maio`...) e avisa sozinho: vencimentos às 9h (com botão de quitar) e resumo do dia às 20h. Só o chat autorizado tem acesso. Detalhes no [MANUAL.md](MANUAL.md#bot-telegram).
 
 ## Dados
 

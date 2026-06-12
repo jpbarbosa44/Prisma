@@ -247,7 +247,18 @@ O que não tem prefixo vira descrição; sem descrição, ela herda o nome da ca
 12
 ```
 
-Cada lançamento confirmado vem com um botão **🗑 Desfazer** que o remove na hora. Mande `/ajuda` ao bot para ver o formato a qualquer momento.
+Cada lançamento confirmado vem com um botão **🗑 Desfazer** que o remove na hora. Se a categoria tem um plano de gastos, a confirmação avisa quando o limite passa de 80% ou estoura. Mande `/ajuda` ao bot para ver o formato a qualquer momento.
+
+Outras ações por mensagem:
+
+| Mensagem | O que faz |
+|---|---|
+| `quitar 142` | marca o lançamento como pago/recebido |
+| `corrigir 27,90` | conserta o **último** lançamento — aceita valor, `#categoria`, `@data`, `!` e nova descrição, na mesma gramática |
+| `transferir 200 conta:1 cart:2 [descrição]` | move dinheiro entre conta/carteira |
+| foto **com** legenda de lançamento | registra e guarda a foto como comprovante |
+| foto **sem** legenda | anexa o comprovante ao último lançamento |
+| `/comprovante 142` | reenvia o(s) comprovante(s) do lançamento |
 
 O bot também responde consultas — a saída é a mesma dos comandos da CLI, em bloco monoespaçado:
 
@@ -260,6 +271,14 @@ O bot também responde consultas — a saída é a mesma dos comandos da CLI, em
 | `/previsao` | `prisma previsao` |
 | `/plano` | `prisma plano status` |
 | `#mercado` (sozinha) | `prisma lancamentos --cat mercado --mes <mês atual>` |
+| `#mercado maio` · `#mercado 3m` · `#mercado 2026-05` · `#mercado tudo` | a categoria em outros períodos |
+
+E manda dois avisos automáticos por dia (enquanto estiver rodando):
+
+- **9h — vencimentos**: lançamentos pendentes atrasados, de hoje e de amanhã, cada um com botão **✅ Quitar**;
+- **20h — resumo do dia**: o que foi registrado e quitado no dia, mais o status dos planos de gasto.
+
+Os comprovantes ficam armazenados no Telegram (o banco guarda só a referência), e a foto some se a conversa com o bot for apagada.
 
 Para deixar o bot sempre ativo, rode-o como serviço do systemd (modo usuário):
 

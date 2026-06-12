@@ -215,8 +215,8 @@ func planoStatus(conn *sql.DB, args []string) error {
 	defer rows.Close()
 
 	type linha struct {
-		cat            string
-		limite, gasto  int64
+		cat           string
+		limite, gasto int64
 	}
 	var linhas []linha
 	for rows.Next() {
@@ -267,6 +267,54 @@ func planoStatus(conn *sql.DB, args []string) error {
 		fmt.Printf("\n⚠ Limite estourado em: %s\n", strings.Join(estourou, ", "))
 	}
 	return nil
+}
+
+// PlanoUso é o consumo de um plano de gastos em um período.
+type PlanoUso struct {
+	Periodo, Ref  string
+	Limite, Gasto int64
+}
+
+// PlanosDaCategoria devolve limite e gasto dos planos (mensal e/ou semanal)
+// da categoria que cobrem a data informada — para avisar, por exemplo, quando
+// um lançamento novo estoura o limite.
+func PlanosDaCategoria(conn *sql.DB, cat, data string) ([]PlanoUso, error) {
+	cat = strings.ToLower(strings.TrimSpace(cat))
+	var usos []PlanoUso
+	for _, per := range []string{"mes", "semana"} {
+		ref, err := refDaData(per, data)
+		if err != nil {
+			return nil, err
+		}
+		var limite int64
+		err = conn.QueryRow(
+			`SELECT limite FROM planejamentos WHERE categoria = ? AND periodo = ? AND ref = ?`,
+			cat, per, ref,
+		).Scan(&limite)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		p, err := resolvePeriodo(per, ref)
+		if err != nil {
+			return nil, err
+		}
+		var gasto int64
+		err = conn.QueryRow(`
+			SELECT COALESCE(SUM(valor), 0) FROM lancamentos
+			WHERE tipo = 'pagar' AND categoria = ?
+			  AND ((status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
+			    OR (status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
+			cat, p.Inicio, p.Fim, p.Inicio, p.Fim,
+		).Scan(&gasto)
+		if err != nil {
+			return nil, err
+		}
+		usos = append(usos, PlanoUso{Periodo: per, Ref: ref, Limite: limite, Gasto: gasto})
+	}
+	return usos, nil
 }
 
 func planoRemover(conn *sql.DB, args []string) error {

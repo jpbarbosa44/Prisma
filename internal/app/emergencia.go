@@ -179,9 +179,9 @@ func emergenciaAdd(conn *sql.DB, args []string) error {
 }
 
 type parcela struct {
-	mes              int
-	juros, pago      int64
-	saldoFinal       int64
+	mes         int
+	juros, pago int64
+	saldoFinal  int64
 }
 
 // simulaPlano projeta a quitação mês a mês: aplica os juros sobre o saldo

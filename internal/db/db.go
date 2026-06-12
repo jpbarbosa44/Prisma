@@ -131,6 +131,13 @@ CREATE TABLE IF NOT EXISTS recorrencias (
 	criada_em   TEXT NOT NULL DEFAULT (date('now','localtime'))
 );
 
+CREATE TABLE IF NOT EXISTS comprovantes (
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	lancamento_id INTEGER NOT NULL REFERENCES lancamentos(id) ON DELETE CASCADE,
+	file_id       TEXT NOT NULL,                  -- id do arquivo no Telegram
+	criado_em     TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_lanc_venc   ON lancamentos (vencimento);
 CREATE INDEX IF NOT EXISTS idx_lanc_status ON lancamentos (status);
 `

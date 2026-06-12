@@ -33,11 +33,17 @@ type chat struct {
 	ID int64 `json:"id"`
 }
 
+type foto struct {
+	FileID string `json:"file_id"`
+}
+
 type mensagem struct {
-	ID   int64    `json:"message_id"`
-	De   *usuario `json:"from"`
-	Chat chat     `json:"chat"`
-	Text string   `json:"text"`
+	ID      int64    `json:"message_id"`
+	De      *usuario `json:"from"`
+	Chat    chat     `json:"chat"`
+	Text    string   `json:"text"`
+	Legenda string   `json:"caption"`
+	Fotos   []foto   `json:"photo"` // tamanhos crescentes; o último é o maior
 }
 
 type callback struct {
@@ -119,6 +125,18 @@ func (c *cliente) enviar(chatID int64, texto string, teclado ...*tecladoInline) 
 		params.Set("reply_markup", string(b))
 	}
 	return c.chamar("sendMessage", params, nil)
+}
+
+// enviarFoto reenvia uma foto já armazenada no Telegram pelo file_id.
+func (c *cliente) enviarFoto(chatID int64, fileID, legenda string) error {
+	params := url.Values{
+		"chat_id": {strconv.FormatInt(chatID, 10)},
+		"photo":   {fileID},
+	}
+	if legenda != "" {
+		params.Set("caption", legenda)
+	}
+	return c.chamar("sendPhoto", params, nil)
 }
 
 // enviarPre manda texto em bloco monoespaçado (<pre>), preservando o

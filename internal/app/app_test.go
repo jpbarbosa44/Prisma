@@ -426,3 +426,53 @@ func TestImportarOFX(t *testing.T) {
 		t.Errorf("saldo após OFX = %d, quer %d", saldo, 120000-4590)
 	}
 }
+
+func TestPlanosDaCategoria(t *testing.T) {
+	conn := abreDB(t)
+	silencia(t, func() error {
+		return Plano(conn, []string{"add", "--cat", "mercado", "--valor", "800", "--periodo", "mes"})
+	})
+	_, _, err := CriarLancamentos(conn, LancamentoParams{
+		Tipo: "pagar", Desc: "compra", Valor: 70000, Cat: "mercado",
+		Venc: refAtual("mes") + "-10",
+	})
+	if err != nil {
+		t.Fatalf("criando lançamento: %v", err)
+	}
+
+	usos, err := PlanosDaCategoria(conn, "mercado", refAtual("mes")+"-10")
+	if err != nil {
+		t.Fatalf("PlanosDaCategoria: %v", err)
+	}
+	if len(usos) != 1 || usos[0].Periodo != "mes" || usos[0].Limite != 80000 || usos[0].Gasto != 70000 {
+		t.Errorf("PlanosDaCategoria: %+v", usos)
+	}
+
+	// categoria sem plano: nada
+	if usos, _ := PlanosDaCategoria(conn, "lazer", refAtual("mes")+"-10"); len(usos) != 0 {
+		t.Errorf("categoria sem plano devia voltar vazio: %+v", usos)
+	}
+}
+
+func TestComprovantesTabela(t *testing.T) {
+	conn := abreDB(t)
+	criados, _, err := CriarLancamentos(conn, LancamentoParams{
+		Tipo: "pagar", Desc: "teste", Valor: 100, Venc: "2026-06-12",
+	})
+	if err != nil {
+		t.Fatalf("criando lançamento: %v", err)
+	}
+	if _, err := conn.Exec(
+		`INSERT INTO comprovantes (lancamento_id, file_id) VALUES (?, ?)`, criados[0].ID, "abc123",
+	); err != nil {
+		t.Fatalf("inserindo comprovante: %v", err)
+	}
+	// apagar o lançamento leva o comprovante junto (ON DELETE CASCADE)
+	if _, err := conn.Exec(`DELETE FROM lancamentos WHERE id = ?`, criados[0].ID); err != nil {
+		t.Fatalf("apagando lançamento: %v", err)
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM comprovantes`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("comprovante órfão sobrou (n=%d, err=%v)", n, err)
+	}
+}
