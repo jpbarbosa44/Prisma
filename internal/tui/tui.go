@@ -214,10 +214,16 @@ func (m *model) recarrega() {
 	m.vp.GotoTop()
 }
 
-// renderConteudo monta o texto do viewport destacando a linha selecionada.
+// renderConteudo monta o texto do viewport destacando a linha selecionada e
+// aplicando o esquema de cores nas demais (a selecionada fica só com o fundo
+// de seleção, sem cores internas brigando com ele).
 func (m *model) renderConteudo() {
 	if m.selPos < 0 {
-		m.vp.SetContent(strings.Join(m.linhas, "\n"))
+		saida := make([]string, len(m.linhas))
+		for i, l := range m.linhas {
+			saida[i] = colorir(l)
+		}
+		m.vp.SetContent(strings.Join(saida, "\n"))
 		return
 	}
 	alvo := m.seleta[m.selPos].linha
@@ -226,7 +232,7 @@ func (m *model) renderConteudo() {
 		if i == alvo {
 			saida[i] = corSelec.Render("▸ " + l)
 		} else {
-			saida[i] = "  " + l
+			saida[i] = "  " + colorir(l)
 		}
 	}
 	m.vp.SetContent(strings.Join(saida, "\n"))
