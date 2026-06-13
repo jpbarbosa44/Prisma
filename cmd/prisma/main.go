@@ -9,6 +9,7 @@ import (
 	"prisma/internal/bot"
 	"prisma/internal/db"
 	"prisma/internal/tui"
+	"prisma/internal/update"
 )
 
 const ajuda = `prisma — gerenciador de finanças pessoais
@@ -32,10 +33,13 @@ COMANDOS
   relatorio    Análise do passado          [--meses N]  (categorias, mês a mês)
   extrato      Movimentação com saldo      --conta 1 | --carteira 1  [--meses N]
   previsao     Projeção de saldo futuro    [--meses N]
+  simular      E se eu comprar isto?       --valor 4000 --parcelas 12 [--juros N] [--entrada N]
   saldo        Posição geral consolidada
   exportar     Lançamentos em CSV          [--saida arq.csv] [--mes AAAA-MM]
   importar     Extrato bancário OFX/CSV    --arquivo extrato.ofx --conta 1
   bot          Bot de Telegram             [--token X] [--chat N]  registra lançamentos por mensagem
+  atualizar    Baixa e instala a versão nova (do GitHub, com conferência de SHA256)
+  versao       Mostra a versão instalada
   resetar      Apaga TODOS os dados        pede confirmação e faz backup antes
   ajuda        Mostra esta mensagem
 
@@ -51,6 +55,7 @@ EXEMPLOS
   prisma lancamentos --de 01/06/2026 --ate 15/06/2026 --cat mercado
   prisma relatorio --meses 6
   prisma previsao --meses 6
+  prisma simular --desc "Videogame" --valor 4.000,00 --parcelas 12
 
 DOCUMENTAÇÃO
   Manual completo de uso: MANUAL.md (no repositório do projeto).
@@ -65,8 +70,20 @@ func main() {
 		case "ajuda", "help", "-h", "--help":
 			fmt.Print(ajuda)
 			return
+		case "versao", "version", "--version", "-v":
+			fmt.Printf("prisma %s\n", update.Versao)
+			return
+		case "atualizar", "update", "autoupdate":
+			if err := update.Atualizar(); err != nil {
+				fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 	}
+
+	// checa por uma versão nova em segundo plano (no máximo 1x/dia, em silêncio)
+	go update.AtualizaCache()
 
 	conn, err := db.Open()
 	if err != nil {
@@ -120,6 +137,8 @@ func main() {
 		err = app.Extrato(conn, args)
 	case "previsao":
 		err = app.Previsao(conn, args)
+	case "simular", "simulacao", "simulação":
+		err = app.Simular(conn, args)
 	case "saldo":
 		err = app.Saldo(conn, args)
 	case "exportar":
@@ -138,5 +157,9 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
 		os.Exit(1)
+	}
+	// aviso discreto de versão nova, no stderr para não sujar saída de scripts
+	if aviso, _ := update.Aviso(); aviso != "" {
+		fmt.Fprintf(os.Stderr, "\n↑ %s\n", aviso)
 	}
 }

@@ -567,6 +567,42 @@ func novasTelas(conn *sql.DB) []tela {
 				},
 			},
 		},
+		{
+			titulo: "Simulação",
+			resumo: "e se eu comprar isto?",
+			conteudo: func(p []string) (string, error) {
+				if len(p) == 0 {
+					return textoSimulacaoVazio, nil
+				}
+				return captura(func() error { return app.Simular(conn, p) })
+			},
+			acoes: []acao{
+				{
+					tecla: "s", rotulo: "simular",
+					campos: []campo{
+						{rotulo: "descrição", dica: "ex.: Videogame"},
+						{rotulo: "valor", dica: "preço total, ex.: 4.000,00", obrigatorio: true},
+						{rotulo: "parcelas", dica: "ex.: 12 (vazio = à vista)"},
+						{rotulo: "juros", dica: "% ao mês, opcional"},
+						{rotulo: "entrada", dica: "valor à vista, opcional"},
+					},
+					params: func(v []string) []string {
+						var p []string
+						p = append(p, par("--desc", v[0])...)
+						p = append(p, par("--valor", v[1])...)
+						p = append(p, par("--parcelas", v[2])...)
+						p = append(p, par("--juros", v[3])...)
+						p = append(p, par("--entrada", v[4])...)
+						return p
+					},
+				},
+			},
+		},
+		{
+			titulo:   "Como usar",
+			resumo:   "documentação do sistema",
+			conteudo: func(_ []string) (string, error) { return textoComoUsar, nil },
+		},
 	}
 }
 

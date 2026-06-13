@@ -70,6 +70,8 @@ Telas e seus atalhos específicos:
 | 7 Planejamento | `a`, `e`, `s` status, `l`, `x` |
 | 8 Relatório | `m` meses |
 | 9 Previsão | `m` meses |
+| 10 Simulação | `s` simular |
+| 11 Como usar | — (só documentação) |
 
 ## A interface web (--web)
 
@@ -85,7 +87,7 @@ O servidor escuta **somente em `127.0.0.1`** — nada fica acessível pela rede 
 
 A navegação espelha a TUI:
 
-- O menu lateral lista as mesmas 9 telas (`1`-`9` trocam de tela pelo teclado).
+- O menu lateral lista as mesmas telas (`1`-`9` trocam de tela pelo teclado; as demais por clique).
 - As teclas dos botões de ação funcionam como atalhos (`a` adiciona, `e` edita, `x` remove...).
 - `↑/↓` ou um clique selecionam a linha da tabela, e o id selecionado já vem preenchido nos formulários de quitar, editar e remover.
 - Nos formulários, `enter` confirma e `esc` cancela; campos com `*` são obrigatórios; em edições, campos vazios mantêm o valor atual.
@@ -212,6 +214,22 @@ prisma previsao --meses 6
 
 Para cada mês futuro: lançamentos pendentes agendados; se um mês não tem nada agendado de um tipo, usa a média dos últimos 3 meses (marcado com `~`). A coluna DÍVIDAS desconta os aportes das emergências ativas. Termina com um gráfico de barras do saldo projetado e avisa se ele ficar negativo.
 
+### simular
+
+```sh
+prisma simular --desc "Videogame" --valor 4000 --parcelas 12
+prisma simular --valor 3000 --parcelas 10 --juros 3        # parcelamento com juros (Tabela Price)
+prisma simular --valor 4000 --parcelas 6 --entrada 800     # com entrada à vista
+```
+
+Responde **"e se eu comprar isto?"** sem gravar nada. Usa o mesmo modelo da previsão (recorrências, pendentes e média histórica) e projeta o saldo mês a mês **com e sem a compra**, pelo prazo do parcelamento. No fim, dá um veredito:
+
+- 🟢 **Pode comprar** — o saldo nunca cai abaixo de uma folga saudável.
+- ⚠ **Arriscado** — dá pra comprar, mas a folga cai abaixo de um mês de despesas (sem reserva para imprevistos).
+- 🔴 **Não recomendado** — o saldo ficaria negativo em algum mês do parcelamento.
+
+Com `--juros`, a parcela é calculada pela Tabela Price (parcela fixa) e a saída mostra o total pago e quanto é só de juros. No bot do Telegram: `/simular videogame 4000 12x 2% entrada:500`.
+
 ### saldo
 
 ```sh
@@ -290,6 +308,7 @@ O bot também responde consultas — a saída é a mesma dos comandos da CLI, em
 | `/mes` | `prisma lancamentos --mes <mês atual>` |
 | `/relatorio` | `prisma relatorio` |
 | `/previsao` | `prisma previsao` |
+| `/simular 4000 12x` | `prisma simular --valor 4000 --parcelas 12` (aceita `2%` de juros e `entrada:500`) |
 | `/plano` | `prisma plano status` |
 | `#mercado` (sozinha) | `prisma lancamentos --cat mercado --mes <mês atual>` |
 | `#mercado maio` · `#mercado 3m` · `#mercado 2026-05` · `#mercado tudo` | a categoria em outros períodos |

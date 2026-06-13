@@ -3,366 +3,610 @@
      puros, conversando com a API JSON de web.go. O visual e o comportamento
      espelham a TUI — mesmas telas, mesmas cores, mesmos atalhos. -->
 <html lang="pt-BR">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Prisma — finanças pessoais</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,8 95,92 5,92' fill='%234dd8e6'/></svg>">
-<style>
-:root {
-  --bg: #0e1014; --painel: #12151b; --borda: #232a35;
-  --fg: #d8dee4; --dim: #6c7380; --sel: #1b2a38;
-  --cy: #4dd8e6; --ok: #7ace7a; --err: #ee6a6a; --amar: #e6c84d; --mag: #cf8fe0;
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0; background: var(--bg); color: var(--fg);
-  font: 14px/1.5 ui-monospace, "JetBrains Mono", "Fira Mono", Consolas, monospace;
-}
-.cy { color: var(--cy); } .fx { color: #fff; } .vm, .err { color: var(--err); }
-.amar { color: var(--amar); } .mag { color: var(--mag); }
-.ok { color: var(--ok); } .dim { color: var(--dim); }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prisma — finanças pessoais</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,8 95,92 5,92' fill='%234dd8e6'/></svg>">
+  <style>
+    :root {
+      --bg: #0e1014;
+      --painel: #12151b;
+      --borda: #232a35;
+      --fg: #d8dee4;
+      --dim: #6c7380;
+      --sel: #1b2a38;
+      --cy: #4dd8e6;
+      --ok: #7ace7a;
+      --err: #ee6a6a;
+      --amar: #e6c84d;
+      --mag: #cf8fe0;
+    }
 
-header {
-  display: flex; align-items: center; gap: 32px;
-  padding: 18px 24px 6px;
-}
-#arte { margin: 0; font-size: 9px; line-height: 1.15; }
-#marca h1 {
-  margin: 0; color: var(--cy); font-size: 26px; letter-spacing: 6px; font-weight: bold;
-}
-#marca p { margin: 4px 0 0; }
+    * {
+      box-sizing: border-box;
+    }
 
-main { display: flex; gap: 16px; padding: 12px 24px 24px; align-items: flex-start; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 14px/1.5 ui-monospace, "JetBrains Mono", "Fira Mono", Consolas, monospace;
+    }
 
-#menu { display: flex; flex-direction: column; gap: 4px; min-width: 250px; }
-#menu .item {
-  text-align: left; background: none; border: 1px solid transparent; border-radius: 6px;
-  color: var(--fg); font: inherit; padding: 6px 10px; cursor: pointer;
-}
-#menu .item:hover { border-color: var(--borda); }
-#menu .item.ativo { background: var(--sel); border-color: var(--cy); }
-#menu .num { color: var(--cy); margin-right: 6px; }
+    .cy {
+      color: var(--cy);
+    }
 
-#painel { flex: 1; min-width: 0; }
-#titulo { margin: 0 0 8px; color: var(--cy); font-size: 16px; }
-#saida {
-  margin: 0; padding: 12px 14px; min-height: 200px; overflow-x: auto;
-  background: var(--painel); border: 1px solid var(--borda); border-radius: 8px;
-}
-#saida .linha { white-space: pre; }
-#saida .clic { cursor: pointer; }
-#saida .clic:hover { background: var(--sel); }
-#saida .clic.sel { background: var(--sel); outline: 1px solid var(--cy); }
-#msg { min-height: 1.5em; margin: 8px 2px 4px; }
+    .fx {
+      color: #fff;
+    }
 
-#acoes { display: flex; flex-wrap: wrap; gap: 8px; }
-#acoes .acao {
-  background: var(--painel); border: 1px solid var(--borda); border-radius: 6px;
-  color: var(--fg); font: inherit; padding: 5px 12px; cursor: pointer;
-}
-#acoes .acao:hover { border-color: var(--cy); }
-#acoes kbd {
-  color: var(--cy); border: 1px solid var(--borda); border-radius: 4px;
-  padding: 0 5px; margin-right: 8px; font: inherit;
-}
-#dicas { margin-top: 12px; }
+    .vm,
+    .err {
+      color: var(--err);
+    }
 
-dialog {
-  background: var(--painel); color: var(--fg); border: 1px solid var(--cy);
-  border-radius: 8px; padding: 20px 24px; min-width: 420px; font: inherit;
-}
-dialog::backdrop { background: rgba(0, 0, 0, .6); }
-#form-titulo { margin: 0 0 14px; color: var(--cy); font-size: 15px; }
-#campos label { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-#campos label span.rotulo { width: 12ch; flex: none; }
-#campos input, #campos select {
-  flex: 1; background: var(--bg); color: var(--fg); font: inherit;
-  border: 1px solid var(--borda); border-radius: 5px; padding: 5px 8px;
-}
-#campos input:focus, #campos select:focus { outline: none; border-color: var(--cy); }
-#form-msg { min-height: 1.4em; margin: 6px 0; }
-.botoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
-.botoes button {
-  background: var(--bg); border: 1px solid var(--borda); border-radius: 6px;
-  color: var(--fg); font: inherit; padding: 5px 14px; cursor: pointer;
-}
-.botoes .principal { border-color: var(--cy); color: var(--cy); }
-.botoes button:hover { background: var(--sel); }
+    .amar {
+      color: var(--amar);
+    }
 
-@media (max-width: 900px) {
-  #arte { display: none; }
-  main { flex-direction: column; }
-  #menu { flex-direction: row; flex-wrap: wrap; min-width: 0; }
-}
-</style>
+    .mag {
+      color: var(--mag);
+    }
+
+    .ok {
+      color: var(--ok);
+    }
+
+    .dim {
+      color: var(--dim);
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      padding: 18px 24px 6px;
+    }
+
+    #arte {
+      margin: 0;
+      font-size: 9px;
+      line-height: 1.15;
+    }
+
+    #marca h1 {
+      margin: 0;
+      color: var(--cy);
+      font-size: 26px;
+      letter-spacing: 6px;
+      font-weight: bold;
+    }
+
+    #marca p {
+      margin: 4px 0 0;
+    }
+
+    #aviso {
+      display: none;
+      margin: 0 24px 4px;
+      padding: 7px 12px;
+      background: rgba(230, 200, 77, .1);
+      border: 1px solid var(--amar);
+      border-radius: 6px;
+      color: var(--amar);
+    }
+
+    #aviso code {
+      background: var(--bg);
+      border: 1px solid var(--borda);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+
+    #aviso a {
+      color: var(--cy);
+    }
+
+    main {
+      display: flex;
+      gap: 16px;
+      padding: 12px 24px 24px;
+      align-items: flex-start;
+    }
+
+    #menu {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 250px;
+    }
+
+    #menu .item {
+      text-align: left;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: var(--fg);
+      font: inherit;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+
+    #menu .item:hover {
+      border-color: var(--borda);
+    }
+
+    #menu .item.ativo {
+      background: var(--sel);
+      border-color: var(--cy);
+    }
+
+    #menu .num {
+      color: var(--cy);
+      margin-right: 6px;
+    }
+
+    #painel {
+      flex: 1;
+      min-width: 0;
+    }
+
+    #titulo {
+      margin: 0 0 8px;
+      color: var(--cy);
+      font-size: 16px;
+    }
+
+    #saida {
+      margin: 0;
+      padding: 12px 14px;
+      min-height: 200px;
+      overflow-x: auto;
+      background: var(--painel);
+      border: 1px solid var(--borda);
+      border-radius: 8px;
+    }
+
+    #saida .linha {
+      white-space: pre;
+    }
+
+    #saida .clic {
+      cursor: pointer;
+    }
+
+    #saida .clic:hover {
+      background: var(--sel);
+    }
+
+    #saida .clic.sel {
+      background: var(--sel);
+      outline: 1px solid var(--cy);
+    }
+
+    #msg {
+      min-height: 1.5em;
+      margin: 8px 2px 4px;
+    }
+
+    #acoes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    #acoes .acao {
+      background: var(--painel);
+      border: 1px solid var(--borda);
+      border-radius: 6px;
+      color: var(--fg);
+      font: inherit;
+      padding: 5px 12px;
+      cursor: pointer;
+    }
+
+    #acoes .acao:hover {
+      border-color: var(--cy);
+    }
+
+    #acoes kbd {
+      color: var(--cy);
+      border: 1px solid var(--borda);
+      border-radius: 4px;
+      padding: 0 5px;
+      margin-right: 8px;
+      font: inherit;
+    }
+
+    #dicas {
+      margin-top: 12px;
+    }
+
+    dialog {
+      background: var(--painel);
+      color: var(--fg);
+      border: 1px solid var(--cy);
+      border-radius: 8px;
+      padding: 20px 24px;
+      min-width: 420px;
+      font: inherit;
+    }
+
+    dialog::backdrop {
+      background: rgba(0, 0, 0, .6);
+    }
+
+    #form-titulo {
+      margin: 0 0 14px;
+      color: var(--cy);
+      font-size: 15px;
+    }
+
+    #campos label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    #campos label span.rotulo {
+      width: 12ch;
+      flex: none;
+    }
+
+    #campos input,
+    #campos select {
+      flex: 1;
+      background: var(--bg);
+      color: var(--fg);
+      font: inherit;
+      border: 1px solid var(--borda);
+      border-radius: 5px;
+      padding: 5px 8px;
+    }
+
+    #campos input:focus,
+    #campos select:focus {
+      outline: none;
+      border-color: var(--cy);
+    }
+
+    #form-msg {
+      min-height: 1.4em;
+      margin: 6px 0;
+    }
+
+    .botoes {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .botoes button {
+      background: var(--bg);
+      border: 1px solid var(--borda);
+      border-radius: 6px;
+      color: var(--fg);
+      font: inherit;
+      padding: 5px 14px;
+      cursor: pointer;
+    }
+
+    .botoes .principal {
+      border-color: var(--cy);
+      color: var(--cy);
+    }
+
+    .botoes button:hover {
+      background: var(--sel);
+    }
+
+    @media (max-width: 900px) {
+      #arte {
+        display: none;
+      }
+
+      main {
+        flex-direction: column;
+      }
+
+      #menu {
+        flex-direction: row;
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+    }
+  </style>
 </head>
+
 <body>
-<header>
-  <pre id="arte"></pre>
-  <div id="marca">
-    <h1>P R I S M A</h1>
-    <p class="dim">— finanças pessoais</p>
-  </div>
-</header>
-<main>
-  <nav id="menu"></nav>
-  <section id="painel">
-    <h2 id="titulo"></h2>
-    <pre id="saida"></pre>
-    <div id="msg" class="ok"></div>
-    <div id="acoes"></div>
-    <p id="dicas" class="dim">1-9 trocam de tela · as teclas dos botões disparam as ações · ↑/↓ ou clique selecionam a linha</p>
-  </section>
-</main>
-<dialog id="form">
-  <form method="dialog">
-    <h3 id="form-titulo"></h3>
-    <div id="campos"></div>
-    <div id="form-msg" class="err"></div>
-    <div class="botoes">
-      <button type="button" id="form-cancela">cancelar</button>
-      <button type="submit" class="principal">confirmar</button>
+  <header>
+    <pre id="arte"></pre>
+    <div id="marca">
+      <h1>P R I S M A</h1>
+      <p class="dim">— finanças pessoais</p>
     </div>
-  </form>
-  <p class="dim" style="margin:10px 0 0">enter confirma · esc cancela · * obrigatório</p>
-</dialog>
+  </header>
+  <div id="aviso"></div>
+  <main>
+    <nav id="menu"></nav>
+    <section id="painel">
+      <h2 id="titulo"></h2>
+      <pre id="saida"></pre>
+      <div id="msg" class="ok"></div>
+      <div id="acoes"></div>
+      <p id="dicas" class="dim">1-9 trocam de tela · as teclas dos botões disparam as ações · ↑/↓ ou clique selecionam a
+        linha</p>
+    </section>
+  </main>
+  <dialog id="form">
+    <form method="dialog">
+      <h3 id="form-titulo"></h3>
+      <div id="campos"></div>
+      <div id="form-msg" class="err"></div>
+      <div class="botoes">
+        <button type="button" id="form-cancela">cancelar</button>
+        <button type="submit" class="principal">confirmar</button>
+      </div>
+    </form>
+    <p class="dim" style="margin:10px 0 0">enter confirma · esc cancela · * obrigatório</p>
+  </dialog>
 
-<script>
-"use strict";
-const $ = s => document.querySelector(s);
-const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const escAttr = s => esc(s).replace(/"/g, "&quot;");
-const span = (cls, s) => `<span class="${cls}">${s}</span>`;
+  <script>
+    "use strict";
+    const $ = s => document.querySelector(s);
+    const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const escAttr = s => esc(s).replace(/"/g, "&quot;");
+    const span = (cls, s) => `<span class="${cls}">${s}</span>`;
 
-/* ---- cabeçalho: o mesmo prisma 3D de art.go ---- */
-const arte = [
-"               /=\\\\",
-"              /===\\ \\",
-"             /=====\\ ' \\",
-"            /=======\\ ' ' \\",
-"           /=========\\ ' ' '\\",
-"          /===========\\ ' ' ' \\",
-"         /=============\\ ' ' ' '\\",
-"        /===============\\ ' ' ' ' \\",
-"       /=================\\ ' ' ' ' '\\",
-"      /===================\\ ' ' ' ' ' \\",
-"     /=====================\\ ' ' ' ' ' /",
-"    /=======================\\ ' ' ' ' /",
-"   /=========================\\ ' ' ' /",
-"  /===========================\\ ' ' /",
-" /=============================\\ ' /",
-"/===============================\\/",
-];
-function desenhaArte() {
-  const margem = 8, feixe = 8, raios = { 8: "vm", 9: "amar", 10: "mag" };
-  $("#arte").innerHTML = arte.map((l, i) => {
-    let s;
-    if (i === feixe) {
-      const brancos = l.length - l.trimStart().length;
-      s = span("fx", "─".repeat(margem + brancos)) + span("cy", esc(l.trimStart()));
-    } else {
-      s = " ".repeat(margem) + span("cy", esc(l));
+    /* ---- cabeçalho: o mesmo prisma 3D de art.go ---- */
+    const arte = [
+      "               /=\\\\",
+      "              /===\\ \\",
+      "             /=====\\ ' \\",
+      "            /=======\\ ' ' \\",
+      "           /=========\\ ' ' '\\",
+      "          /===========\\ ' ' ' \\",
+      "         /=============\\ ' ' ' '\\",
+      "        /===============\\ ' ' ' ' \\",
+      "       /=================\\ ' ' ' ' '\\",
+      "      /===================\\ ' ' ' ' ' \\",
+      "     /=====================\\ ' ' ' ' ' /",
+      "    /=======================\\ ' ' ' ' /",
+      "   /=========================\\ ' ' ' /",
+      "  /===========================\\ ' ' /",
+      " /=============================\\ ' /",
+      "/===============================\\/",
+    ];
+    function desenhaArte() {
+      const margem = 8, feixe = 8, raios = { 8: "vm", 9: "amar", 10: "mag" };
+      $("#arte").innerHTML = arte.map((l, i) => {
+        let s;
+        if (i === feixe) {
+          const brancos = l.length - l.trimStart().length;
+          s = span("fx", "─".repeat(margem + brancos)) + span("cy", esc(l.trimStart()));
+        } else {
+          s = " ".repeat(margem) + span("cy", esc(l));
+        }
+        if (raios[i]) s += " " + span(raios[i], "━".repeat(12));
+        return s;
+      }).join("\n");
     }
-    if (raios[i]) s += " " + span(raios[i], "━".repeat(12));
-    return s;
-  }).join("\n");
-}
 
-/* ---- esquema de cores: porte fiel de cores.go ---- */
-const reValor = /-?R\$ [0-9.,]+/g;
-function ehCabecalhoTabela(t) {
-  if (t.includes("R$") || t !== t.toUpperCase()) return false;
-  if (t[0] >= "0" && t[0] <= "9") return false;
-  return /\p{L}/u.test(t);
-}
-function colorir(l) {
-  const t = l.trim();
-  if (t === "") return esc(l);
-  if (ehCabecalhoTabela(t)) return span("dim", esc(l));
-  if (t.startsWith("⚠") || t.startsWith("Aviso")) return span("amar", esc(l));
-  if (t.startsWith("erro")) return span("err", esc(l));
-
-  const pagar = /\bpagar\b/.test(l), receber = /\breceber\b/.test(l);
-  if (pagar && receber && l.includes("|"))
-    return l.split("|").map(colorir).join("|");
-
-  l = esc(l).replace(reValor, v => {
-    if (v.startsWith("-")) return span("err", v);
-    if (pagar && !receber) return span("err", v);
-    if (receber && !pagar) return span("ok", v);
-    return v;
-  });
-  l = l.replace(/\bpagar\b/g, m => span("err", m));
-  l = l.replace(/\breceber\b/g, m => span("ok", m));
-  l = l.replace(/\bpendentes?\b/g, m => span("amar", m));
-  l = l.replace(/\bquitad[oa]s?\b/g, m => span("ok", m));
-  return l;
-}
-
-/* ---- estado: telas do menu, parâmetros e linha selecionada por tela ---- */
-let telas = [], atual = -1, params = [], selecionado = [], formCampos = [];
-
-async function init() {
-  desenhaArte();
-  telas = await (await fetch("api/telas")).json();
-  params = telas.map(t => t.padrao || []);
-  selecionado = telas.map(() => null);
-  $("#menu").innerHTML = telas.map((t, i) =>
-    `<button class="item" data-i="${i}"><span class="num">${i + 1}</span>${esc(t.titulo)}<br>` +
-    `<span class="dim">${esc(t.resumo)}</span></button>`).join("");
-  document.querySelectorAll("#menu .item").forEach(b => b.onclick = () => abre(+b.dataset.i));
-  abre(0);
-}
-
-function abre(i) {
-  atual = i;
-  document.querySelectorAll("#menu .item").forEach((b, j) => b.classList.toggle("ativo", j === i));
-  $("#titulo").textContent = telas[i].titulo;
-  $("#acoes").innerHTML = telas[i].acoes.map((a, j) =>
-    `<button class="acao" data-j="${j}"><kbd>${esc(a.tecla)}</kbd>${esc(a.rotulo)}</button>`).join("") +
-    `<button class="acao" id="atualiza"><kbd>↻</kbd>atualizar</button>`;
-  document.querySelectorAll("#acoes .acao[data-j]").forEach(b => b.onclick = () => dispara(+b.dataset.j));
-  $("#atualiza").onclick = recarrega;
-  mensagem("", false);
-  recarrega();
-}
-
-async function recarrega() {
-  const q = new URLSearchParams([["tela", atual], ...params[atual].map(p => ["p", p])]);
-  const r = await (await fetch("api/conteudo?" + q)).json();
-  renderSaida(r.texto || "");
-}
-
-/* linhas que começam com um número são selecionáveis (o número é o ID),
-   como na TUI — a seleção pré-preenche o campo "id" dos formulários */
-function renderSaida(texto) {
-  const linhas = texto.replace(/\s+$/, "").split("\n");
-  const ids = [];
-  $("#saida").innerHTML = linhas.map(l => {
-    const primeiro = l.trim().split(/\s+/)[0];
-    const id = /^\d+$/.test(primeiro) ? primeiro : null;
-    if (id) ids.push(id);
-    return `<div class="linha${id ? " clic" : ""}"${id ? ` data-id="${id}"` : ""}>${colorir(l) || " "}</div>`;
-  }).join("");
-  if (!ids.includes(selecionado[atual])) selecionado[atual] = ids[0] || null;
-  document.querySelectorAll("#saida .clic").forEach(d =>
-    d.onclick = () => { selecionado[atual] = d.dataset.id; marcaSelecao(); });
-  marcaSelecao();
-}
-function marcaSelecao() {
-  document.querySelectorAll("#saida .clic").forEach(d =>
-    d.classList.toggle("sel", d.dataset.id === selecionado[atual]));
-}
-function moveSelecao(delta) {
-  const divs = [...document.querySelectorAll("#saida .clic")];
-  if (!divs.length) return;
-  let i = divs.findIndex(d => d.dataset.id === selecionado[atual]) + delta;
-  i = Math.min(Math.max(i, 0), divs.length - 1);
-  selecionado[atual] = divs[i].dataset.id;
-  marcaSelecao();
-  divs[i].scrollIntoView({ block: "nearest" });
-}
-
-function mensagem(txt, erro) {
-  const m = $("#msg");
-  m.textContent = txt.replace(/\n/g, " · ");
-  m.className = erro ? "err" : "ok";
-}
-
-/* ---- ações: sem campos executa direto; com campos abre o formulário ---- */
-async function dispara(j) {
-  const a = telas[atual].acoes[j];
-  if (!a.temForm) return executa(j, []);
-  const r = await (await fetch(`api/form?tela=${atual}&acao=${j}`)).json();
-  abreForm(j, r.campos || []);
-}
-
-function abreForm(j, campos) {
-  formCampos = campos;
-  $("#form-titulo").textContent = telas[atual].titulo + " › " + telas[atual].acoes[j].rotulo;
-  $("#campos").innerHTML = campos.map((c, i) => {
-    const rotulo = `<span class="rotulo">${esc(c.rotulo)}${c.obrigatorio ? span("cy", "*") : ""}</span>`;
-    if (c.opcoes && c.opcoes.length)
-      return `<label>${rotulo}<select data-i="${i}">` +
-        c.opcoes.map(o => `<option value="${escAttr(o.valor)}">${esc(o.rotulo)}</option>`).join("") +
-        `</select></label>`;
-    return `<label>${rotulo}<input data-i="${i}" placeholder="${escAttr(c.dica || "")}" autocomplete="off"></label>`;
-  }).join("");
-  if (campos.length && campos[0].rotulo === "id" && selecionado[atual]) {
-    const el = $('#campos [data-i="0"]');
-    if (el && el.tagName === "INPUT") el.value = selecionado[atual];
-  }
-  $("#form-msg").textContent = "";
-  $("#form").dataset.j = j;
-  $("#form").showModal();
-  const primeiro = $("#campos input, #campos select");
-  if (primeiro) primeiro.focus();
-}
-
-$("#form form").addEventListener("submit", ev => {
-  const j = +$("#form").dataset.j;
-  const vals = formCampos.map((c, i) => ($(`#campos [data-i="${i}"]`).value || "").trim());
-  for (let i = 0; i < formCampos.length; i++) {
-    if (formCampos[i].obrigatorio && !vals[i]) {
-      ev.preventDefault();
-      $("#form-msg").textContent = `o campo "${formCampos[i].rotulo}" é obrigatório`;
-      $(`#campos [data-i="${i}"]`).focus();
-      return;
+    /* ---- esquema de cores: porte fiel de cores.go ---- */
+    const reValor = /-?R\$ [0-9.,]+/g;
+    function ehCabecalhoTabela(t) {
+      if (t.includes("R$") || t !== t.toUpperCase()) return false;
+      if (t[0] >= "0" && t[0] <= "9") return false;
+      return /\p{L}/u.test(t);
     }
-  }
-  executa(j, vals); // o dialog fecha sozinho (method="dialog")
-});
-$("#form-cancela").onclick = () => $("#form").close();
+    function colorir(l) {
+      const t = l.trim();
+      if (t === "") return esc(l);
+      if (ehCabecalhoTabela(t)) return span("dim", esc(l));
+      if (t.startsWith("⚠") || t.startsWith("Aviso")) return span("amar", esc(l));
+      if (t.startsWith("erro")) return span("err", esc(l));
 
-async function executa(j, vals) {
-  const a = telas[atual].acoes[j];
-  if (a.confirma && !window.confirm(`Confirma "${a.rotulo}"?`)) {
-    mensagem("cancelado", false);
-    return;
-  }
-  const resp = await fetch("api/executar", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tela: atual, acao: j, vals }),
-  });
-  const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
-  if (!resp.ok) {
-    mensagem("erro: " + (r.erro || resp.status), true);
-    return;
-  }
-  if (r.params !== undefined) { // ação de exibição: só troca os parâmetros
-    params[atual] = r.params || [];
-    mensagem("", false);
-  } else {
-    mensagem(r.msg || "feito", false);
-  }
-  recarrega();
-}
+      const pagar = /\bpagar\b/.test(l), receber = /\breceber\b/.test(l);
+      if (pagar && receber && l.includes("|"))
+        return l.split("|").map(colorir).join("|");
 
-/* ---- atalhos de teclado, como na TUI ---- */
-document.addEventListener("keydown", ev => {
-  if ($("#form").open || ev.target.matches("input, select, textarea")) return;
-  if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
-  if (ev.key >= "1" && ev.key <= "9") {
-    const i = +ev.key - 1;
-    if (i < telas.length) abre(i);
-    return;
-  }
-  if (atual < 0) return;
-  if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
-    moveSelecao(ev.key === "ArrowUp" ? -1 : 1);
-    ev.preventDefault();
-    return;
-  }
-  const j = telas[atual].acoes.findIndex(a => a.tecla === ev.key);
-  if (j >= 0) {
-    dispara(j);
-    ev.preventDefault();
-  }
-});
+      l = esc(l).replace(reValor, v => {
+        if (v.startsWith("-")) return span("err", v);
+        if (pagar && !receber) return span("err", v);
+        if (receber && !pagar) return span("ok", v);
+        return v;
+      });
+      l = l.replace(/\bpagar\b/g, m => span("err", m));
+      l = l.replace(/\breceber\b/g, m => span("ok", m));
+      l = l.replace(/\bpendentes?\b/g, m => span("amar", m));
+      l = l.replace(/\bquitad[oa]s?\b/g, m => span("ok", m));
+      return l;
+    }
 
-init();
-</script>
+    /* ---- estado: telas do menu, parâmetros e linha selecionada por tela ---- */
+    let telas = [], atual = -1, params = [], selecionado = [], formCampos = [];
+
+    /* banner de versão nova, no mesmo espírito da TUI e do oh-my-zsh */
+    async function mostraAviso() {
+      try {
+        const v = await (await fetch("api/versao")).json();
+        if (!v.aviso) return;
+        let html = esc(v.aviso).replace("prisma atualizar", "<code>prisma atualizar</code>");
+        if (v.url) html += ` · <a href="${escAttr(v.url)}" target="_blank" rel="noopener">ver release</a>`;
+        const el = $("#aviso");
+        el.innerHTML = "↑ " + html;
+        el.style.display = "block";
+      } catch (e) { /* sem rede ou sem aviso: silêncio */ }
+    }
+
+    async function init() {
+      desenhaArte();
+      mostraAviso();
+      telas = await (await fetch("api/telas")).json();
+      params = telas.map(t => t.padrao || []);
+      selecionado = telas.map(() => null);
+      $("#menu").innerHTML = telas.map((t, i) =>
+        `<button class="item" data-i="${i}"><span class="num">${i + 1}</span>${esc(t.titulo)}<br>` +
+        `<span class="dim">${esc(t.resumo)}</span></button>`).join("");
+      document.querySelectorAll("#menu .item").forEach(b => b.onclick = () => abre(+b.dataset.i));
+      abre(0);
+    }
+
+    function abre(i) {
+      atual = i;
+      document.querySelectorAll("#menu .item").forEach((b, j) => b.classList.toggle("ativo", j === i));
+      $("#titulo").textContent = telas[i].titulo;
+      $("#acoes").innerHTML = (telas[i].acoes || []).map((a, j) =>
+        `<button class="acao" data-j="${j}"><kbd>${esc(a.tecla)}</kbd>${esc(a.rotulo)}</button>`).join("") +
+        `<button class="acao" id="atualiza"><kbd>↻</kbd>atualizar</button>`;
+      document.querySelectorAll("#acoes .acao[data-j]").forEach(b => b.onclick = () => dispara(+b.dataset.j));
+      $("#atualiza").onclick = recarrega;
+      mensagem("", false);
+      recarrega();
+    }
+
+    async function recarrega() {
+      const q = new URLSearchParams([["tela", atual], ...params[atual].map(p => ["p", p])]);
+      const r = await (await fetch("api/conteudo?" + q)).json();
+      renderSaida(r.texto || "");
+    }
+
+    /* linhas que começam com um número são selecionáveis (o número é o ID),
+       como na TUI — a seleção pré-preenche o campo "id" dos formulários */
+    function renderSaida(texto) {
+      const linhas = texto.replace(/\s+$/, "").split("\n");
+      const ids = [];
+      $("#saida").innerHTML = linhas.map(l => {
+        const primeiro = l.trim().split(/\s+/)[0];
+        const id = /^\d+$/.test(primeiro) ? primeiro : null;
+        if (id) ids.push(id);
+        return `<div class="linha${id ? " clic" : ""}"${id ? ` data-id="${id}"` : ""}>${colorir(l) || " "}</div>`;
+      }).join("");
+      if (!ids.includes(selecionado[atual])) selecionado[atual] = ids[0] || null;
+      document.querySelectorAll("#saida .clic").forEach(d =>
+        d.onclick = () => { selecionado[atual] = d.dataset.id; marcaSelecao(); });
+      marcaSelecao();
+    }
+    function marcaSelecao() {
+      document.querySelectorAll("#saida .clic").forEach(d =>
+        d.classList.toggle("sel", d.dataset.id === selecionado[atual]));
+    }
+    function moveSelecao(delta) {
+      const divs = [...document.querySelectorAll("#saida .clic")];
+      if (!divs.length) return;
+      let i = divs.findIndex(d => d.dataset.id === selecionado[atual]) + delta;
+      i = Math.min(Math.max(i, 0), divs.length - 1);
+      selecionado[atual] = divs[i].dataset.id;
+      marcaSelecao();
+      divs[i].scrollIntoView({ block: "nearest" });
+    }
+
+    function mensagem(txt, erro) {
+      const m = $("#msg");
+      m.textContent = txt.replace(/\n/g, " · ");
+      m.className = erro ? "err" : "ok";
+    }
+
+    /* ---- ações: sem campos executa direto; com campos abre o formulário ---- */
+    async function dispara(j) {
+      const a = telas[atual].acoes[j];
+      if (!a.temForm) return executa(j, []);
+      const r = await (await fetch(`api/form?tela=${atual}&acao=${j}`)).json();
+      abreForm(j, r.campos || []);
+    }
+
+    function abreForm(j, campos) {
+      formCampos = campos;
+      $("#form-titulo").textContent = telas[atual].titulo + " › " + telas[atual].acoes[j].rotulo;
+      $("#campos").innerHTML = campos.map((c, i) => {
+        const rotulo = `<span class="rotulo">${esc(c.rotulo)}${c.obrigatorio ? span("cy", "*") : ""}</span>`;
+        if (c.opcoes && c.opcoes.length)
+          return `<label>${rotulo}<select data-i="${i}">` +
+            c.opcoes.map(o => `<option value="${escAttr(o.valor)}">${esc(o.rotulo)}</option>`).join("") +
+            `</select></label>`;
+        return `<label>${rotulo}<input data-i="${i}" placeholder="${escAttr(c.dica || "")}" autocomplete="off"></label>`;
+      }).join("");
+      if (campos.length && campos[0].rotulo === "id" && selecionado[atual]) {
+        const el = $('#campos [data-i="0"]');
+        if (el && el.tagName === "INPUT") el.value = selecionado[atual];
+      }
+      $("#form-msg").textContent = "";
+      $("#form").dataset.j = j;
+      $("#form").showModal();
+      const primeiro = $("#campos input, #campos select");
+      if (primeiro) primeiro.focus();
+    }
+
+    $("#form form").addEventListener("submit", ev => {
+      const j = +$("#form").dataset.j;
+      const vals = formCampos.map((c, i) => ($(`#campos [data-i="${i}"]`).value || "").trim());
+      for (let i = 0; i < formCampos.length; i++) {
+        if (formCampos[i].obrigatorio && !vals[i]) {
+          ev.preventDefault();
+          $("#form-msg").textContent = `o campo "${formCampos[i].rotulo}" é obrigatório`;
+          $(`#campos [data-i="${i}"]`).focus();
+          return;
+        }
+      }
+      executa(j, vals); // o dialog fecha sozinho (method="dialog")
+    });
+    $("#form-cancela").onclick = () => $("#form").close();
+
+    async function executa(j, vals) {
+      const a = telas[atual].acoes[j];
+      if (a.confirma && !window.confirm(`Confirma "${a.rotulo}"?`)) {
+        mensagem("cancelado", false);
+        return;
+      }
+      const resp = await fetch("api/executar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tela: atual, acao: j, vals }),
+      });
+      const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
+      if (!resp.ok) {
+        mensagem("erro: " + (r.erro || resp.status), true);
+        return;
+      }
+      if (r.params !== undefined) { // ação de exibição: só troca os parâmetros
+        params[atual] = r.params || [];
+        mensagem("", false);
+      } else {
+        mensagem(r.msg || "feito", false);
+      }
+      recarrega();
+    }
+
+    /* ---- atalhos de teclado, como na TUI ---- */
+    document.addEventListener("keydown", ev => {
+      if ($("#form").open || ev.target.matches("input, select, textarea")) return;
+      if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+      if (ev.key >= "1" && ev.key <= "9") {
+        const i = +ev.key - 1;
+        if (i < telas.length) abre(i);
+        return;
+      }
+      if (atual < 0) return;
+      if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+        moveSelecao(ev.key === "ArrowUp" ? -1 : 1);
+        ev.preventDefault();
+        return;
+      }
+      const j = (telas[atual].acoes || []).findIndex(a => a.tecla === ev.key);
+      if (j >= 0) {
+        dispara(j);
+        ev.preventDefault();
+      }
+    });
+
+    init();
+  </script>
 </body>
+
 </html>

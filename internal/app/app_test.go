@@ -226,6 +226,73 @@ func TestParcelasSomamTotal(t *testing.T) {
 	}
 }
 
+func TestParcelasCompraSemJuros(t *testing.T) {
+	ps := parcelasCompra(100000, 0, 3) // R$ 1.000 em 3x
+	if len(ps) != 3 {
+		t.Fatalf("esperava 3 parcelas, veio %d", len(ps))
+	}
+	var soma int64
+	for _, p := range ps {
+		soma += p
+	}
+	if soma != 100000 {
+		t.Errorf("soma das parcelas = %d, quer 100000", soma)
+	}
+	if ps[2] != 33334 { // a última absorve o resto da divisão
+		t.Errorf("última parcela = %d, quer 33334", ps[2])
+	}
+}
+
+func TestParcelasCompraComJuros(t *testing.T) {
+	// 1% a.m. sobre R$ 1.000 em 10x deve dar parcela > 100 e total > principal
+	ps := parcelasCompra(100000, 1, 10)
+	var soma int64
+	for _, p := range ps {
+		soma += p
+	}
+	if ps[0] <= 10000 {
+		t.Errorf("parcela com juros = %d, deveria passar de 10000", ps[0])
+	}
+	if soma <= 100000 {
+		t.Errorf("total com juros = %d, deveria passar do principal 100000", soma)
+	}
+}
+
+func TestSimularSaldoSuficiente(t *testing.T) {
+	conn := abreDB(t)
+	if _, err := conn.Exec(
+		`INSERT INTO contas (nome, saldo_inicial) VALUES ('Banco', 5000000)`); err != nil { // R$ 50.000
+		t.Fatal(err)
+	}
+	saida := capturaSaida(t, func() error {
+		return Simular(conn, []string{"--desc", "Videogame", "--valor", "4000", "--parcelas", "12"})
+	})
+	if !strings.Contains(saida, "Pode comprar") {
+		t.Errorf("com saldo folgado esperava veredito positivo, veio:\n%s", saida)
+	}
+}
+
+func TestSimularNegativa(t *testing.T) {
+	conn := abreDB(t)
+	if _, err := conn.Exec(
+		`INSERT INTO contas (nome, saldo_inicial) VALUES ('Banco', 50000)`); err != nil { // R$ 500
+		t.Fatal(err)
+	}
+	saida := capturaSaida(t, func() error {
+		return Simular(conn, []string{"--valor", "4000", "--parcelas", "3"})
+	})
+	if !strings.Contains(saida, "NEGATIVO") {
+		t.Errorf("compra impagável deveria avisar saldo negativo, veio:\n%s", saida)
+	}
+}
+
+func TestSimularValorObrigatorio(t *testing.T) {
+	conn := abreDB(t)
+	if err := Simular(conn, []string{"--parcelas", "12"}); err == nil {
+		t.Error("simular sem --valor deveria falhar")
+	}
+}
+
 func TestTransferenciaAtualizaSaldos(t *testing.T) {
 	conn := abreDB(t)
 	if _, err := conn.Exec(

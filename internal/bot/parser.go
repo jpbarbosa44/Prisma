@@ -94,6 +94,41 @@ func parseMensagem(msg string, agora time.Time) (app.LancamentoParams, error) {
 	return p, nil
 }
 
+var (
+	reJuros   = regexp.MustCompile(`^(\d{1,3}(?:[.,]\d+)?)%$`)
+	reEntrada = regexp.MustCompile(`^entrada:(.+)$`)
+)
+
+// parseSimulacao interpreta `/simular [descrição] <valor> [Nx] [J%] [entrada:V]`
+// nos argumentos do comando `simular`. Ex.: "videogame 4000 12x 2%".
+func parseSimulacao(resto string) ([]string, error) {
+	var args, desc []string
+	temValor := false
+	for _, tok := range strings.Fields(resto) {
+		switch {
+		case reParcelas.MatchString(tok):
+			args = append(args, "--parcelas", reParcelas.FindStringSubmatch(tok)[1])
+		case reJuros.MatchString(tok):
+			juros := strings.ReplaceAll(reJuros.FindStringSubmatch(tok)[1], ",", ".")
+			args = append(args, "--juros", juros)
+		case reEntrada.MatchString(tok):
+			args = append(args, "--entrada", reEntrada.FindStringSubmatch(tok)[1])
+		case !temValor && pareceValor(tok):
+			args = append(args, "--valor", strings.TrimPrefix(tok, "+"))
+			temValor = true
+		default:
+			desc = append(desc, tok)
+		}
+	}
+	if !temValor {
+		return nil, fmt.Errorf("não achei o valor da compra (ex.: /simular videogame 4000 12x)")
+	}
+	if d := strings.Join(desc, " "); d != "" {
+		args = append(args, "--desc", d)
+	}
+	return args, nil
+}
+
 // correcao são os campos que uma mensagem `corrigir ...` quer mudar no
 // último lançamento; ponteiros nil significam "não mexer".
 type correcao struct {

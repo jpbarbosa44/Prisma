@@ -124,6 +124,22 @@ func TestParseTransferencia(t *testing.T) {
 	}
 }
 
+func TestParseSimulacao(t *testing.T) {
+	args, err := parseSimulacao("videogame 4000 12x 2,5% entrada:500")
+	if err != nil {
+		t.Fatalf("parseSimulacao: %v", err)
+	}
+	junto := strings.Join(args, " ")
+	for _, quer := range []string{"--valor 4000", "--parcelas 12", "--juros 2.5", "--entrada 500", "--desc videogame"} {
+		if !strings.Contains(junto, quer) {
+			t.Errorf("parseSimulacao: faltou %q em %q", quer, junto)
+		}
+	}
+	if _, err := parseSimulacao("sem valor aqui"); err == nil {
+		t.Error("parseSimulacao sem valor deveria falhar")
+	}
+}
+
 func TestParsePeriodoConsulta(t *testing.T) {
 	casos := []struct {
 		per  string

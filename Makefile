@@ -3,10 +3,13 @@ BIN := prisma
 
 .PHONY: build linux mac windows release install test clean
 
-LDFLAGS := -trimpath -ldflags "-s -w"
+# versão a partir da tag git (ex.: v0.1.0, ou v0.1.0-3-gabcdef entre tags)
+VERSAO := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VER_LD := -X prisma/internal/update.Versao=$(VERSAO)
+LDFLAGS := -trimpath -ldflags "-s -w $(VER_LD)"
 
 build:
-	$(GO) build -o bin/$(BIN) ./cmd/prisma
+	$(GO) build -ldflags "$(VER_LD)" -o bin/$(BIN) ./cmd/prisma
 
 # Binário Linux estático (sem dependências de sistema)
 linux:

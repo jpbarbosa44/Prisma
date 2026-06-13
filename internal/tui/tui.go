@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"prisma/internal/update"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -96,17 +98,21 @@ type model struct {
 	pendente     *acao // ação aguardando confirmação s/n
 	pendenteVals []string
 
+	aviso string // aviso de versão nova (vazio = nenhum)
+
 	largura, altura int
 }
 
 // Run abre a interface em tela cheia.
 func Run(conn *sql.DB) error {
 	telas := novasTelas(conn)
+	aviso, _ := update.Aviso()
 	m := model{
 		conn:   conn,
 		telas:  telas,
 		params: make([][]string, len(telas)),
 		selPos: -1,
+		aviso:  aviso,
 	}
 	for i := range telas {
 		m.params[i] = telas[i].padrao
@@ -462,7 +468,11 @@ func (m model) focaCampo() (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var b strings.Builder
 	b.WriteString(cabecalho(m.largura))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+	if m.aviso != "" {
+		b.WriteString(corAmar.Render(" ↑ "+m.aviso) + "\n")
+	}
+	b.WriteString("\n")
 
 	switch m.modo {
 	case modoMenu:

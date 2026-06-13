@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"prisma/internal/update"
 )
 
 // A interface web (prisma --web) reaproveita as mesmas telas da TUI: o
@@ -71,6 +73,7 @@ func RunWeb(conn *sql.DB, args []string) error {
 func (s *servidorWeb) rotas() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.pagina)
+	mux.HandleFunc("/api/versao", s.apiVersao)
 	mux.HandleFunc("/api/telas", s.apiTelas)
 	mux.HandleFunc("/api/conteudo", s.apiConteudo)
 	mux.HandleFunc("/api/form", s.apiForm)
@@ -96,6 +99,13 @@ func respondeErro(w http.ResponseWriter, status int, err error) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"erro": err.Error()})
+}
+
+// apiVersao informa, para o banner da página, se há uma versão mais nova
+// (do cache; não toca na rede). aviso vazio = nada a mostrar.
+func (s *servidorWeb) apiVersao(w http.ResponseWriter, r *http.Request) {
+	aviso, url := update.Aviso()
+	responde(w, map[string]string{"aviso": aviso, "url": url})
 }
 
 // apiTelas devolve o menu: telas, parâmetros iniciais e ações (sem os

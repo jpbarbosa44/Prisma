@@ -51,6 +51,7 @@ Para consultar:
 /mes — lançamentos do mês atual
 /relatorio — gastos por categoria e mês a mês
 /previsao — projeção de saldo futuro
+/simular 4000 12x — e se eu comprar isto? (aceita 2% de juros, entrada:500)
 /plano — status dos planejamentos
 #mercado — a categoria no mês atual
 #mercado maio · 3m · 2026-05 · tudo — outros períodos
@@ -375,6 +376,17 @@ func (s *sessao) transferir(chatID int64, resto string) {
 	s.cli.enviar(chatID, "🔄 "+strings.TrimSpace(saida))
 }
 
+// simular trata `/simular <valor> [Nx] [J%] [entrada:V]`, projetando o impacto
+// de uma compra parcelada — reaproveita o comando da CLI.
+func (s *sessao) simular(chatID int64, resto string) {
+	args, err := parseSimulacao(resto)
+	if err != nil {
+		s.cli.enviar(chatID, "❌ "+err.Error())
+		return
+	}
+	s.consultar(chatID, func() error { return app.Simular(s.conn, args) })
+}
+
 // trataFoto guarda o comprovante: com legenda, registra o lançamento junto;
 // sem legenda, anexa ao último lançamento.
 func (s *sessao) trataFoto(m *mensagem, legenda string) {
@@ -463,6 +475,9 @@ func (s *sessao) trataComando(m *mensagem, texto string) {
 		s.consultar(m.Chat.ID, func() error { return app.Relatorio(s.conn, nil) })
 	case "/previsao":
 		s.consultar(m.Chat.ID, func() error { return app.Previsao(s.conn, nil) })
+	case "/simular", "/simulacao":
+		_, resto, _ := strings.Cut(strings.TrimSpace(texto), " ")
+		s.simular(m.Chat.ID, resto)
 	case "/plano":
 		s.consultar(m.Chat.ID, func() error { return app.Plano(s.conn, []string{"status"}) })
 	case "/comprovante":
