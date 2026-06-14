@@ -22,6 +22,7 @@ import (
 //	3x                 divide o total em 3 parcelas mensais
 //	rep:6              repete o lançamento por 6 meses
 //	conta:2 cart:1     vincula a conta ou carteira pelo id
+//	grupo:1            divide a despesa entre as pessoas do grupo (veja /grupos)
 //
 // O que sobra vira descrição; sem descrição, usa o nome da categoria.
 
@@ -30,6 +31,7 @@ var (
 	reRepetir  = regexp.MustCompile(`^rep:(\d{1,3})$`)
 	reConta    = regexp.MustCompile(`^conta:(\d+)$`)
 	reCarteira = regexp.MustCompile(`^(?:cart|carteira):(\d+)$`)
+	reGrupo    = regexp.MustCompile(`^grupo:(\d+)$`)
 	reDia      = regexp.MustCompile(`^\d{1,2}$`)
 	reDiaMes   = regexp.MustCompile(`^(\d{1,2})/(\d{1,2})$`)
 )
@@ -64,6 +66,8 @@ func parseMensagem(msg string, agora time.Time) (app.LancamentoParams, error) {
 			p.ContaID, _ = strconv.ParseInt(reConta.FindStringSubmatch(tok)[1], 10, 64)
 		case reCarteira.MatchString(tok):
 			p.CartID, _ = strconv.ParseInt(reCarteira.FindStringSubmatch(tok)[1], 10, 64)
+		case reGrupo.MatchString(tok):
+			p.GrupoID, _ = strconv.ParseInt(reGrupo.FindStringSubmatch(tok)[1], 10, 64)
 		case !temValor && pareceValor(tok):
 			bruto := tok
 			if strings.HasPrefix(bruto, "+") {

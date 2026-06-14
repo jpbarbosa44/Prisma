@@ -61,6 +61,11 @@ func TestParseMensagem(t *testing.T) {
 			app.LancamentoParams{Tipo: "pagar", Desc: "pizza", Valor: 3000, Cat: "lazer", Venc: "2026-06-12", CartID: 1},
 		},
 		{
+			// despesa vinculada a um grupo (divisão refletida na leitura)
+			"300 #mercado feira grupo:1",
+			app.LancamentoParams{Tipo: "pagar", Desc: "feira", Valor: 30000, Cat: "mercado", Venc: "2026-06-12", GrupoID: 1},
+		},
+		{
 			"1.234,56 #viagem passagem @15/07/2026",
 			app.LancamentoParams{Tipo: "pagar", Desc: "passagem", Valor: 123456, Cat: "viagem", Venc: "2026-07-15"},
 		},

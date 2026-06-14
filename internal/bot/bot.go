@@ -30,11 +30,13 @@ Marcadores (opcionais, em qualquer ordem):
 3x — divide o total em 3 parcelas mensais
 rep:6 — repete por 6 meses
 conta:2 / cart:1 — vincula a conta ou carteira
+grupo:1 — divide a despesa entre o grupo (veja /grupos)
 
 Exemplos:
 25,50 #mercado pão e leite !
 +3500 #salario salário @05/07
 899,70 #eletronicos fone novo 3x
+300 #mercado feira grupo:1
 
 Outras ações:
 quitar 142 — marca como pago/recebido
@@ -53,6 +55,7 @@ Para consultar:
 /previsao — projeção de saldo futuro
 /simular 4000 12x — e se eu comprar isto? (aceita 2% de juros, entrada:500)
 /plano — status dos planejamentos
+/grupos — seus grupos e os ids para usar em grupo:N
 #mercado — a categoria no mês atual
 #mercado maio · 3m · 2026-05 · tudo — outros períodos
 
@@ -283,6 +286,7 @@ func (s *sessao) registrar(chatID int64, texto, fileID string) {
 	s.ultimoID = criados[len(criados)-1].ID
 
 	txt := textoConfirmacao(params, criados, categoriaNova)
+	txt += s.notaGrupo(params, criados)
 	if fileID != "" {
 		if err := s.anexaComprovante(criados[0].ID, fileID); err != nil {
 			txt += "\n⚠️ Não consegui guardar o comprovante: " + err.Error()
@@ -294,6 +298,28 @@ func (s *sessao) registrar(chatID int64, texto, fileID string) {
 	if err := s.cli.enviar(chatID, txt, tecladoDesfazer(criados)); err != nil {
 		fmt.Fprintf(os.Stderr, "aviso: enviando confirmação: %v\n", err)
 	}
+}
+
+// notaGrupo, quando a despesa foi vinculada a um grupo, mostra o grupo, o
+// divisor e a parte que de fato cabe a você (o resto é das outras pessoas).
+func (s *sessao) notaGrupo(p app.LancamentoParams, criados []app.LancamentoCriado) string {
+	if p.GrupoID == 0 {
+		return ""
+	}
+	var nome string
+	var pessoas int
+	err := s.conn.QueryRow(`
+		SELECT g.nome, COUNT(gp.id) FROM grupos g
+		LEFT JOIN grupo_pessoas gp ON gp.grupo_id = g.id
+		WHERE g.id = ? GROUP BY g.id`, p.GrupoID).Scan(&nome, &pessoas)
+	if err != nil || pessoas < 1 {
+		return ""
+	}
+	var total int64
+	for _, c := range criados {
+		total += c.Valor
+	}
+	return fmt.Sprintf("\n👥 %s ÷%d — sua parte: %s", nome, pessoas, money.Format(total/int64(pessoas)))
 }
 
 // avisoPlano avisa quando um gasto novo encosta (80%) ou estoura o limite do
@@ -517,6 +543,8 @@ func (s *sessao) trataComando(m *mensagem, texto string) {
 		s.simular(m.Chat.ID, resto)
 	case "/plano":
 		s.consultar(m.Chat.ID, func() error { return app.Plano(s.conn, []string{"status"}) })
+	case "/grupos", "/grupo":
+		s.consultar(m.Chat.ID, func() error { return app.Grupo(s.conn, []string{"listar"}) })
 	case "/comprovante":
 		if len(campos) < 2 {
 			s.cli.enviar(m.Chat.ID, "❌ uso: /comprovante <id>")
