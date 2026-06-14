@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"prisma/internal/app"
 	"prisma/internal/update"
 )
 
@@ -27,6 +28,7 @@ var paginaWeb []byte
 // captura() troca o os.Stdout do processo inteiro, então dois comandos não
 // podem rodar ao mesmo tempo.
 type servidorWeb struct {
+	conn  *sql.DB
 	telas []tela
 	mu    sync.Mutex
 }
@@ -56,7 +58,7 @@ func RunWeb(conn *sql.DB, args []string) error {
 		}
 	}
 
-	s := &servidorWeb{telas: novasTelas(conn)}
+	s := &servidorWeb{conn: conn, telas: novasTelas(conn)}
 	endereco := fmt.Sprintf("127.0.0.1:%d", porta)
 	ouvinte, err := net.Listen("tcp", endereco)
 	if err != nil {
@@ -76,6 +78,7 @@ func (s *servidorWeb) rotas() *http.ServeMux {
 	mux.HandleFunc("/api/versao", s.apiVersao)
 	mux.HandleFunc("/api/telas", s.apiTelas)
 	mux.HandleFunc("/api/conteudo", s.apiConteudo)
+	mux.HandleFunc("/api/graficos", s.apiGraficos)
 	mux.HandleFunc("/api/form", s.apiForm)
 	mux.HandleFunc("/api/executar", s.apiExecutar)
 	return mux
@@ -151,6 +154,23 @@ func (s *servidorWeb) apiConteudo(w http.ResponseWriter, r *http.Request) {
 		texto = strings.TrimSpace(texto + "\nerro: " + err.Error())
 	}
 	responde(w, map[string]string{"texto": texto})
+}
+
+// apiGraficos devolve as séries dos gráficos em JSON (valores em centavos),
+// para a página desenhá-los em SVG. Espelha a tela ASCII "Gráficos".
+func (s *servidorWeb) apiGraficos(w http.ResponseWriter, r *http.Request) {
+	meses := 6
+	if m, err := strconv.Atoi(r.URL.Query().Get("meses")); err == nil {
+		meses = m
+	}
+	s.mu.Lock()
+	dados, err := app.GraficosDados(s.conn, meses)
+	s.mu.Unlock()
+	if err != nil {
+		respondeErro(w, http.StatusInternalServerError, err)
+		return
+	}
+	responde(w, dados)
 }
 
 // apiForm devolve os campos de uma ação, com os seletores resolvidos na

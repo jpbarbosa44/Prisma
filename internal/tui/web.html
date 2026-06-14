@@ -188,6 +188,21 @@
       outline: 1px solid var(--cy);
     }
 
+    .grafico {
+      margin: 0 0 22px;
+    }
+
+    .grafico h3 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--cy);
+    }
+
+    .grafico svg {
+      max-width: 720px;
+    }
+
     #msg {
       min-height: 1.5em;
       margin: 8px 2px 4px;
@@ -472,9 +487,101 @@
     }
 
     async function recarrega() {
+      if (telas[atual].titulo === "Gráficos") return renderGraficos();
       const q = new URLSearchParams([["tela", atual], ...params[atual].map(p => ["p", p])]);
       const r = await (await fetch("api/conteudo?" + q)).json();
       renderSaida(r.texto || "");
+    }
+
+    /* ---- gráficos em SVG (espelham a tela ASCII "Gráficos") ---- */
+    function mesesAtual() {
+      const i = params[atual].indexOf("--meses");
+      return i >= 0 ? (params[atual][i + 1] || "6") : "6";
+    }
+    function brl(c) {
+      return "R$ " + (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function mesBR(ref) {
+      const [a, m] = ref.split("-");
+      return m + "/" + a;
+    }
+    function svgBarras(itens, cor, label) {
+      if (!itens.length) return `<div class="dim" style="padding:.3rem 0">sem dados no período</div>`;
+      const W = 560, rh = 26, pad = 6, labW = 128, valW = 120, barW = W - labW - valW - pad;
+      const max = Math.max(1, ...itens.map(i => Math.abs(i.valor)));
+      const H = pad * 2 + itens.length * rh;
+      let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">`;
+      itens.forEach((it, k) => {
+        const y = pad + k * rh, w = Math.max(2, Math.abs(it.valor) / max * barW);
+        s += `<text x="${labW - 6}" y="${y + rh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(label ? label(it) : it.rotulo)}</text>`;
+        s += `<rect x="${labW}" y="${y + 4}" width="${w}" height="${rh - 9}" rx="3" fill="${cor}"/>`;
+        s += `<text x="${labW + w + 6}" y="${y + rh / 2}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(it.valor))}</text>`;
+      });
+      return s + "</svg>";
+    }
+    function svgGrupos(itens) {
+      if (!itens.length) return `<div class="dim" style="padding:.3rem 0">nenhuma despesa de grupo</div>`;
+      const W = 560, rh = 26, pad = 6, labW = 128, valW = 180, barW = W - labW - valW - pad;
+      const max = Math.max(1, ...itens.map(i => i.total));
+      const H = pad * 2 + itens.length * rh;
+      let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">`;
+      itens.forEach((it, k) => {
+        const y = pad + k * rh, tot = Math.max(2, it.total / max * barW);
+        const minha = it.total > 0 ? it.minha / it.total * tot : 0;
+        s += `<text x="${labW - 6}" y="${y + rh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(it.nome)}</text>`;
+        s += `<rect x="${labW}" y="${y + 4}" width="${tot}" height="${rh - 9}" rx="3" fill="var(--borda)"/>`;
+        s += `<rect x="${labW}" y="${y + 4}" width="${minha}" height="${rh - 9}" rx="3" fill="var(--cy)"/>`;
+        s += `<text x="${labW + tot + 6}" y="${y + rh / 2}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(it.minha) + " de " + brl(it.total))}</text>`;
+      });
+      return s + "</svg>";
+    }
+    function svgMensal(itens) {
+      if (!itens.length) return "";
+      const W = 560, gh = 40, pad = 6, labW = 70, valW = 130, barW = W - labW - valW - pad;
+      const max = Math.max(1, ...itens.map(i => Math.max(i.rec, i.desp)));
+      const H = pad * 2 + itens.length * gh;
+      let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">`;
+      itens.forEach((it, k) => {
+        const y = pad + k * gh;
+        const wr = Math.max(1, it.rec / max * barW), wd = Math.max(1, it.desp / max * barW);
+        s += `<text x="${labW - 6}" y="${y + gh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(mesBR(it.mes))}</text>`;
+        s += `<rect x="${labW}" y="${y + 3}" width="${wr}" height="14" rx="2" fill="var(--ok)"/>`;
+        s += `<text x="${labW + wr + 6}" y="${y + 10}" dominant-baseline="middle" fill="var(--dim)">${esc(brl(it.rec))}</text>`;
+        s += `<rect x="${labW}" y="${y + 21}" width="${wd}" height="14" rx="2" fill="var(--err)"/>`;
+        s += `<text x="${labW + wd + 6}" y="${y + 28}" dominant-baseline="middle" fill="var(--dim)">${esc(brl(it.desp))}</text>`;
+      });
+      return s + "</svg>";
+    }
+    function svgLinha(pts) {
+      if (!pts.length) return "";
+      const W = 560, H = 170, pl = 8, pr = 120, pt = 14, pb = 26;
+      const vals = pts.map(p => p.valor);
+      const max = Math.max(0, ...vals), min = Math.min(0, ...vals), rng = (max - min) || 1;
+      const X = k => pl + k * (W - pl - pr) / Math.max(1, pts.length - 1);
+      const Y = v => pt + (max - v) / rng * (H - pt - pb);
+      let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">`;
+      const zy = Y(0);
+      s += `<line x1="${pl}" y1="${zy}" x2="${W - pr}" y2="${zy}" stroke="var(--borda)" stroke-dasharray="3 3"/>`;
+      const linha = pts.map((p, k) => `${X(k)},${Y(p.valor)}`).join(" ");
+      s += `<polyline points="${linha}" fill="none" stroke="var(--cy)" stroke-width="2"/>`;
+      pts.forEach((p, k) => {
+        s += `<circle cx="${X(k)}" cy="${Y(p.valor)}" r="3" fill="var(--cy)"/>`;
+        s += `<text x="${X(k)}" y="${H - 8}" text-anchor="middle" fill="var(--dim)">${esc(mesBR(p.rotulo))}</text>`;
+      });
+      const ult = pts[pts.length - 1];
+      s += `<text x="${W - pr + 8}" y="${Y(ult.valor)}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(ult.valor))}</text>`;
+      return s + "</svg>";
+    }
+    async function renderGraficos() {
+      const d = await (await fetch("api/graficos?meses=" + mesesAtual())).json();
+      if (d.erro) { $("#saida").innerHTML = `<div class="err">erro: ${esc(d.erro)}</div>`; return; }
+      const bloco = (titulo, corpo) => `<div class="grafico"><h3>${esc(titulo)}</h3>${corpo}</div>`;
+      let html = bloco("Gastos por categoria", svgBarras(d.categorias || [], "var(--cy)"));
+      html += bloco("Receitas (verde) × despesas (vermelho) por mês", svgMensal(d.mensal || []));
+      html += bloco("Evolução do saldo", svgLinha(d.saldo || []));
+      html += bloco("Despesa por grupo — sua parte (ciano) do total", svgGrupos(d.grupos || []));
+      $("#saida").innerHTML = html;
+      selecionado[atual] = null;
     }
 
     /* linhas que começam com um número são selecionáveis (o número é o ID),

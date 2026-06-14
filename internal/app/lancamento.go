@@ -35,8 +35,9 @@ type LancamentoParams struct {
 	Venc     string // AAAA-MM-DD
 	ContaID  int64
 	CartID   int64
-	Repetir  int // repete o lançamento por N meses (0 ou 1 = não repete)
-	Parcelas int // divide o valor TOTAL em N parcelas (0 ou 1 = à vista)
+	GrupoID  int64 // grupo que divide a despesa (0 = sem grupo)
+	Repetir  int   // repete o lançamento por N meses (0 ou 1 = não repete)
+	Parcelas int   // divide o valor TOTAL em N parcelas (0 ou 1 = à vista)
 	Quitado  bool
 }
 
@@ -96,6 +97,13 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 		}
 		carteira = p.CartID
 	}
+	var grupo any
+	if p.GrupoID != 0 {
+		if err := existe(conn, "grupos", p.GrupoID); err != nil {
+			return nil, false, err
+		}
+		grupo = p.GrupoID
+	}
 
 	status, quitadoEm := "pendente", any(nil)
 	if p.Quitado {
@@ -119,9 +127,9 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 		}
 		vencItem := somaMeses(p.Venc, i)
 		res, err := conn.Exec(`
-			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id)
-			VALUES (?,?,?,?,?,?,?,?,?)`,
-			p.Tipo, descItem, valorItem, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira,
+			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id)
+			VALUES (?,?,?,?,?,?,?,?,?,?)`,
+			p.Tipo, descItem, valorItem, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo,
 		)
 		if err != nil {
 			return criados, categoriaNova, err
@@ -140,6 +148,7 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	cat := fs.String("cat", "geral", "categoria (ex.: moradia, mercado, salario)")
 	contaID := fs.Int64("conta", 0, "id da conta vinculada")
 	cartID := fs.Int64("carteira", 0, "id da carteira vinculada")
+	grupoID := fs.Int64("grupo", 0, "id do grupo que divide a despesa")
 	repetir := fs.Int("repetir", 1, "repete o lançamento por N meses consecutivos")
 	parcelas := fs.Int("parcelas", 1, "divide o valor TOTAL em N parcelas mensais")
 	quitado := fs.Bool("quitado", false, "já marca como quitado (pago/recebido)")
@@ -165,7 +174,8 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	}
 	criados, categoriaNova, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: tipo, Desc: *desc, Valor: centavos, Cat: *cat, Venc: data,
-		ContaID: *contaID, CartID: *cartID, Repetir: *repetir, Parcelas: *parcelas, Quitado: *quitado,
+		ContaID: *contaID, CartID: *cartID, GrupoID: *grupoID,
+		Repetir: *repetir, Parcelas: *parcelas, Quitado: *quitado,
 	})
 	if err != nil {
 		return err
@@ -228,7 +238,9 @@ func Lancamentos(conn *sql.DB, args []string) error {
 		return err
 	}
 
-	query := `SELECT id, tipo, descricao, valor, categoria, vencimento, status, quitado_em FROM lancamentos WHERE 1=1`
+	query := `SELECT l.id, l.tipo, l.descricao, ` + valEf("l") + `, l.categoria, l.vencimento, l.status, l.quitado_em,
+		g.nome, (SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = l.grupo_id)
+		FROM lancamentos l LEFT JOIN grupos g ON g.id = l.grupo_id WHERE 1=1`
 	var params []any
 	if *pendentes {
 		query += ` AND status = 'pendente'`
@@ -265,7 +277,7 @@ func Lancamentos(conn *sql.DB, args []string) error {
 		query += ` AND categoria = ?`
 		params = append(params, strings.ToLower(*cat))
 	}
-	query += ` ORDER BY vencimento, id`
+	query += ` ORDER BY l.vencimento, l.id`
 
 	rows, err := conn.Query(query, params...)
 	if err != nil {
@@ -274,15 +286,16 @@ func Lancamentos(conn *sql.DB, args []string) error {
 	defer rows.Close()
 
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tTIPO\tDESCRIÇÃO\tCATEGORIA\tVENCIMENTO\tVALOR\tSTATUS")
+	fmt.Fprintln(w, "ID\tTIPO\tDESCRIÇÃO\tCATEGORIA\tVENCIMENTO\tVALOR\tGRUPO\tSTATUS")
 	achou := false
 	var totPagar, totReceber int64
 	for rows.Next() {
 		achou = true
 		var id, valor int64
 		var t, desc, categoria, venc, status string
-		var quitadoEm sql.NullString
-		if err := rows.Scan(&id, &t, &desc, &valor, &categoria, &venc, &status, &quitadoEm); err != nil {
+		var quitadoEm, grupo sql.NullString
+		var pessoas int
+		if err := rows.Scan(&id, &t, &desc, &valor, &categoria, &venc, &status, &quitadoEm, &grupo, &pessoas); err != nil {
 			return err
 		}
 		st := "pendente"
@@ -296,7 +309,13 @@ func Lancamentos(conn *sql.DB, args []string) error {
 				totReceber += valor
 			}
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, t, desc, categoria, dataBR(venc), money.Format(valor), st)
+		// valor já vem como a parte efetiva (dividida pelo grupo, se houver);
+		// a coluna grupo mostra qual grupo divide e por quanto
+		grp := ""
+		if grupo.Valid && pessoas > 0 {
+			grp = fmt.Sprintf("%s ÷%d", grupo.String, pessoas)
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, t, desc, categoria, dataBR(venc), money.Format(valor), grp, st)
 	}
 	if !achou {
 		fmt.Println("Nenhum lançamento encontrado.")
@@ -311,8 +330,8 @@ func Lancamentos(conn *sql.DB, args []string) error {
 }
 
 // lancamentoEditar altera só os campos informados:
-// `prisma lancamentos editar <id> [--desc] [--valor] [--venc] [--cat] [--conta N] [--carteira N]`.
-// Use --conta 0 (ou --carteira 0) para remover o vínculo.
+// `prisma lancamentos editar <id> [--desc] [--valor] [--venc] [--cat] [--conta N] [--carteira N] [--grupo N]`.
+// Use --conta 0 (ou --carteira 0, --grupo 0) para remover o vínculo.
 func lancamentoEditar(conn *sql.DB, args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("uso: prisma lancamentos editar <id> [--desc] [--valor] [--venc] [--cat] [--conta] [--carteira]")
@@ -325,6 +344,7 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 	cat := fs.String("cat", "", "nova categoria")
 	contaID := fs.Int64("conta", -1, "vincular à conta (0 desvincula)")
 	cartID := fs.Int64("carteira", -1, "vincular à carteira (0 desvincula)")
+	grupoID := fs.Int64("grupo", -1, "vincular ao grupo que divide (0 desvincula)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -386,6 +406,17 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 			params = append(params, *cartID)
 		} else {
 			sets = append(sets, "carteira_id = NULL")
+		}
+	}
+	if informado["grupo"] {
+		if *grupoID > 0 {
+			if err := existe(conn, "grupos", *grupoID); err != nil {
+				return err
+			}
+			sets = append(sets, "grupo_id = ?")
+			params = append(params, *grupoID)
+		} else {
+			sets = append(sets, "grupo_id = NULL")
 		}
 	}
 	if len(sets) == 0 {

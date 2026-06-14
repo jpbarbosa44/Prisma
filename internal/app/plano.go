@@ -238,7 +238,7 @@ func planoStatus(conn *sql.DB, args []string) error {
 	var estourou []string
 	for i := range linhas {
 		err := conn.QueryRow(`
-			SELECT COALESCE(SUM(valor), 0) FROM lancamentos
+			SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0) FROM lancamentos
 			WHERE tipo = 'pagar' AND categoria = ?
 			  AND ((status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
 			    OR (status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
@@ -303,7 +303,7 @@ func PlanosDaCategoria(conn *sql.DB, cat, data string) ([]PlanoUso, error) {
 		}
 		var gasto int64
 		err = conn.QueryRow(`
-			SELECT COALESCE(SUM(valor), 0) FROM lancamentos
+			SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0) FROM lancamentos
 			WHERE tipo = 'pagar' AND categoria = ?
 			  AND ((status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
 			    OR (status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,

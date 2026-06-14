@@ -43,6 +43,8 @@ COMO O PRISMA PENSA (modelo mental)
   Onde o dinheiro está   → CONTAS e CARTEIRAS, cada uma com um saldo.
   O que move o dinheiro  → LANÇAMENTOS: contas a pagar (gastos) e a
                            receber (receitas), com vencimento e categoria.
+  O que você divide      → GRUPOS: uma despesa vinculada a um grupo conta só
+                           pela sua parte (o valor dividido entre as pessoas).
   O que se repete        → RECORRÊNCIAS viram lançamentos sozinhas todo
                            mês, então você não relança salário nem aluguel.
   Onde isso aparece      → SALDO soma tudo o que já aconteceu; RELATÓRIO
@@ -83,6 +85,16 @@ Carteiras
   Dinheiro fora do banco: espécie, vale-refeição, a poupança da gaveta.
   Funciona igual às contas, com extrato próprio. Útil para não esquecer do
   dinheiro vivo na hora de fechar as contas.
+
+Grupos
+  Para gastos divididos com outras pessoas (ex.: "Eu e a Maria"). Cadastre um
+  grupo com as pessoas que o compõem e, ao lançar uma despesa, vincule-a ao
+  grupo: o Prisma passa a contar só a SUA parte — o valor cheio dividido pelo
+  número de pessoas. Essa parte é o que aparece em todo o resto (saldo,
+  extrato, relatório, planejamento e previsão); uma compra de R$ 300 num grupo
+  de 2 pesa R$ 150 no seu bolso. A lista de Grupos mostra o total cheio das
+  despesas vinculadas e quanto disso é seu. Remover o grupo faz as despesas
+  voltarem a contar pelo valor cheio (os lançamentos não são apagados).
 
 Pagar/Receber
   O coração do dia a dia. Cada lançamento é uma conta a pagar (gasto) ou a
@@ -128,6 +140,12 @@ Relatório
   A análise do passado. Para os últimos N meses: gastos e receitas somados
   por categoria (onde seu dinheiro realmente vai) e a evolução mês a mês,
   para enxergar tendências.
+
+Gráficos
+  A mesma leitura do Relatório, em forma visual: gastos por categoria,
+  receitas × despesas por mês, evolução do saldo e despesa por grupo (sua
+  parte sobre o total cheio). No terminal saem em ASCII; na web (prisma --web)
+  viram gráficos coloridos em SVG.
 
 Previsão
   A projeção do futuro. Para cada um dos próximos meses, soma as receitas e
@@ -193,8 +211,11 @@ OUTRAS FORMAS DE USAR
     "prisma --web"; "prisma" sem nada abre a versão de terminal.
   - Telegram: "prisma bot" deixa você registrar gastos por mensagem ("25,50
     #mercado pão"), consultar (/saldo, /previsao, /simular 4000 12x) e ainda
-    recebe aviso de vencimentos às 9h e um resumo do dia às 20h. O manual
-    completo está no MANUAL.md, no repositório do projeto.
+    recebe aviso de vencimentos às 9h e um resumo do dia às 20h. Como ele fala
+    de saída com o Telegram, responde de qualquer rede — basta o PC estar
+    ligado com o bot rodando. Para mantê-lo sempre no ar (sem terminal aberto),
+    use "prisma bot --instalar-servico" (Linux). O manual completo está no
+    MANUAL.md, no repositório do projeto.
 
 
 SEUS DADOS E PRIVACIDADE

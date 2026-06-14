@@ -124,6 +124,16 @@ func somaMeses(data string, n int) string {
 	return time.Date(primeiroDia.Year(), primeiroDia.Month(), dia, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 }
 
+// valEf devolve a expressão SQL do "valor efetivo" de um lançamento: quando ele
+// está vinculado a um grupo, o valor é dividido pelo número de pessoas do grupo
+// (a minha parte); sem grupo, é o valor cheio. t é o nome ou alias da tabela
+// lancamentos na consulta (ex.: "lancamentos" ou "l") — sempre qualificado para
+// não colidir com a coluna grupo_id da subconsulta.
+func valEf(t string) string {
+	return "(CASE WHEN " + t + ".grupo_id IS NULL THEN " + t + ".valor" +
+		" ELSE " + t + ".valor / max(1, (SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = " + t + ".grupo_id)) END)"
+}
+
 // novaTabela cria um tabwriter para saída alinhada em colunas.
 func novaTabela() *tabwriter.Writer {
 	return tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)

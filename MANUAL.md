@@ -25,6 +25,7 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 | **Recorrência** | Regra tipo "salário todo dia 1": gera os lançamentos sozinha, 3 meses à frente, sempre que o Prisma roda. |
 | **Emergência** | Uma dívida cadastrada com juros e aporte mensal; o Prisma monta o plano de ação mês a mês para quitá-la. |
 | **Plano** | Limite de gasto de uma categoria em uma semana ou mês ("até R$ 800 de mercado em junho"). |
+| **Grupo** | Pessoas que dividem despesas (ex.: "Eu e a Maria"). Uma despesa vinculada a um grupo conta, em todo o sistema, só pela **sua parte**: o valor cheio dividido pelo número de pessoas. |
 | **Categoria** | Etiqueta livre dos lançamentos (`moradia`, `mercado`...). Categorias novas geram aviso, para pegar erros de digitação. |
 
 **Saldos são sempre calculados**, nunca armazenados: saldo da conta = saldo inicial + lançamentos quitados vinculados ± transferências. Não há como "dessincronizar".
@@ -64,14 +65,16 @@ Telas e seus atalhos específicos:
 | 1 Saldo | `t` transferir, `z` zerar banco |
 | 2 Contas | `a` `e` `t` extrato `l` `x` |
 | 3 Carteiras | `a` `e` `t` extrato `l` `x` |
-| 4 Pagar/Receber | `p` a pagar, `r` a receber, `u` quitar, `e` editar, `x`, `f` filtrar |
-| 5 Recorrências | `a` `e` `x` |
-| 6 Emergência | `a`, `p` ver plano, `e`, `l`, `u` quitar, `x` |
-| 7 Planejamento | `a`, `e`, `s` status, `l`, `x` |
-| 8 Relatório | `m` meses |
-| 9 Previsão | `m` meses |
-| 10 Simulação | `s` simular |
-| 11 Como usar | — (só documentação) |
+| 4 Grupos | `a` `e` `l` `x` |
+| 5 Pagar/Receber | `p` a pagar, `r` a receber, `u` quitar, `e` editar, `x`, `f` filtrar |
+| 6 Recorrências | `a` `e` `x` |
+| 7 Emergência | `a`, `p` ver plano, `e`, `l`, `u` quitar, `x` |
+| 8 Planejamento | `a`, `e`, `s` status, `l`, `x` |
+| 9 Relatório | `m` meses |
+| 10 Gráficos | `m` meses |
+| 11 Previsão | `m` meses |
+| 12 Simulação | `s` simular |
+| 13 Como usar | — (só documentação) |
 
 ## A interface web (--web)
 
@@ -111,17 +114,33 @@ prisma carteira editar 1 --desc "carteira física"
 
 `--tipo`: `corrente` (padrão), `poupanca` ou `investimento`. Em `editar`, `--saldo` redefine o saldo **inicial**; o atual é recalculado. Remover uma conta mantém os lançamentos dela (ficam sem vínculo).
 
+### grupo
+
+Grupos reúnem pessoas que dividem despesas. Uma despesa vinculada a um grupo passa a contar, em **todo** o sistema (saldo, extrato, relatório, planejamento, previsão), apenas pela **sua parte** — o valor cheio dividido pelo número de pessoas.
+
+```sh
+prisma grupo add --nome "Eu e a Maria" --pessoas "Eu, Maria"   # mínimo 2 pessoas
+prisma grupo listar                                            # mostra pessoas e o total vinculado
+prisma grupo editar 1 --nome "Casa" --pessoas "Eu, Maria, João"  # --pessoas substitui a lista
+prisma grupo remover 1                                         # despesas voltam ao valor cheio
+```
+
+- O número de pessoas é o divisor. Uma despesa de R$ 300 num grupo de 2 pesa **R$ 150** no seu bolso.
+- Vincule a despesa com `--grupo N` (veja abaixo). Remover o grupo **não apaga** os lançamentos: eles só deixam de ser divididos.
+
 ### pagar / receber
 
 ```sh
 prisma pagar add --desc "Aluguel" --valor 1200 --venc 05/07/2026 --cat moradia --conta 1
 prisma pagar add --desc "Energia" --valor 180 --repetir 12        # repete o valor por 12 meses
 prisma pagar add --desc "Notebook" --valor 3.600,00 --parcelas 10 # divide o TOTAL em 10x
+prisma pagar add --desc "Mercado" --valor 300 --grupo 1           # divide com o grupo: conta R$ 150
 prisma pagar add --desc "Padaria" --valor 15 --quitado            # já pago (histórico)
 prisma receber add --desc "Freela" --valor 800 --venc 20/07/2026 --conta 1
 ```
 
 - `--repetir N` cria N cópias mensais com o mesmo valor; `--parcelas N` divide o total (última parcela absorve o resto da divisão). Não combine os dois.
+- `--grupo N` vincula a despesa a um grupo; o valor que pesa no sistema é o cheio dividido pelas pessoas do grupo.
 - Dia 31 em mês curto vira o último dia do mês.
 
 ### lancamentos (listar, filtrar, editar, remover)
@@ -134,6 +153,7 @@ prisma lancamentos --mes 2026-07            # por mês de vencimento
 prisma lancamentos --de 01/06/2026 --ate 15/06/2026   # por intervalo de datas
 prisma lancamentos editar 7 --valor 1.250,00 --venc 10/07/2026
 prisma lancamentos editar 7 --conta 2       # vincula à conta 2 (--conta 0 desvincula)
+prisma lancamentos editar 7 --grupo 1       # vincula ao grupo 1 (--grupo 0 desvincula)
 prisma lancamentos remover 7
 ```
 
@@ -206,6 +226,14 @@ prisma extrato --carteira 1
 
 O extrato inclui transferências (marcadas com ⇄) e mostra o saldo após cada movimento.
 
+### graficos
+
+```sh
+prisma graficos --meses 6
+```
+
+Quatro gráficos do período: **gastos por categoria**, **receitas × despesas por mês**, **evolução do saldo** e **despesa por grupo** (sua parte sobre o total cheio). No terminal e no bot saem em ASCII; na interface web (`prisma --web`, tela *Gráficos*) viram gráficos visuais em SVG. Todos os valores já refletem a divisão por grupo.
+
 ### previsao
 
 ```sh
@@ -250,14 +278,32 @@ prisma importar --arquivo extrato.csv --carteira 1 --cat mercado
 
 ### bot (Telegram)
 
-Registra gastos e receitas mandando mensagem para um bot do Telegram — útil para anotar na hora, pelo celular. Configuração (uma vez só):
+Registra gastos e receitas mandando mensagem para um bot do Telegram — útil para anotar na hora, pelo celular.
+
+**Configuração inicial (recomendada — já deixa o bot sempre no ar):**
 
 1. No Telegram, fale com o **@BotFather**, mande `/newbot` e copie o token.
-2. `prisma bot --token SEU_TOKEN` — o bot conecta e fica aguardando (o token fica salvo em `telegram.json`, ao lado do banco).
+2. `prisma bot --token SEU_TOKEN --instalar-servico` — salva o token (em `telegram.json`, ao lado do banco) e sobe o serviço já rodando.
 3. Mande qualquer mensagem ao seu bot; ele responde com o seu *chat id*.
-4. Pare o bot (Ctrl+C) e rode `prisma bot --chat SEU_CHAT_ID`. Pronto: daqui em diante basta `prisma bot`.
+4. `prisma bot --chat SEU_CHAT_ID` — pareia o chat. Como o serviço está ativo, isso **salva e reinicia o serviço sozinho** (não abre um segundo bot). Pronto.
 
-Por segurança, o bot só aceita lançamentos do chat autorizado — mensagens de qualquer outra pessoa são ignoradas. Ele usa *long polling*, então funciona em qualquer máquina com internet, sem IP público nem porta aberta. O processo precisa estar rodando para receber as mensagens (mensagens enviadas com o bot parado ficam na fila do Telegram por até 24h e são processadas quando ele voltar).
+**Alternativa sem serviço (roda só enquanto o terminal estiver aberto):**
+
+1–2. `prisma bot --token SEU_TOKEN` — conecta e fica aguardando no terminal.
+3. Mande uma mensagem ao bot; ele responde o *chat id*.
+4. `Ctrl+C`, depois `prisma bot --chat SEU_CHAT_ID`. Daí em diante, `prisma bot` roda o bot no terminal.
+
+Por segurança, o bot só aceita lançamentos do chat autorizado — mensagens de qualquer outra pessoa são ignoradas. Ele usa *long polling*: conecta **de saída** no Telegram, então funciona de **qualquer rede**, sem IP público nem porta aberta — basta o processo estar de pé (mensagens enviadas com o bot parado ficam na fila do Telegram por até 24h). Como o Telegram só admite **um** poller por bot, rodar `prisma bot` no terminal enquanto o serviço está ativo é recusado (e mudar token/chat pelo terminal reinicia o serviço em vez de duplicar).
+
+**O serviço** `--instalar-servico` (Linux/systemd) instala um serviço de usuário que sobe o bot junto com o computador, reinicia se cair e roda mesmo sem ninguém logado (habilita *linger*). A partir daí o bot responde de qualquer rede enquanto o PC estiver ligado e com internet. Útil:
+
+```sh
+systemctl --user status prisma-bot     # estado
+journalctl --user -u prisma-bot -f     # logs ao vivo
+prisma bot --remover-servico           # desinstala o serviço
+```
+
+> Se o bot "só responde quando estou em casa", quase sempre é porque o processo só estava de pé enquanto o terminal estava aberto. O serviço acima resolve isso. (Se o PC estiver **desligado**, nada roda — aí seria preciso hospedar o bot num servidor sempre ligado.)
 
 O formato das mensagens:
 

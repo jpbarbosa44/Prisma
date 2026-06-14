@@ -159,7 +159,7 @@ func previstoMes(conn *sql.DB, tipo string, p periodo, media int64) (int64, stri
 	var soma int64
 	var qtd int
 	err := conn.QueryRow(`
-		SELECT COALESCE(SUM(valor), 0), COUNT(*) FROM lancamentos
+		SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0), COUNT(*) FROM lancamentos
 		WHERE tipo = ? AND status = 'pendente' AND vencimento >= ? AND vencimento < ?`,
 		tipo, p.Inicio, p.Fim,
 	).Scan(&soma, &qtd)
@@ -178,7 +178,7 @@ func saldoTotal(conn *sql.DB) (int64, error) {
 	err := conn.QueryRow(`
 		SELECT COALESCE((SELECT SUM(saldo_inicial) FROM contas), 0)
 		     + COALESCE((SELECT SUM(saldo_inicial) FROM carteiras), 0)
-		     + COALESCE((SELECT SUM(CASE tipo WHEN 'receber' THEN valor ELSE -valor END)
+		     + COALESCE((SELECT SUM(CASE tipo WHEN 'receber' THEN ` + valEf("lancamentos") + ` ELSE -` + valEf("lancamentos") + ` END)
 		                 FROM lancamentos WHERE status = 'quitado'), 0)`).Scan(&s)
 	return s, err
 }
@@ -189,8 +189,8 @@ func mediasHistoricas(conn *sql.DB) (rec, desp int64, err error) {
 	inicio := time.Now().AddDate(0, -3, 0).Format("2006-01-02")
 	hoje := time.Now().Format("2006-01-02")
 	err = conn.QueryRow(`
-		SELECT COALESCE(SUM(CASE tipo WHEN 'receber' THEN valor ELSE 0 END) / 3, 0),
-		       COALESCE(SUM(CASE tipo WHEN 'pagar'   THEN valor ELSE 0 END) / 3, 0)
+		SELECT COALESCE(SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END) / 3, 0),
+		       COALESCE(SUM(CASE tipo WHEN 'pagar'   THEN `+valEf("lancamentos")+` ELSE 0 END) / 3, 0)
 		FROM lancamentos
 		WHERE status = 'quitado' AND quitado_em >= ? AND quitado_em <= ?`,
 		inicio, hoje,
@@ -216,8 +216,8 @@ func Saldo(conn *sql.DB, args []string) error {
 	}
 	var pendPagar, pendReceber int64
 	err = conn.QueryRow(`
-		SELECT COALESCE(SUM(CASE tipo WHEN 'pagar' THEN valor ELSE 0 END), 0),
-		       COALESCE(SUM(CASE tipo WHEN 'receber' THEN valor ELSE 0 END), 0)
+		SELECT COALESCE(SUM(CASE tipo WHEN 'pagar' THEN `+valEf("lancamentos")+` ELSE 0 END), 0),
+		       COALESCE(SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END), 0)
 		FROM lancamentos WHERE status = 'pendente'`).Scan(&pendPagar, &pendReceber)
 	if err != nil {
 		return err

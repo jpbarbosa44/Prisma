@@ -31,6 +31,7 @@ func Resetar(conn *sql.DB, args []string) error {
 		{"recorrencias", "recorrência(s)"},
 		{"emergencias", "emergência(s)"},
 		{"planejamentos", "plano(s)"},
+		{"grupos", "grupo(s)"},
 	}
 	total := 0
 	resumo := make([]string, 0, len(tabelas))

@@ -127,7 +127,7 @@ func saldoLocal(conn *sql.DB, tipo string, id int64) (int64, error) {
 	var s int64
 	err := conn.QueryRow(`
 		SELECT c.saldo_inicial + COALESCE((
-			SELECT SUM(CASE l.tipo WHEN 'receber' THEN l.valor ELSE -l.valor END)
+			SELECT SUM(CASE l.tipo WHEN 'receber' THEN `+valEf("l")+` ELSE -`+valEf("l")+` END)
 			FROM lancamentos l WHERE l.`+tipo+`_id = c.id AND l.status = 'quitado'
 		), 0) + COALESCE((
 			SELECT SUM(t.valor) FROM transferencias t

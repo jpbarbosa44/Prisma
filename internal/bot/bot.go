@@ -123,15 +123,21 @@ func Run(conn *sql.DB, args []string) error {
 	fs := flag.NewFlagSet("bot", flag.ContinueOnError)
 	token := fs.String("token", "", "token do bot (obtido com o @BotFather); fica salvo")
 	chatID := fs.Int64("chat", 0, "chat autorizado a registrar lançamentos; fica salvo")
+	instalar := fs.Bool("instalar-servico", false, "mantém o bot sempre rodando via systemd (acessível de qualquer rede)")
+	remover := fs.Bool("remover-servico", false, "remove o serviço systemd do bot")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *remover {
+		return removerServico()
 	}
 
 	cfg, err := carregaConfig()
 	if err != nil {
 		return fmt.Errorf("lendo configuração do bot: %w", err)
 	}
-	if *token != "" || *chatID != 0 {
+	mudouConfig := *token != "" || *chatID != 0
+	if mudouConfig {
 		if *token != "" {
 			cfg.Token = *token
 		}
@@ -144,6 +150,37 @@ func Run(conn *sql.DB, args []string) error {
 	}
 	if cfg.Token == "" {
 		return fmt.Errorf("bot sem token: crie um bot com o @BotFather no Telegram e rode `prisma bot --token SEU_TOKEN`")
+	}
+	if *instalar {
+		if err := instalarServico(); err != nil {
+			return err
+		}
+		if cfg.ChatID == 0 {
+			fmt.Println("\nFalta parear o chat: mande uma mensagem ao bot e rode `prisma bot --chat SEU_ID`.")
+		}
+		return nil
+	}
+	// souServico: esta execução É o próprio serviço systemd (o unit define
+	// PRISMA_BOT_SERVICE=1). Sem isso, o processo do serviço se veria como "já
+	// ativo" e se recusaria a rodar — o guard abaixo é só para o terminal.
+	souServico := os.Getenv("PRISMA_BOT_SERVICE") == "1"
+
+	// Se o serviço já está no ar, não dá para abrir um segundo poller (o
+	// Telegram só permite um getUpdates por bot). Quando o usuário só quer
+	// salvar token/chat, gravamos e reiniciamos o serviço — sem loop aqui.
+	if !souServico && servicoAtivo() {
+		if mudouConfig {
+			if err := reiniciarServico(); err != nil {
+				return fmt.Errorf("reiniciando o serviço do bot: %w", err)
+			}
+			fmt.Println("Configuração salva e serviço prisma-bot reiniciado.")
+			if cfg.ChatID == 0 {
+				fmt.Println("Falta parear o chat: mande uma mensagem ao bot e rode `prisma bot --chat SEU_ID`.")
+			}
+			return nil
+		}
+		return fmt.Errorf("o serviço prisma-bot já está rodando (um bot só admite um poller).\n" +
+			"veja com `systemctl --user status prisma-bot`; pare com `prisma bot --remover-servico` se quiser rodar no terminal")
 	}
 
 	cli := novoCliente(cfg.Token)

@@ -190,6 +190,20 @@ CREATE TABLE IF NOT EXISTS comprovantes (
 	criado_em     TEXT NOT NULL DEFAULT (date('now','localtime'))
 );
 
+CREATE TABLE IF NOT EXISTS grupos (
+	id        INTEGER PRIMARY KEY AUTOINCREMENT,
+	nome      TEXT NOT NULL,
+	criado_em TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS grupo_pessoas (
+	id       INTEGER PRIMARY KEY AUTOINCREMENT,
+	grupo_id INTEGER NOT NULL REFERENCES grupos(id) ON DELETE CASCADE,
+	nome     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_gp_grupo ON grupo_pessoas (grupo_id);
+
 CREATE INDEX IF NOT EXISTS idx_lanc_venc   ON lancamentos (vencimento);
 CREATE INDEX IF NOT EXISTS idx_lanc_status ON lancamentos (status);
 `
@@ -208,6 +222,19 @@ func migrate(conn *sql.DB) error {
 	if n == 0 {
 		if _, err := conn.Exec(
 			`ALTER TABLE lancamentos ADD COLUMN recorrencia_id INTEGER REFERENCES recorrencias(id) ON DELETE SET NULL`,
+		); err != nil {
+			return err
+		}
+	}
+	// bancos criados antes dos grupos não têm a coluna de vínculo
+	if err := conn.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('lancamentos') WHERE name = 'grupo_id'`,
+	).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		if _, err := conn.Exec(
+			`ALTER TABLE lancamentos ADD COLUMN grupo_id INTEGER REFERENCES grupos(id) ON DELETE SET NULL`,
 		); err != nil {
 			return err
 		}

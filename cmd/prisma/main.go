@@ -22,6 +22,7 @@ USO
 COMANDOS
   conta        Contas bancárias            add | listar | editar | remover
   carteira     Carteiras (dinheiro etc.)   add | listar | editar | remover
+  grupo        Pessoas que dividem gastos  add | listar | editar | remover
   pagar        Contas a pagar              add | listar
   receber      Valores a receber           add | listar
   lancamentos  Lista tudo                  [--pendentes] [--tipo] [--mes] [--de] [--ate] [--cat] | editar | remover
@@ -31,13 +32,14 @@ COMANDOS
   emergencia   Plano de ação p/ dívidas    add | listar | plano | editar | quitar | remover
   plano        Planejamento de gastos      add | listar | status | editar | remover  (semana ou mês)
   relatorio    Análise do passado          [--meses N]  (categorias, mês a mês)
+  graficos     Gráficos em ASCII           [--meses N]  (categorias, saldo, receitas×despesas, grupos)
   extrato      Movimentação com saldo      --conta 1 | --carteira 1  [--meses N]
   previsao     Projeção de saldo futuro    [--meses N]
   simular      E se eu comprar isto?       --valor 4000 --parcelas 12 [--juros N] [--entrada N]
   saldo        Posição geral consolidada
   exportar     Lançamentos em CSV          [--saida arq.csv] [--mes AAAA-MM]
   importar     Extrato bancário OFX/CSV    --arquivo extrato.ofx --conta 1
-  bot          Bot de Telegram             [--token X] [--chat N]  registra lançamentos por mensagem
+  bot          Bot de Telegram             [--token X] [--chat N] [--instalar-servico]  registra lançamentos por mensagem
   atualizar    Baixa e instala a versão nova (do GitHub, com conferência de SHA256)
   versao       Mostra a versão instalada
   resetar      Apaga TODOS os dados        pede confirmação e faz backup antes
@@ -45,6 +47,8 @@ COMANDOS
 
 EXEMPLOS
   prisma conta add --nome "Nubank" --tipo corrente --saldo 1.500,00
+  prisma grupo add --nome "Eu e a Maria" --pessoas "Eu, Maria"
+  prisma pagar add --desc "Mercado" --valor 300 --grupo 1   (conta só a sua parte: 150,00)
   prisma pagar add --desc "Aluguel" --valor 1200 --venc 05/07/2026 --cat moradia --repetir 12
   prisma pagar add --desc "Notebook" --valor 3.600,00 --parcelas 10
   prisma recorrencia add --tipo receber --desc "Salário" --valor 5000 --dia 1 --conta 1
@@ -115,6 +119,8 @@ func main() {
 		err = app.Conta(conn, args)
 	case "carteira":
 		err = app.Carteira(conn, args)
+	case "grupo", "grupos":
+		err = app.Grupo(conn, args)
 	case "pagar":
 		err = app.NovoLancamento(conn, "pagar", args)
 	case "receber":
@@ -133,6 +139,8 @@ func main() {
 		err = app.Plano(conn, args)
 	case "relatorio":
 		err = app.Relatorio(conn, args)
+	case "graficos", "grafico", "gráficos", "gráfico":
+		err = app.Graficos(conn, args)
 	case "extrato":
 		err = app.Extrato(conn, args)
 	case "previsao":
