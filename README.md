@@ -25,14 +25,19 @@ Digite `prisma` e a interface abre em tela cheia (como o btop), com o prisma em 
  ▸ 1  Saldo          posição geral consolidada
    2  Contas         cadastro de contas bancárias
    3  Carteiras      dinheiro fora do banco
-   4  Pagar/Receber  lançamentos e quitação
-   5  Recorrências   salário, aluguel: todo mês, sozinho
-   6  Emergência     plano de ação para quitar dívidas
-   7  Planejamento   limites de gasto por semana ou mês
-   8  Relatório      análise do passado, por categoria
-   9  Previsão       projeção de saldo futuro
+   4  Grupos         pessoas que dividem despesas
+   5  Cartões        cartões de crédito e faturas
+   6  Pagar/Receber  lançamentos e quitação
+   7  Recorrências   salário, aluguel: todo mês, sozinho
+   8  Assinaturas    serviços recorrentes (Netflix, Spotify...)
+   9  Emergência     plano de ação para quitar dívidas
+  10  Planejamento   limites de gasto por semana ou mês
+  11  Relatório      análise do passado, por categoria
+  12  Gráficos       categorias, saldo, receitas × despesas
+  13  Previsão       projeção de saldo futuro
+  14  Simulação      e se eu comprar isto?
 
-  ↑/↓ navegar · enter abrir · 1-9 atalho · q sair
+  ↑/↓ navegar · enter abrir · 1-14 atalho · q sair
 ```
 
 Nas tabelas, `↑/↓` selecionam a linha e as ações usam o item selecionado (quitar, editar, remover — sem digitar o id). Remoções pedem confirmação `s/n`. Os formulários navegam com `tab`/`enter` e cancelam com `esc`.
@@ -86,9 +91,13 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o di
 - **Conta** — conta bancária (corrente, poupança ou investimento).
 - **Carteira** — dinheiro fora do banco (físico, vale, etc.).
 - **Lançamento** — algo a **pagar** ou a **receber**, com vencimento, categoria e status (`pendente` → `quitado`). Pode ser vinculado a uma conta ou carteira; ao quitar, o saldo dela é atualizado.
+- **Grupo** — pessoas que dividem despesas (ex.: "eu e a Maria"). Uma despesa vinculada a um grupo passa a contar, no sistema inteiro, só pela **sua parte** (valor cheio ÷ nº de pessoas).
+- **Cartão** — cartão de crédito, com dias de fechamento e vencimento. Uma compra no cartão é um lançamento que cai na **fatura** do ciclo e só mexe no saldo do banco quando a fatura é paga.
+- **Assinatura** — serviço recorrente (Netflix, Spotify, academia...), em geral pago no cartão. É uma recorrência de despesa com visão e total mensal próprios.
 - **Emergência** — uma dívida com plano de ação mês a mês para quitá-la.
 - **Plano** — limite de gasto por categoria, por semana ou por mês.
 - **Previsão** — projeção do saldo nos próximos meses.
+- **Simulação** — projeta o impacto de uma compra parcelada no saldo futuro, sem gravar nada.
 
 Valores aceitam os formatos `1234`, `1234,56` e `1.234,56`; datas aceitam `AAAA-MM-DD` e `DD/MM/AAAA`.
 
@@ -108,6 +117,8 @@ prisma saldo                       # posição geral consolidada
 ```sh
 prisma pagar add --desc "Aluguel" --valor 1200 --venc 05/07/2026 --cat moradia --conta 1 --repetir 12
 prisma pagar add --desc "Notebook" --valor 3.600,00 --parcelas 10   # divide o TOTAL em 10x
+prisma pagar add --desc "Mercado" --valor 300 --grupo 1            # conta só a sua parte
+prisma pagar add --desc "Tênis" --valor 400 --parcelas 4 --cartao 1 # 4x na fatura do cartão
 prisma receber add --desc "Freela" --valor 800 --venc 01/07/2026 --conta 1
 prisma lancamentos --pendentes     # filtros: --tipo, --mes, --de, --ate, --cat
 prisma quitar 4                    # marca como pago/recebido (aceita --data)
@@ -115,7 +126,7 @@ prisma lancamentos editar 7 --valor 1.250,00 --cat moradia   # altera só o que 
 prisma lancamentos remover 7
 ```
 
-`--repetir N` repete o mesmo valor por N meses; `--parcelas N` divide o valor total em N parcelas; `--quitado` registra algo já pago. Categorias nunca usadas geram um aviso (proteção contra erros de digitação).
+`--repetir N` repete o mesmo valor por N meses; `--parcelas N` divide o valor total em N parcelas; `--quitado` registra algo já pago. `--grupo N` divide a despesa (só a sua parte conta); `--cartao N` joga a compra na fatura do cartão. Categorias nunca usadas geram um aviso (proteção contra erros de digitação).
 
 ### Recorrências
 
@@ -124,9 +135,12 @@ Regras que geram lançamentos sozinhas, 3 meses à frente, a cada execução do 
 ```sh
 prisma recorrencia add --tipo receber --desc "Salário" --valor 5000 --dia 1 --conta 1
 prisma recorrencia add --tipo pagar --desc "Aluguel" --valor 1300 --dia 10 --cat moradia --fim 31/12/2027
+prisma recorrencia add --tipo pagar --desc "Internet" --valor 100 --dia 15 --cartao 1   # gera na fatura
 prisma recorrencia listar
 prisma recorrencia remover 1 --limpar   # apaga a regra e os pendentes gerados
 ```
+
+A recorrência pode vincular a uma conta, carteira ou cartão (`--cartao N`, cai na fatura). As assinaturas são recorrências de despesa com visão própria — veja abaixo.
 
 ### Transferências
 
@@ -134,6 +148,41 @@ Mover dinheiro entre contas e carteiras sem virar receita/despesa:
 
 ```sh
 prisma transferir --de conta:1 --para carteira:1 --valor 200
+```
+
+### Grupos (dividir despesas)
+
+Para gastos divididos com outras pessoas: vincule a despesa a um grupo e o Prisma conta só a parte que cabe a você (valor cheio ÷ nº de pessoas) em todo o sistema — saldo, relatórios, previsão e gráficos.
+
+```sh
+prisma grupo add --nome "Eu e a Maria" --pessoas "Eu, Maria"   # 2 pessoas: divide por 2
+prisma pagar add --desc "Mercado" --valor 300 --grupo 1        # pesa só 150,00 no seu bolso
+prisma grupo listar                                            # total cheio x a sua parte
+prisma grupo editar 1 --pessoas "Eu, Maria, João"             # passa a dividir por 3
+```
+
+### Cartões de crédito e faturas
+
+Uma compra no cartão entra na fatura do ciclo (calculado pelos dias de fechamento e vencimento) e só debita a conta quando você paga a fatura — não antes.
+
+```sh
+prisma cartao add --nome "Nubank" --fechamento 20 --vencimento 27 --conta 1 --fatura-atual 1.200,00
+prisma pagar add --desc "Tênis" --valor 400 --parcelas 4 --cartao 1   # 4x, cada uma numa fatura
+prisma cartao listar               # limite e fatura aberta de cada cartão
+prisma fatura --cartao 1           # detalhe da fatura em aberto (ou --ref AAAA-MM)
+prisma fatura pagar --cartao 1     # quita a fatura em bloco e debita a conta do cartão
+```
+
+`--fatura-atual` lança o saldo já em aberto ao cadastrar o cartão, sem precisar relançar o passado. A divisão por grupo continua valendo: a fatura reflete a sua parte.
+
+### Assinaturas
+
+Serviços recorrentes (Netflix, Spotify, academia...). É uma recorrência de despesa com visão própria e total mensal somado.
+
+```sh
+prisma assinaturas add --desc "Netflix" --valor 39,90 --dia 20 --cartao 1
+prisma assinaturas listar          # cada assinatura + total mensal
+prisma assinaturas remover 3
 ```
 
 ### Modo de emergência (quitar dívidas)
@@ -165,6 +214,14 @@ prisma relatorio --meses 6         # gastos por categoria (com barras), balanço
 prisma extrato --conta 1 --meses 3 # movimentação com saldo corrente, incluindo transferências
 ```
 
+### Gráficos
+
+```sh
+prisma graficos --meses 6
+```
+
+Gráficos de barras em ASCII: gastos por categoria, receitas × despesas mês a mês, evolução do saldo e despesa por grupo (a sua parte sobre o total cheio). Na interface web (`--web`) os mesmos dados viram gráficos em SVG.
+
 ### Previsão
 
 ```sh
@@ -172,6 +229,15 @@ prisma previsao --meses 6
 ```
 
 Para cada mês futuro, usa os lançamentos pendentes agendados; quando um mês não tem nada agendado, estima pela média dos últimos 3 meses (marcado com `~`). Os aportes das emergências ativas entram como saída na coluna DÍVIDAS. Mostra um gráfico de barras do saldo projetado e avisa se ele ficar negativo.
+
+### Simulação ("e se eu comprar isto?")
+
+```sh
+prisma simular --desc "Videogame" --valor 4.000,00 --parcelas 12
+prisma simular --valor 6000 --parcelas 10 --juros 2,5 --entrada 1000
+```
+
+Projeta o saldo mês a mês com e sem a compra — usando o mesmo motor da Previsão (suas recorrências, contas a pagar/receber e aportes de emergência) — e dá um veredito: 🟢 pode comprar, ⚠ arriscado (folga abaixo de um mês de despesas) ou 🔴 não recomendado (saldo fica negativo). `--juros` usa a Tabela Price; nada é gravado no banco.
 
 ### Exportar e importar
 
@@ -185,11 +251,12 @@ A importação cria os movimentos como quitados na conta indicada (negativo = pa
 ### Bot de Telegram
 
 ```sh
-prisma bot --token SEU_TOKEN   # primeira vez (token do @BotFather)
-prisma bot                     # depois, é só rodar
+prisma bot --token SEU_TOKEN              # primeira vez (token do @BotFather)
+prisma bot                                # depois, é só rodar
+prisma bot --token X --instalar-servico   # roda em segundo plano (systemd)
 ```
 
-Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita. Dá para quitar (`quitar 142`), corrigir o último lançamento (`corrigir 27,90`), transferir entre conta e carteira, e guardar comprovante mandando a foto. Também responde consultas (`/saldo`, `/pendentes`, `/relatorio`, `/previsao`, `#categoria maio`...) e avisa sozinho: vencimentos às 9h (com botão de quitar) e resumo do dia às 20h. Só o chat autorizado tem acesso. Detalhes no [MANUAL.md](MANUAL.md#bot-telegram).
+Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita; `300 #mercado feira grupo:1` divide a despesa com o grupo (só a sua parte conta). Dá para quitar (`quitar 142`), corrigir o último lançamento (`corrigir 27,90`), transferir entre conta e carteira, e guardar comprovante mandando a foto. Também responde consultas (`/saldo`, `/pendentes`, `/relatorio`, `/previsao`, `/grupos`, `#categoria maio`...) e avisa sozinho: vencimentos às 9h (com botão de quitar) e resumo do dia às 20h. Só o chat autorizado tem acesso. Detalhes no [MANUAL.md](MANUAL.md#bot-telegram).
 
 ## Dados
 
@@ -212,15 +279,18 @@ cmd/prisma/        ponto de entrada: sem argumentos abre a TUI, com
                    argumentos roteia para os comandos
 internal/db/       abertura do SQLite e schema (migrações idempotentes)
 internal/money/    dinheiro em centavos (int64) — parse e formatação pt-BR
-internal/app/      um arquivo por funcionalidade: conta, carteira,
-                   lancamento, emergencia, plano, previsao
+internal/app/      um arquivo por funcionalidade: conta, carteira, grupo,
+                   cartao, lancamento, recorrencia, assinatura, emergencia,
+                   plano, relatorio, graficos, previsao, simular, transferir
 internal/tui/      interface de terminal (Bubble Tea): cabeçalho em ASCII
                    art, menu, telas e formulários — as telas capturam a
                    saída dos comandos da CLI, reaproveitando toda a lógica;
                    a interface web (--web) serve essas mesmas telas no
                    navegador via API JSON + página única embutida no binário
+                   (os gráficos viram SVG)
 internal/bot/      bot de Telegram (long polling, só stdlib): traduz
-                   mensagens de texto em lançamentos
+                   mensagens de texto em lançamentos; roda como serviço
+internal/update/   autoatualização do GitHub com conferência de SHA256
 
 ```
 
@@ -230,10 +300,12 @@ Decisões:
 - **Centavos em `int64`**: nada de ponto flutuante para dinheiro.
 - **Saldos calculados, não armazenados**: o saldo de uma conta é `saldo_inicial + lançamentos quitados vinculados ± transferências`, sempre consistente.
 - **Transferência não é despesa**: tabela própria, não distorce relatórios.
-- **Recorrências materializadas na abertura**: cada execução gera os lançamentos pendentes dos próximos 3 meses, de forma idempotente.
+- **Divisão por grupo no banco, não na exibição**: a "sua parte" é calculada na própria consulta (`valEf`), então saldo, relatórios, previsão e gráficos já concordam entre si.
+- **Compra no cartão é um lançamento com vencimento na fatura**: não mexe no saldo do banco até a fatura ser paga; pagar a fatura quita o ciclo em bloco.
+- **Recorrências materializadas na abertura**: cada execução gera os lançamentos pendentes dos próximos 3 meses, de forma idempotente. Assinaturas são recorrências marcadas.
 - **Somente biblioteca padrão** além do driver SQLite e do Bubble Tea (TUI).
 
-Testes: `go test ./...` cobre dinheiro (parse/format), períodos ISO, simulação de dívida, parcelas, transferências, recorrências, edição e importação OFX/CSV.
+Testes: `go test ./...` cobre dinheiro (parse/format), períodos ISO, simulação de dívida, parcelas, transferências, recorrências, divisão por grupo, ciclo de fatura do cartão, edição e importação OFX/CSV.
 
 ## Licença
 
