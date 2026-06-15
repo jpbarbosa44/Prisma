@@ -10,7 +10,8 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 4. [A interface web (--web)](#a-interface-web---web)
 5. [Comandos](#comandos)
 6. [Receitas prontas](#receitas-prontas)
-7. [Dados e backup](#dados-e-backup)
+7. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
+8. [Dados e backup](#dados-e-backup)
 
 ---
 
@@ -421,6 +422,30 @@ Para deixar o bot sempre ativo, rode-o como serviço do systemd (modo usuário):
 systemd-run --user --unit=prisma-bot ~/.local/bin/prisma bot
 ```
 
+### servidor
+
+Disponibiliza o banco desta máquina na rede local, para outro Prisma usar como cliente.
+
+```sh
+prisma servidor --token UMSEGREDO            # fica no ar (Ctrl-C para parar)
+prisma servidor --token X --porta 9000       # outra porta (padrão 8456)
+prisma servidor --token X --sem-tls          # sem criptografia (só rede confiável)
+```
+
+Ao subir, imprime o comando `prisma config cliente ...` já preenchido (host, token e _fingerprint_) para você copiar e colar no outro computador. A máquina servidor continua usando o banco normalmente em modo local. Veja [Compartilhamento](#compartilhamento-entre-dispositivos-clienteservidor).
+
+### config
+
+Mostra ou troca o modo de operação (banco local **ou** cliente de um servidor).
+
+```sh
+prisma config                                # mostra o modo atual e o arquivo de config
+prisma config cliente --host IP --token X --fingerprint Y   # conecta a um servidor e testa
+prisma config local                          # volta ao banco local desta máquina
+```
+
+`config cliente` grava a configuração e já testa a conexão. `config local` desfaz (volta ao normal). As mesmas chaves podem ser definidas por variáveis de ambiente (`PRISMA_MODO`, `PRISMA_HOST`, `PRISMA_TOKEN`, `PRISMA_FINGERPRINT`), que têm prioridade sobre o arquivo.
+
 ## Receitas prontas
 
 **Começando do zero:**
@@ -451,6 +476,65 @@ prisma resetar --sem-backup    # não cria a cópia de segurança
 
 Antes de zerar, uma cópia do banco é salva ao lado do original (`prisma.db.bak-AAAAMMDD-HHMMSS`) — para desfazer, basta renomeá-la de volta para `prisma.db`. Na TUI: tecla `z` na tela Saldo, digitando "apagar" e confirmando com `s`.
 
+## Compartilhamento entre dispositivos (cliente/servidor)
+
+Permite que mais de uma pessoa (ou mais de um computador seu) use o **mesmo banco** — por exemplo, um casal lançando despesas em máquinas diferentes na rede de casa. Uma máquina é o **servidor**, dona do arquivo, e as outras são **clientes** que falam com ela pela rede local. Para o cliente, tudo funciona igual: TUI, CLI e bot não percebem diferença.
+
+### Quem é o quê
+
+- **Servidor**: a máquina que guarda o `prisma.db`. Ela roda o daemon e **também continua usando o banco normalmente** (modo local) — não precisa se configurar como cliente.
+- **Cliente**: qualquer outra máquina, que não tem banco próprio e opera sobre o do servidor.
+
+```
+SERVIDOR (dono do banco)                       CLIENTE
+  ├─ prisma servidor   ───────── rede ────────►  prisma  (modo cliente)
+  │   (daemon, fica no ar)                         lê/escreve no banco do servidor
+  └─ prisma            ← mesmo arquivo .db →       (não tem banco próprio)
+      (uso local normal)
+```
+
+### Passo a passo
+
+**1. No servidor**, suba o daemon com um token à sua escolha:
+
+```sh
+prisma servidor --token UMSEGREDO
+```
+
+Ele imprime os endereços da máquina e um comando pronto, por exemplo:
+
+```
+prisma config cliente --host 192.168.0.71 --token UMSEGREDO --fingerprint 97e3...
+```
+
+**2. No cliente**, cole esse comando. Ele grava a configuração e já testa a conexão:
+
+```sh
+prisma config cliente --host 192.168.0.71 --token UMSEGREDO --fingerprint 97e3...
+# Modo cliente configurado. Testando conexão... ok!
+prisma saldo        # agora vem do banco do servidor
+```
+
+**3. Para voltar** ao banco local desta máquina, a qualquer momento:
+
+```sh
+prisma config local
+```
+
+### Segurança
+
+- **Criptografia (TLS) ligada por padrão.** O servidor gera um certificado autoassinado na primeira vez e mostra o seu _fingerprint_ (SHA-256); o cliente só confia no servidor cujo certificado bate com o _fingerprint_ fixado. Isso dá sigilo e protege contra interceptação, sem precisar de uma autoridade certificadora.
+- **Token compartilhado.** Toda conexão exige o token combinado entre os dois lados; sem ele o servidor recusa.
+- Pensado para a **rede local (LAN)** de uma casa. Para usar pela internet seria preciso liberar a porta no roteador — não recomendado sem um cuidado extra de segurança.
+- Para testes em rede confiável, `--sem-tls` (no servidor) e `--sem-tls` (no `config cliente`) desligam a criptografia. Não use com dados reais fora de um ambiente controlado.
+
+### Coisas a saber
+
+- **São dois bancos diferentes.** Em modo local você vê o `prisma.db` desta máquina; em modo cliente, o do servidor. Trocar de modo só muda qual banco você enxerga — nada é copiado nem misturado, e o banco local fica intacto enquanto você usa como cliente.
+- **O servidor precisa estar no ar** na hora que o cliente for usar. Se o daemon estiver parado, o cliente avisa que não conseguiu conectar (o uso local do servidor continua normal). Para deixá-lo sempre ativo, rode como serviço do systemd, igual ao bot: `systemd-run --user --unit=prisma-servidor ~/.local/bin/prisma servidor --token UMSEGREDO`.
+- **Uso simultâneo é seguro.** O banco usa WAL com espera por bloqueio, então o servidor e o cliente podem mexer ao mesmo tempo sem corromper nada.
+- O arquivo de configuração do cliente fica em `~/.config/prisma/config` (Linux) ou `~/Library/Application Support/prisma/config` (macOS). O certificado do servidor fica ao lado do banco (`servidor-cert.pem` / `servidor-key.pem`).
+
 ## Dados e backup
 
 Um único arquivo SQLite:
@@ -464,4 +548,4 @@ Um único arquivo SQLite:
 - **Backup automático**: a cada dia de uso, uma cópia do banco é salva em `backups/` ao lado dele (ex.: `backups/prisma-2026-06-12.db`), antes da primeira sessão do dia; as 7 mais recentes ficam guardadas. **Restaurar** = copiar a cópia de volta sobre o `prisma.db`.
 - O backup protege contra erro e corrupção local, mas mora no mesmo disco — para proteção real contra perda da máquina, copie a pasta de vez em quando para um pendrive ou nuvem.
 - A variável `PRISMA_DB` aponta para outro arquivo — útil para testar sem mexer nos seus dados: `PRISMA_DB=/tmp/teste.db prisma`.
-- O Prisma funciona 100% offline; nada sai da sua máquina.
+- O Prisma funciona offline por padrão; nada sai da sua máquina — a menos que você ative o [compartilhamento](#compartilhamento-entre-dispositivos-clienteservidor), e mesmo aí os dados só trafegam na sua rede local, criptografados.

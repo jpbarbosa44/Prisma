@@ -2,6 +2,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"runtime"
 	"sort"
 	"time"
+
+	"prisma/internal/remote"
 
 	_ "modernc.org/sqlite"
 )
@@ -32,6 +35,31 @@ func Path() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".local", "share", "prisma", "prisma.db"), nil
+}
+
+// Abrir escolhe o backend conforme a config: nos modos local e servidor abre o
+// banco SQLite local (o servidor é o dono do arquivo); no modo cliente devolve
+// um *sql.DB que fala com um servidor Prisma pela rede. O resto do programa
+// recebe um *sql.DB e não distingue os dois.
+func Abrir(cfg remote.Config) (*sql.DB, error) {
+	if cfg.Modo == remote.ModoCliente {
+		return OpenCliente(cfg)
+	}
+	return Open()
+}
+
+// OpenCliente conecta a um servidor Prisma. Migrações e backup ficam por conta
+// do servidor (ele é quem tem o arquivo), então aqui só validamos a conexão
+// cedo para falhar com uma mensagem clara se o servidor estiver fora do ar.
+func OpenCliente(cfg remote.Config) (*sql.DB, error) {
+	conn := sql.OpenDB(remote.NovoConnector(cfg))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := conn.PingContext(ctx); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("conectando ao servidor Prisma: %w", err)
+	}
+	return conn, nil
 }
 
 // Open abre (criando se necessário) o banco e aplica o schema. Antes de

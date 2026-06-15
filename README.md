@@ -258,6 +258,26 @@ prisma bot --token X --instalar-servico   # roda em segundo plano (systemd)
 
 Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita; `300 #mercado feira grupo:1` divide a despesa com o grupo (só a sua parte conta). Dá para quitar (`quitar 142`), corrigir o último lançamento (`corrigir 27,90`), transferir entre conta e carteira, e guardar comprovante mandando a foto. Também responde consultas (`/saldo`, `/pendentes`, `/relatorio`, `/previsao`, `/grupos`, `#categoria maio`...) e avisa sozinho: vencimentos às 9h (com botão de quitar) e resumo do dia às 20h. Só o chat autorizado tem acesso. Detalhes no [MANUAL.md](MANUAL.md#bot-telegram).
 
+## Compartilhamento (vários dispositivos)
+
+Um casal ou família pode usar o **mesmo banco** a partir de máquinas diferentes na rede de casa. Uma máquina vira **servidor** (dona do arquivo) e disponibiliza o banco na rede local; as outras conectam como **cliente** e operam sem perceber que o banco está em outro lugar — TUI, CLI e bot funcionam igual.
+
+Na máquina que guarda o banco:
+
+```sh
+prisma servidor --token UMSEGREDO   # fica no ar e imprime o comando de pareamento
+```
+
+Ela continua usando o banco normalmente (modo local); o `servidor` só é um processo a mais. Na outra máquina, cole o comando que o servidor mostrou:
+
+```sh
+prisma config cliente --host 192.168.0.71 --token UMSEGREDO --fingerprint 97e3...
+prisma saldo                        # agora lê e escreve no banco do servidor
+prisma config local                 # volta a usar o banco local desta máquina
+```
+
+A conexão é **criptografada por padrão** (TLS com certificado autoassinado e verificação por _fingerprint_) e protegida por um **token** combinado entre os dois lados. É pensado para a rede de casa (LAN). Detalhes no [MANUAL.md](MANUAL.md#compartilhamento-entre-dispositivos-clienteservidor).
+
 ## Dados
 
 O banco fica no diretório de dados padrão de cada sistema:
@@ -290,6 +310,9 @@ internal/tui/      interface de terminal (Bubble Tea): cabeçalho em ASCII
                    (os gráficos viram SVG)
 internal/bot/      bot de Telegram (long polling, só stdlib): traduz
                    mensagens de texto em lançamentos; roda como serviço
+internal/remote/   modo cliente/servidor: driver database/sql remoto e
+                   daemon HTTP que compartilham o banco na rede local
+                   (TLS por fingerprint + token, só stdlib)
 internal/update/   autoatualização do GitHub com conferência de SHA256
 
 ```
@@ -303,6 +326,7 @@ Decisões:
 - **Divisão por grupo no banco, não na exibição**: a "sua parte" é calculada na própria consulta (`valEf`), então saldo, relatórios, previsão e gráficos já concordam entre si.
 - **Compra no cartão é um lançamento com vencimento na fatura**: não mexe no saldo do banco até a fatura ser paga; pagar a fatura quita o ciclo em bloco.
 - **Recorrências materializadas na abertura**: cada execução gera os lançamentos pendentes dos próximos 3 meses, de forma idempotente. Assinaturas são recorrências marcadas.
+- **Cliente/servidor no nível do `database/sql`**: como tudo recebe um `*sql.DB`, o modo cliente apenas troca o driver por um que fala com o servidor pela rede — o `app/`, a TUI e o bot não mudam. Cada conexão do cliente segura uma `*sql.Conn` dedicada no servidor, preservando a semântica de transação.
 - **Somente biblioteca padrão** além do driver SQLite e do Bubble Tea (TUI).
 
 Testes: `go test ./...` cobre dinheiro (parse/format), períodos ISO, simulação de dívida, parcelas, transferências, recorrências, divisão por grupo, ciclo de fatura do cartão, edição e importação OFX/CSV.
