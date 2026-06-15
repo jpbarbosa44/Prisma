@@ -66,6 +66,11 @@ func TestParseMensagem(t *testing.T) {
 			app.LancamentoParams{Tipo: "pagar", Desc: "feira", Valor: 30000, Cat: "mercado", Venc: "2026-06-12", GrupoID: 1},
 		},
 		{
+			// compra parcelada no cartão; a data (@) é a da compra
+			"1200 #eletronicos tv 10x cartao:1 @10/06",
+			app.LancamentoParams{Tipo: "pagar", Desc: "tv", Valor: 120000, Cat: "eletronicos", Venc: "2026-06-10", Parcelas: 10, CartaoID: 1},
+		},
+		{
 			"1.234,56 #viagem passagem @15/07/2026",
 			app.LancamentoParams{Tipo: "pagar", Desc: "passagem", Valor: 123456, Cat: "viagem", Venc: "2026-07-15"},
 		},

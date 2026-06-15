@@ -240,9 +240,10 @@ func planoStatus(conn *sql.DB, args []string) error {
 		err := conn.QueryRow(`
 			SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0) FROM lancamentos
 			WHERE tipo = 'pagar' AND categoria = ?
-			  AND ((status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
-			    OR (status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
-			linhas[i].cat, p.Inicio, p.Fim, p.Inicio, p.Fim,
+			  AND ((cartao_id IS NOT NULL AND data_compra >= ? AND data_compra < ?)
+			    OR (cartao_id IS NULL AND status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
+			    OR (cartao_id IS NULL AND status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
+			linhas[i].cat, p.Inicio, p.Fim, p.Inicio, p.Fim, p.Inicio, p.Fim,
 		).Scan(&linhas[i].gasto)
 		if err != nil {
 			return err
@@ -305,9 +306,10 @@ func PlanosDaCategoria(conn *sql.DB, cat, data string) ([]PlanoUso, error) {
 		err = conn.QueryRow(`
 			SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0) FROM lancamentos
 			WHERE tipo = 'pagar' AND categoria = ?
-			  AND ((status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
-			    OR (status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
-			cat, p.Inicio, p.Fim, p.Inicio, p.Fim,
+			  AND ((cartao_id IS NOT NULL AND data_compra >= ? AND data_compra < ?)
+			    OR (cartao_id IS NULL AND status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
+			    OR (cartao_id IS NULL AND status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
+			cat, p.Inicio, p.Fim, p.Inicio, p.Fim, p.Inicio, p.Fim,
 		).Scan(&gasto)
 		if err != nil {
 			return nil, err

@@ -4,11 +4,16 @@ package money
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-// Parse aceita "1234", "1234,56", "1.234,56" e "1234.56" e retorna centavos.
+// reMilhar reconhece pontos como separadores de milhar no estilo pt-BR:
+// 1.200, 12.345, 1.000.000 (grupos de exatamente 3 dígitos).
+var reMilhar = regexp.MustCompile(`^\d{1,3}(\.\d{3})+$`)
+
+// Parse aceita "1234", "1234,56", "1.234,56", "1234.56" e "1.200" e devolve centavos.
 func Parse(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "R$")
@@ -29,6 +34,10 @@ func Parse(s string) (int64, error) {
 		partes := strings.SplitN(s, ",", 2)
 		inteiro = strings.ReplaceAll(partes[0], ".", "")
 		decimal = partes[1]
+	case reMilhar.MatchString(s):
+		// sem vírgula, pontos de milhar (1.200, 1.000.000): vira inteiro
+		inteiro = strings.ReplaceAll(s, ".", "")
+		decimal = "00"
 	case strings.Contains(s, "."):
 		// sem vírgula: ponto é separador decimal (estilo 1234.56)
 		partes := strings.SplitN(s, ".", 2)

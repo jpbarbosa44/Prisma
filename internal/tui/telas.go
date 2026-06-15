@@ -67,6 +67,28 @@ func opcoesGrupos(conn *sql.DB, extras ...opcao) func() []opcao {
 	}
 }
 
+// opcoesCartoes lista os cartões como opções de seletor, precedidos das
+// opções extras (ex.: "nenhum").
+func opcoesCartoes(conn *sql.DB, extras ...opcao) func() []opcao {
+	return func() []opcao {
+		ops := append([]opcao{}, extras...)
+		rows, err := conn.Query(`SELECT id, nome FROM cartoes ORDER BY id`)
+		if err != nil {
+			return ops
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			var nome string
+			if err := rows.Scan(&id, &nome); err != nil {
+				continue
+			}
+			ops = append(ops, opcao{fmt.Sprint(id), fmt.Sprintf("%d — %s", id, nome)})
+		}
+		return ops
+	}
+}
+
 // opcoesLocais lista contas E carteiras na sintaxe conta:ID / carteira:ID
 // (para transferências).
 func opcoesLocais(conn *sql.DB) func() []opcao {
@@ -310,6 +332,108 @@ func novasTelas(conn *sql.DB) []tela {
 			},
 		},
 		{
+			titulo: "Cartões",
+			resumo: "cartões de crédito e faturas",
+			conteudo: func(p []string) (string, error) {
+				if len(p) >= 2 && p[0] == "fatura" {
+					args := []string{"--cartao", p[1]}
+					if len(p) >= 3 && p[2] != "" {
+						args = append(args, "--ref", p[2])
+					}
+					if len(p) >= 4 && p[3] == "sim" {
+						args = append(args, "--abertos")
+					}
+					return captura(func() error { return app.Fatura(conn, args) })
+				}
+				return captura(func() error { return app.Cartao(conn, []string{"listar"}) })
+			},
+			acoes: []acao{
+				{
+					tecla: "a", rotulo: "adicionar",
+					campos: []campo{
+						{rotulo: "nome", dica: "ex.: Nubank", obrigatorio: true},
+						{rotulo: "limite", dica: "ex.: 5.000,00 (opcional)"},
+						{rotulo: "fechamento", dica: "dia da fatura fechar (1-31)", obrigatorio: true},
+						{rotulo: "vencimento", dica: "dia da fatura vencer (1-31)", obrigatorio: true},
+						{rotulo: "conta que paga", opcoes: opcoesVinculo(conn, "contas", nenhuma)},
+						{rotulo: "fatura atual", dica: "valor em aberto hoje (opcional)"},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"add"}
+						args = append(args, par("--nome", v[0])...)
+						args = append(args, par("--limite", v[1])...)
+						args = append(args, par("--fechamento", v[2])...)
+						args = append(args, par("--vencimento", v[3])...)
+						args = append(args, par("--conta", v[4])...)
+						args = append(args, par("--fatura-atual", v[5])...)
+						return exec(func() error { return app.Cartao(conn, args) })
+					},
+				},
+				{
+					tecla: "e", rotulo: "editar",
+					campos: []campo{
+						{rotulo: "id", dica: "número do cartão", obrigatorio: true},
+						{rotulo: "nome", dica: "vazio mantém"},
+						{rotulo: "limite", dica: "vazio mantém"},
+						{rotulo: "fechamento", dica: "vazio mantém"},
+						{rotulo: "vencimento", dica: "vazio mantém"},
+						{rotulo: "conta que paga", opcoes: opcoesVinculo(conn, "contas", manter, desvincular)},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"editar", v[0]}
+						args = append(args, par("--nome", v[1])...)
+						args = append(args, par("--limite", v[2])...)
+						args = append(args, par("--fechamento", v[3])...)
+						args = append(args, par("--vencimento", v[4])...)
+						args = append(args, par("--conta", v[5])...)
+						return exec(func() error { return app.Cartao(conn, args) })
+					},
+				},
+				{
+					tecla: "t", rotulo: "ver fatura",
+					campos: []campo{
+						{rotulo: "id", dica: "número do cartão", obrigatorio: true},
+						{rotulo: "fatura", dica: "AAAA-MM (vazio = a aberta)"},
+						{rotulo: "só em aberto?", opcoes: simNao()},
+					},
+					params: func(v []string) []string {
+						aberto := ""
+						if sim(v[2]) {
+							aberto = "sim"
+						}
+						return []string{"fatura", v[0], v[1], aberto}
+					},
+				},
+				{
+					tecla: "p", rotulo: "pagar fatura", confirma: true,
+					campos: []campo{
+						{rotulo: "id", dica: "número do cartão", obrigatorio: true},
+						{rotulo: "fatura", dica: "AAAA-MM (vazio = a aberta)"},
+						{rotulo: "data", dica: "opcional (padrão: hoje)"},
+						{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", opcao{"", "a do cartão"})},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"pagar", "--cartao", v[0]}
+						args = append(args, par("--ref", v[1])...)
+						args = append(args, par("--data", v[2])...)
+						args = append(args, par("--conta", v[3])...)
+						return exec(func() error { return app.Fatura(conn, args) })
+					},
+				},
+				{
+					tecla: "l", rotulo: "lista",
+					params: func(_ []string) []string { return nil },
+				},
+				{
+					tecla: "x", rotulo: "remover", confirma: true,
+					campos: []campo{{rotulo: "id", dica: "número do cartão", obrigatorio: true}},
+					executar: func(v []string) (string, error) {
+						return exec(func() error { return app.Cartao(conn, []string{"remover", v[0]}) })
+					},
+				},
+			},
+		},
+		{
 			titulo: "Pagar/Receber",
 			resumo: "lançamentos e quitação",
 			conteudo: func(p []string) (string, error) {
@@ -353,6 +477,7 @@ func novasTelas(conn *sql.DB) []tela {
 						{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", manter, desvincular)},
 						{rotulo: "carteira", opcoes: opcoesVinculo(conn, "carteiras", manter, desvincular)},
 						{rotulo: "grupo", opcoes: opcoesGrupos(conn, manter, desvincular)},
+						{rotulo: "cartão", opcoes: opcoesCartoes(conn, manter, desvincular)},
 					},
 					executar: func(v []string) (string, error) {
 						args := []string{"editar", v[0]}
@@ -363,6 +488,7 @@ func novasTelas(conn *sql.DB) []tela {
 						args = append(args, par("--conta", v[5])...)
 						args = append(args, par("--carteira", v[6])...)
 						args = append(args, par("--grupo", v[7])...)
+						args = append(args, par("--cartao", v[8])...)
 						return exec(func() error { return app.Lancamentos(conn, args) })
 					},
 				},
@@ -416,8 +542,10 @@ func novasTelas(conn *sql.DB) []tela {
 						{rotulo: "categoria", dica: "opcional"},
 						{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", nenhuma)},
 						{rotulo: "carteira", opcoes: opcoesVinculo(conn, "carteiras", nenhuma)},
+						{rotulo: "cartão", dica: "gera os lançamentos na fatura", opcoes: opcoesCartoes(conn, nenhuma)},
 						{rotulo: "início", dica: "opcional (padrão: hoje)"},
 						{rotulo: "fim", dica: "opcional (vazio = sem fim)"},
+						{rotulo: "quitar anteriores?", dica: "se o início for no passado", opcoes: simNao()},
 					},
 					executar: func(v []string) (string, error) {
 						args := []string{"add"}
@@ -428,8 +556,15 @@ func novasTelas(conn *sql.DB) []tela {
 						args = append(args, par("--cat", v[4])...)
 						args = append(args, par("--conta", v[5])...)
 						args = append(args, par("--carteira", v[6])...)
-						args = append(args, par("--inicio", v[7])...)
-						args = append(args, par("--fim", v[8])...)
+						args = append(args, par("--cartao", v[7])...)
+						args = append(args, par("--inicio", v[8])...)
+						args = append(args, par("--fim", v[9])...)
+						// a TUI sempre decide (nunca cai na pergunta interativa)
+						if sim(v[10]) {
+							args = append(args, "--passados", "quitar")
+						} else {
+							args = append(args, "--passados", "manter")
+						}
 						return exec(func() error { return app.Recorrencia(conn, args) })
 					},
 				},
@@ -443,6 +578,7 @@ func novasTelas(conn *sql.DB) []tela {
 						{rotulo: "categoria", dica: "vazio mantém"},
 						{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", manter, desvincular)},
 						{rotulo: "carteira", opcoes: opcoesVinculo(conn, "carteiras", manter, desvincular)},
+						{rotulo: "cartão", opcoes: opcoesCartoes(conn, manter, desvincular)},
 						{rotulo: "fim", dica: "data, \"nunca\" remove, vazio mantém"},
 					},
 					executar: func(v []string) (string, error) {
@@ -453,8 +589,28 @@ func novasTelas(conn *sql.DB) []tela {
 						args = append(args, par("--cat", v[4])...)
 						args = append(args, par("--conta", v[5])...)
 						args = append(args, par("--carteira", v[6])...)
-						args = append(args, par("--fim", v[7])...)
+						args = append(args, par("--cartao", v[7])...)
+						args = append(args, par("--fim", v[8])...)
 						return exec(func() error { return app.Recorrencia(conn, args) })
+					},
+				},
+				{
+					tecla: "f", rotulo: "filtrar",
+					campos: []campo{
+						{rotulo: "tipo", opcoes: opcoesFixas("", "todos", "pagar", "pagar", "receber", "receber")},
+						{rotulo: "só vigentes?", opcoes: simNao(), dica: "esconde as encerradas"},
+						{rotulo: "só assinaturas?", opcoes: simNao()},
+					},
+					params: func(v []string) []string {
+						p := []string{"listar"}
+						p = append(p, par("--tipo", v[0])...)
+						if sim(v[1]) {
+							p = append(p, "--vigentes")
+						}
+						if sim(v[2]) {
+							p = append(p, "--assinaturas")
+						}
+						return p
 					},
 				},
 				{
@@ -469,6 +625,73 @@ func novasTelas(conn *sql.DB) []tela {
 							args = append(args, "--limpar")
 						}
 						return exec(func() error { return app.Recorrencia(conn, args) })
+					},
+				},
+			},
+		},
+		{
+			titulo: "Assinaturas",
+			resumo: "serviços recorrentes (Netflix, Spotify...)",
+			padrao: []string{"listar"},
+			conteudo: func(p []string) (string, error) {
+				return captura(func() error { return app.Assinaturas(conn, p) })
+			},
+			acoes: []acao{
+				{
+					tecla: "a", rotulo: "nova assinatura",
+					campos: []campo{
+						{rotulo: "descrição", dica: "ex.: Netflix", obrigatorio: true},
+						{rotulo: "valor", dica: "ex.: 39,90", obrigatorio: true},
+						{rotulo: "dia", dica: "dia da cobrança, 1 a 31", obrigatorio: true},
+						{rotulo: "cartão", dica: "onde é cobrada", opcoes: opcoesCartoes(conn, nenhuma)},
+						{rotulo: "conta", dica: "se não for no cartão", opcoes: opcoesVinculo(conn, "contas", nenhuma)},
+						{rotulo: "início", dica: "opcional (padrão: hoje)"},
+						{rotulo: "fim", dica: "opcional (vazio = sem fim)"},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"add"}
+						args = append(args, par("--desc", v[0])...)
+						args = append(args, par("--valor", v[1])...)
+						args = append(args, par("--dia", v[2])...)
+						args = append(args, par("--cartao", v[3])...)
+						args = append(args, par("--conta", v[4])...)
+						args = append(args, par("--inicio", v[5])...)
+						args = append(args, par("--fim", v[6])...)
+						return exec(func() error { return app.Assinaturas(conn, args) })
+					},
+				},
+				{
+					tecla: "e", rotulo: "editar",
+					campos: []campo{
+						{rotulo: "id", dica: "número da assinatura", obrigatorio: true},
+						{rotulo: "descrição", dica: "vazio mantém"},
+						{rotulo: "valor", dica: "vazio mantém"},
+						{rotulo: "dia", dica: "vazio mantém"},
+						{rotulo: "cartão", opcoes: opcoesCartoes(conn, manter, desvincular)},
+						{rotulo: "fim", dica: "data, \"nunca\" remove, vazio mantém"},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"editar", v[0]}
+						args = append(args, par("--desc", v[1])...)
+						args = append(args, par("--valor", v[2])...)
+						args = append(args, par("--dia", v[3])...)
+						args = append(args, par("--cartao", v[4])...)
+						args = append(args, par("--fim", v[5])...)
+						return exec(func() error { return app.Assinaturas(conn, args) })
+					},
+				},
+				{
+					tecla: "x", rotulo: "remover", confirma: true,
+					campos: []campo{
+						{rotulo: "id", dica: "número da assinatura", obrigatorio: true},
+						{rotulo: "limpar", opcoes: simNao(), dica: "apaga pendentes gerados"},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"remover", v[0]}
+						if sim(v[1]) {
+							args = append(args, "--limpar")
+						}
+						return exec(func() error { return app.Assinaturas(conn, args) })
 					},
 				},
 			},
@@ -707,6 +930,7 @@ func camposLancamento(conn *sql.DB, nenhuma opcao) []campo {
 		{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", nenhuma)},
 		{rotulo: "carteira", opcoes: opcoesVinculo(conn, "carteiras", nenhuma)},
 		{rotulo: "grupo", dica: "divide a despesa entre as pessoas", opcoes: opcoesGrupos(conn, nenhuma)},
+		{rotulo: "cartão", dica: "se escolher, a data acima é a da compra", opcoes: opcoesCartoes(conn, nenhuma)},
 		{rotulo: "repetir", dica: "repete o valor por N meses"},
 		{rotulo: "parcelas", dica: "divide o total em N parcelas"},
 		{rotulo: "já quitado?", opcoes: simNao()},
@@ -722,9 +946,10 @@ func argsLancamento(v []string) []string {
 	args = append(args, par("--conta", v[4])...)
 	args = append(args, par("--carteira", v[5])...)
 	args = append(args, par("--grupo", v[6])...)
-	args = append(args, par("--repetir", v[7])...)
-	args = append(args, par("--parcelas", v[8])...)
-	if sim(v[9]) {
+	args = append(args, par("--cartao", v[7])...)
+	args = append(args, par("--repetir", v[8])...)
+	args = append(args, par("--parcelas", v[9])...)
+	if sim(v[10]) {
 		args = append(args, "--quitado")
 	}
 	return args

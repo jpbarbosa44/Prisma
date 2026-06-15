@@ -139,6 +139,15 @@ func novaTabela() *tabwriter.Writer {
 	return tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
 }
 
+// ouTraco devolve "-" quando o texto está vazio, para nenhuma célula das
+// tabelas ficar em branco.
+func ouTraco(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "-"
+	}
+	return s
+}
+
 // barra desenha uma barra de progresso textual de 20 colunas.
 func barra(usado, total int64) string {
 	if total <= 0 {

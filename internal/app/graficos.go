@@ -85,7 +85,8 @@ func GraficosDados(conn *sql.DB, meses int) (DadosGraficos, error) {
 func GastosPorCategoria(conn *sql.DB, inicio, hoje string) ([]ParRotulo, error) {
 	rows, err := conn.Query(`
 		SELECT categoria, SUM(`+valEf("lancamentos")+`) AS t FROM lancamentos
-		WHERE tipo = 'pagar' AND status = 'quitado' AND quitado_em >= ? AND quitado_em <= ?
+		WHERE tipo = 'pagar' AND status = 'quitado'
+		  AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
 		GROUP BY categoria ORDER BY t DESC`, inicio, hoje)
 	if err != nil {
 		return nil, err
@@ -107,10 +108,11 @@ func GastosPorCategoria(conn *sql.DB, inicio, hoje string) ([]ParRotulo, error) 
 func ReceitaDespesaMensal(conn *sql.DB, meses int) ([]TrioMes, error) {
 	inicio, hoje, refs := janelaMeses(meses)
 	rows, err := conn.Query(`
-		SELECT substr(quitado_em,1,7) AS mes,
+		SELECT substr(COALESCE(data_compra, quitado_em),1,7) AS mes,
 		       SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END),
 		       SUM(CASE tipo WHEN 'pagar'   THEN `+valEf("lancamentos")+` ELSE 0 END)
-		FROM lancamentos WHERE status = 'quitado' AND quitado_em >= ? AND quitado_em <= ?
+		FROM lancamentos WHERE status = 'quitado'
+		  AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
 		GROUP BY mes`, inicio, hoje)
 	if err != nil {
 		return nil, err

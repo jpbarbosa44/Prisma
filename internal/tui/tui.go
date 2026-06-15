@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"prisma/internal/update"
 
@@ -81,6 +82,9 @@ type model struct {
 	atual  int // tela aberta
 	params [][]string
 
+	prefixo    string // primeiro dígito de um atalho de dois dígitos (ex.: "1" de "12")
+	prefixoGen int    // invalida ticks de prefixo antigos
+
 	vp     viewport.Model
 	vpOK   bool
 	linhas []string // conteúdo da tela, linha a linha (texto puro)
@@ -123,11 +127,25 @@ func Run(conn *sql.DB) error {
 
 func (m model) Init() tea.Cmd { return nil }
 
+// flushPrefixoMsg fecha a janela de espera do segundo dígito de um atalho.
+type flushPrefixoMsg int
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.largura, m.altura = msg.Width, msg.Height
 		m.ajustaViewport()
+		return m, nil
+	case flushPrefixoMsg:
+		// passou o tempo sem segundo dígito: abre a tela do dígito sozinho
+		if int(msg) == m.prefixoGen && m.prefixo != "" && m.modo == modoMenu {
+			n := int(m.prefixo[0] - '0')
+			m.prefixo = ""
+			if n >= 1 && n <= len(m.telas) {
+				m.cursor = n - 1
+				m.abreTela(n - 1)
+			}
+		}
 		return m, nil
 	case tea.KeyMsg:
 		switch m.modo {
@@ -159,7 +177,12 @@ func (m *model) ajustaViewport() {
 }
 
 func (m model) teclaMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	s := msg.String()
+	ehDigito := len(s) == 1 && s[0] >= '0' && s[0] <= '9'
+	if !ehDigito {
+		m.prefixo = "" // qualquer tecla não-numérica cancela um prefixo pendente
+	}
+	switch s {
 	case "q", "esc", "ctrl+c":
 		return m, tea.Quit
 	case "up", "k":
@@ -173,16 +196,44 @@ func (m model) teclaMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ", "right", "l":
 		m.abreTela(m.cursor)
 	default:
-		// atalho numérico: 1..9
-		s := msg.String()
-		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
-			i := int(s[0] - '1')
-			if i < len(m.telas) {
-				m.cursor = i
-				m.abreTela(i)
-			}
+		if ehDigito {
+			return m.teclaDigito(s[0])
 		}
 	}
+	return m, nil
+}
+
+// teclaDigito trata o atalho numérico do menu, com suporte a dois dígitos
+// (10..14): se o dígito pode iniciar um número maior, espera o segundo por um
+// instante; senão, abre a tela na hora.
+func (m model) teclaDigito(d byte) (tea.Model, tea.Cmd) {
+	abre := func(n int) {
+		if n >= 1 && n <= len(m.telas) {
+			m.cursor = n - 1
+			m.abreTela(n - 1)
+		}
+	}
+	if m.prefixo != "" {
+		// segundo dígito: forma o número de dois dígitos (ex.: "1" e "2" = 12)
+		primeiro := int(m.prefixo[0] - '0')
+		n := primeiro*10 + int(d-'0')
+		m.prefixo = ""
+		if n >= 1 && n <= len(m.telas) {
+			abre(n)
+		} else {
+			abre(primeiro) // combinação inválida: abre a tela do primeiro dígito
+		}
+		return m, nil
+	}
+	n := int(d - '0')
+	if n >= 1 && n*10 <= len(m.telas) {
+		// pode ser o começo de um número de dois dígitos: aguarda o segundo
+		m.prefixo = string(d)
+		m.prefixoGen++
+		gen := m.prefixoGen
+		return m, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg { return flushPrefixoMsg(gen) })
+	}
+	abre(n)
 	return m, nil
 }
 
@@ -497,7 +548,7 @@ func (m model) viewMenu() string {
 		}
 		b.WriteString(linha + "\n")
 	}
-	b.WriteString("\n" + corApagada.Render("  ↑/↓ navegar · enter abrir · 1-9 atalho · q sair"))
+	b.WriteString("\n" + corApagada.Render(fmt.Sprintf("  ↑/↓ navegar · enter abrir · 1-%d atalho · q sair", len(m.telas))))
 	return b.String()
 }
 

@@ -48,7 +48,9 @@ func Open() (*sql.DB, error) {
 		// backup falho não pode impedir o uso; só avisa
 		fmt.Fprintf(os.Stderr, "aviso: backup diário falhou: %v\n", err)
 	}
-	conn, err := sql.Open("sqlite", p+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	// WAL: melhor concorrência (bot + web + CLI lendo/escrevendo) e snapshots de
+	// backup consistentes sem bloquear quem escreve.
+	conn, err := sql.Open("sqlite", p+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, err
 	}
@@ -86,11 +88,15 @@ func backupDiario(caminho string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	dados, err := os.ReadFile(caminho)
+	// VACUUM INTO grava um snapshot consistente e já compactado, sob lock de
+	// leitura — diferente de copiar o arquivo cru, não corrompe se o banco
+	// estiver sendo escrito (ex.: pelo bot rodando como serviço).
+	src, err := sql.Open("sqlite", caminho+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(alvo, dados, 0o600); err != nil {
+	defer src.Close()
+	if _, err := src.Exec("VACUUM INTO ?", alvo); err != nil {
 		return err
 	}
 	nomes, err := filepath.Glob(filepath.Join(dir, "prisma-*.db"))
@@ -180,6 +186,8 @@ CREATE TABLE IF NOT EXISTS recorrencias (
 	inicio      TEXT NOT NULL,                      -- AAAA-MM-DD
 	fim         TEXT,                               -- AAAA-MM-DD, NULL = sem fim
 	ultima_ref  TEXT NOT NULL DEFAULT '',           -- último AAAA-MM materializado
+	cartao_id   INTEGER REFERENCES cartoes(id) ON DELETE SET NULL, -- gera os lançamentos na fatura
+	assinatura  INTEGER NOT NULL DEFAULT 0,         -- 1 = é uma assinatura (Netflix, Spotify...)
 	criada_em   TEXT NOT NULL DEFAULT (date('now','localtime'))
 );
 
@@ -203,6 +211,16 @@ CREATE TABLE IF NOT EXISTS grupo_pessoas (
 );
 
 CREATE INDEX IF NOT EXISTS idx_gp_grupo ON grupo_pessoas (grupo_id);
+
+CREATE TABLE IF NOT EXISTS cartoes (
+	id             INTEGER PRIMARY KEY AUTOINCREMENT,
+	nome           TEXT NOT NULL,
+	limite         INTEGER NOT NULL DEFAULT 0,       -- centavos (0 = não informado)
+	dia_fechamento INTEGER NOT NULL CHECK (dia_fechamento BETWEEN 1 AND 31),
+	dia_vencimento INTEGER NOT NULL CHECK (dia_vencimento BETWEEN 1 AND 31),
+	conta_id       INTEGER REFERENCES contas(id) ON DELETE SET NULL, -- conta que paga a fatura
+	criado_em      TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
 
 CREATE INDEX IF NOT EXISTS idx_lanc_venc   ON lancamentos (vencimento);
 CREATE INDEX IF NOT EXISTS idx_lanc_status ON lancamentos (status);
@@ -237,6 +255,38 @@ func migrate(conn *sql.DB) error {
 			`ALTER TABLE lancamentos ADD COLUMN grupo_id INTEGER REFERENCES grupos(id) ON DELETE SET NULL`,
 		); err != nil {
 			return err
+		}
+	}
+	// bancos criados antes dos cartões não têm as colunas de cartão/compra
+	if err := conn.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('lancamentos') WHERE name = 'cartao_id'`,
+	).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		for _, ddl := range []string{
+			`ALTER TABLE lancamentos ADD COLUMN cartao_id INTEGER REFERENCES cartoes(id) ON DELETE SET NULL`,
+			`ALTER TABLE lancamentos ADD COLUMN data_compra TEXT`, // data da compra no cartão (competência)
+		} {
+			if _, err := conn.Exec(ddl); err != nil {
+				return err
+			}
+		}
+	}
+	// bancos antigos não têm cartão nem assinatura na recorrência
+	if err := conn.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('recorrencias') WHERE name = 'cartao_id'`,
+	).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		for _, ddl := range []string{
+			`ALTER TABLE recorrencias ADD COLUMN cartao_id INTEGER REFERENCES cartoes(id) ON DELETE SET NULL`,
+			`ALTER TABLE recorrencias ADD COLUMN assinatura INTEGER NOT NULL DEFAULT 0`,
+		} {
+			if _, err := conn.Exec(ddl); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

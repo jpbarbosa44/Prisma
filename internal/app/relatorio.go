@@ -31,7 +31,7 @@ func Relatorio(conn *sql.DB, args []string) error {
 	err := conn.QueryRow(`
 		SELECT COALESCE(SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END), 0),
 		       COALESCE(SUM(CASE tipo WHEN 'pagar' THEN `+valEf("lancamentos")+` ELSE 0 END), 0)
-		FROM lancamentos WHERE status = 'quitado' AND quitado_em >= ? AND quitado_em <= ?`,
+		FROM lancamentos WHERE status = 'quitado' AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?`,
 		inicio, hoje).Scan(&totRec, &totDesp)
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func Relatorio(conn *sql.DB, args []string) error {
 	// gastos por categoria, com barra proporcional ao maior gasto
 	rows, err := conn.Query(`
 		SELECT categoria, SUM(`+valEf("lancamentos")+`) FROM lancamentos
-		WHERE tipo = 'pagar' AND status = 'quitado' AND quitado_em >= ? AND quitado_em <= ?
+		WHERE tipo = 'pagar' AND status = 'quitado' AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
 		GROUP BY categoria ORDER BY SUM(`+valEf("lancamentos")+`) DESC`, inicio, hoje)
 	if err != nil {
 		return err
@@ -93,10 +93,10 @@ func Relatorio(conn *sql.DB, args []string) error {
 
 	// balanço mês a mês
 	rows2, err := conn.Query(`
-		SELECT substr(quitado_em, 1, 7) AS mes,
+		SELECT substr(COALESCE(data_compra, quitado_em), 1, 7) AS mes,
 		       SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END),
 		       SUM(CASE tipo WHEN 'pagar' THEN `+valEf("lancamentos")+` ELSE 0 END)
-		FROM lancamentos WHERE status = 'quitado' AND quitado_em >= ? AND quitado_em <= ?
+		FROM lancamentos WHERE status = 'quitado' AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
 		GROUP BY mes ORDER BY mes`, inicio, hoje)
 	if err != nil {
 		return err

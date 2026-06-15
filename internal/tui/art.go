@@ -22,31 +22,25 @@ var (
 // arte é o prisma em 3D; o feixe entra na face esquerda e o espectro sai da
 // face frontal, à direita.
 var arte = []string{
-	`               /=\\`,
-	`              /===\ \`,
-	`             /=====\ ' \`,
-	`            /=======\ ' ' \`,
-	`           /=========\ ' ' '\`,
-	`          /===========\ ' ' ' \`,
-	`         /=============\ ' ' ' '\`,
-	`        /===============\ ' ' ' ' \`,
-	`       /=================\ ' ' ' ' '\`,
-	`      /===================\ ' ' ' ' ' \`,
-	`     /=====================\ ' ' ' ' ' /`,
-	`    /=======================\ ' ' ' ' /`,
-	`   /=========================\ ' ' ' /`,
-	`  /===========================\ ' ' /`,
-	` /=============================\ ' /`,
-	`/===============================\/`,
+	`         /=\\`,
+	`        /===\ \`,
+	`       /=====\ ' \`,
+	`      /=======\ ' ' \`,
+	`     /=========\ ' ' '\`,
+	`    /===========\ ' ' ' /`,
+	`   /=============\ ' ' /`,
+	`  /===============\ ' /`,
+	` /=================\ /`,
+	`/===================\/`,
 }
 
 const (
 	margem     = 8 // folga à esquerda, atravessada pelo feixe que entra
-	linhaFeixe = 8 // linha em que o feixe branco atinge a face esquerda
+	linhaFeixe = 4 // linha em que o feixe branco atinge a face esquerda
 )
 
 // raios é o espectro que sai da face frontal: linha → cor.
-var raios = map[int]lipgloss.Style{8: corVerm, 9: corAmar, 10: corMagenta}
+var raios = map[int]lipgloss.Style{4: corVerm, 5: corAmar, 6: corMagenta}
 
 // cabecalho monta o prisma 3D (com feixe de luz entrando e o espectro saindo)
 // ao lado da palavra PRISMA em letras grandes; em telas estreitas, versões

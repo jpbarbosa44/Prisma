@@ -32,6 +32,7 @@ func Resetar(conn *sql.DB, args []string) error {
 		{"emergencias", "emergência(s)"},
 		{"planejamentos", "plano(s)"},
 		{"grupos", "grupo(s)"},
+		{"cartoes", "cartão(ões)"},
 	}
 	total := 0
 	resumo := make([]string, 0, len(tabelas))
@@ -69,11 +70,8 @@ func Resetar(conn *sql.DB, args []string) error {
 			return err
 		}
 		backup := caminho + ".bak-" + time.Now().Format("20060102-150405")
-		dados, err := os.ReadFile(caminho)
-		if err != nil {
-			return fmt.Errorf("lendo o banco para backup: %w", err)
-		}
-		if err := os.WriteFile(backup, dados, 0o600); err != nil {
+		// snapshot consistente (VACUUM INTO), em vez de copiar o arquivo cru
+		if _, err := conn.Exec("VACUUM INTO ?", backup); err != nil {
 			return fmt.Errorf("criando backup: %w", err)
 		}
 		fmt.Printf("Backup salvo em %s\n", backup)

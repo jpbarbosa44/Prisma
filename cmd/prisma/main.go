@@ -23,12 +23,15 @@ COMANDOS
   conta        Contas bancárias            add | listar | editar | remover
   carteira     Carteiras (dinheiro etc.)   add | listar | editar | remover
   grupo        Pessoas que dividem gastos  add | listar | editar | remover
+  cartao       Cartões de crédito          add | listar | editar | remover
+  fatura       Fatura do cartão            --cartao N [--ref AAAA-MM] | pagar --cartao N
   pagar        Contas a pagar              add | listar
   receber      Valores a receber           add | listar
   lancamentos  Lista tudo                  [--pendentes] [--tipo] [--mes] [--de] [--ate] [--cat] | editar | remover
   quitar       Marca como pago/recebido    quitar <id> [--data]
   transferir   Move entre conta/carteira   --de conta:1 --para carteira:2 --valor 100
   recorrencia  Regras automáticas          add | listar | editar | remover <id> [--limpar]
+  assinatura   Assinaturas (recorrência)   listar | add | editar | remover
   emergencia   Plano de ação p/ dívidas    add | listar | plano | editar | quitar | remover
   plano        Planejamento de gastos      add | listar | status | editar | remover  (semana ou mês)
   relatorio    Análise do passado          [--meses N]  (categorias, mês a mês)
@@ -49,6 +52,10 @@ EXEMPLOS
   prisma conta add --nome "Nubank" --tipo corrente --saldo 1.500,00
   prisma grupo add --nome "Eu e a Maria" --pessoas "Eu, Maria"
   prisma pagar add --desc "Mercado" --valor 300 --grupo 1   (conta só a sua parte: 150,00)
+  prisma cartao add --nome "Nubank" --fechamento 20 --vencimento 27 --conta 1 --fatura-atual 1.200,00
+  prisma pagar add --desc "Tênis" --valor 400 --parcelas 4 --cartao 1   (4x na fatura)
+  prisma fatura --cartao 1                  (ver a fatura aberta)
+  prisma fatura pagar --cartao 1            (paga a fatura, debita a conta)
   prisma pagar add --desc "Aluguel" --valor 1200 --venc 05/07/2026 --cat moradia --repetir 12
   prisma pagar add --desc "Notebook" --valor 3.600,00 --parcelas 10
   prisma recorrencia add --tipo receber --desc "Salário" --valor 5000 --dia 1 --conta 1
@@ -121,6 +128,10 @@ func main() {
 		err = app.Carteira(conn, args)
 	case "grupo", "grupos":
 		err = app.Grupo(conn, args)
+	case "cartao", "cartoes", "cartão", "cartões":
+		err = app.Cartao(conn, args)
+	case "fatura", "faturas":
+		err = app.Fatura(conn, args)
 	case "pagar":
 		err = app.NovoLancamento(conn, "pagar", args)
 	case "receber":
@@ -133,6 +144,8 @@ func main() {
 		err = app.Transferir(conn, args)
 	case "recorrencia", "recorrencias":
 		err = app.Recorrencia(conn, args)
+	case "assinatura", "assinaturas":
+		err = app.Assinaturas(conn, args)
 	case "emergencia":
 		err = app.Emergencia(conn, args)
 	case "plano", "planejamento":

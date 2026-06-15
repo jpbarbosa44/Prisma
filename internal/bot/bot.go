@@ -31,12 +31,14 @@ Marcadores (opcionais, em qualquer ordem):
 rep:6 — repete por 6 meses
 conta:2 / cart:1 — vincula a conta ou carteira
 grupo:1 — divide a despesa entre o grupo (veja /grupos)
+cartao:1 — lança no cartão; vai pra fatura (veja /cartoes)
 
 Exemplos:
 25,50 #mercado pão e leite !
 +3500 #salario salário @05/07
 899,70 #eletronicos fone novo 3x
 300 #mercado feira grupo:1
+1200 #eletronicos tv 10x cartao:1 @10/06
 
 Outras ações:
 quitar 142 — marca como pago/recebido
@@ -56,6 +58,8 @@ Para consultar:
 /simular 4000 12x — e se eu comprar isto? (aceita 2% de juros, entrada:500)
 /plano — status dos planejamentos
 /grupos — seus grupos e os ids para usar em grupo:N
+/cartoes — seus cartões e os ids para usar em cartao:N
+/fatura 1 — fatura aberta do cartão 1 (ou /fatura 1 2026-07)
 #mercado — a categoria no mês atual
 #mercado maio · 3m · 2026-05 · tudo — outros períodos
 
@@ -287,6 +291,7 @@ func (s *sessao) registrar(chatID int64, texto, fileID string) {
 
 	txt := textoConfirmacao(params, criados, categoriaNova)
 	txt += s.notaGrupo(params, criados)
+	txt += s.notaCartao(params, criados)
 	if fileID != "" {
 		if err := s.anexaComprovante(criados[0].ID, fileID); err != nil {
 			txt += "\n⚠️ Não consegui guardar o comprovante: " + err.Error()
@@ -320,6 +325,27 @@ func (s *sessao) notaGrupo(p app.LancamentoParams, criados []app.LancamentoCriad
 		total += c.Valor
 	}
 	return fmt.Sprintf("\n👥 %s ÷%d — sua parte: %s", nome, pessoas, money.Format(total/int64(pessoas)))
+}
+
+// notaCartao, quando a despesa foi lançada num cartão, mostra em que fatura ela
+// caiu (o gasto não sai do banco até a fatura ser paga).
+func (s *sessao) notaCartao(p app.LancamentoParams, criados []app.LancamentoCriado) string {
+	if p.CartaoID == 0 || len(criados) == 0 {
+		return ""
+	}
+	var nome string
+	if err := s.conn.QueryRow(`SELECT nome FROM cartoes WHERE id = ?`, p.CartaoID).Scan(&nome); err != nil {
+		return ""
+	}
+	venc := criados[0].Venc // vencimento = data da fatura
+	ref := venc
+	if len(venc) >= 7 {
+		ref = venc[5:7] + "/" + venc[:4]
+	}
+	if len(criados) > 1 {
+		return fmt.Sprintf("\n🧾 %s — %d parcelas a partir da fatura %s (vence %s)", nome, len(criados), ref, dataBR(venc))
+	}
+	return fmt.Sprintf("\n🧾 %s — fatura %s (vence %s)", nome, ref, dataBR(venc))
 }
 
 // avisoPlano avisa quando um gasto novo encosta (80%) ou estoura o limite do
@@ -545,6 +571,18 @@ func (s *sessao) trataComando(m *mensagem, texto string) {
 		s.consultar(m.Chat.ID, func() error { return app.Plano(s.conn, []string{"status"}) })
 	case "/grupos", "/grupo":
 		s.consultar(m.Chat.ID, func() error { return app.Grupo(s.conn, []string{"listar"}) })
+	case "/cartoes", "/cartao", "/cartões", "/cartão":
+		s.consultar(m.Chat.ID, func() error { return app.Cartao(s.conn, []string{"listar"}) })
+	case "/fatura", "/faturas":
+		if len(campos) < 2 {
+			s.cli.enviar(m.Chat.ID, "❌ uso: /fatura <id do cartão> [AAAA-MM]  (veja os ids em /cartoes)")
+			return
+		}
+		args := []string{"--cartao", strings.TrimPrefix(campos[1], "#")}
+		if len(campos) >= 3 {
+			args = append(args, "--ref", campos[2])
+		}
+		s.consultar(m.Chat.ID, func() error { return app.Fatura(s.conn, args) })
 	case "/comprovante":
 		if len(campos) < 2 {
 			s.cli.enviar(m.Chat.ID, "❌ uso: /comprovante <id>")

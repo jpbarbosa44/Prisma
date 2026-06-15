@@ -131,7 +131,7 @@ func carteiraListar(conn *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", id, nome, desc, money.Format(saldo))
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", id, nome, ouTraco(desc), money.Format(saldo))
 	}
 	if !achou {
 		fmt.Println("Nenhuma carteira cadastrada. Use: prisma carteira add --nome \"Dinheiro\"")

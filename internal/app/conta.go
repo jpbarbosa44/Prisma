@@ -161,7 +161,7 @@ func contaListar(conn *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", id, nome, banco, tipo, money.Format(saldo))
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", id, nome, ouTraco(banco), ouTraco(tipo), money.Format(saldo))
 	}
 	if !achou {
 		fmt.Println("Nenhuma conta cadastrada. Use: prisma conta add --nome \"Minha Conta\"")

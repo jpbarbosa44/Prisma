@@ -74,7 +74,7 @@
 
     #arte {
       margin: 0;
-      font-size: 9px;
+      font-size: 8px;
       line-height: 1.15;
     }
 
@@ -381,25 +381,19 @@
 
     /* ---- cabeçalho: o mesmo prisma 3D de art.go ---- */
     const arte = [
-      "               /=\\\\",
-      "              /===\\ \\",
-      "             /=====\\ ' \\",
-      "            /=======\\ ' ' \\",
-      "           /=========\\ ' ' '\\",
-      "          /===========\\ ' ' ' \\",
-      "         /=============\\ ' ' ' '\\",
-      "        /===============\\ ' ' ' ' \\",
-      "       /=================\\ ' ' ' ' '\\",
-      "      /===================\\ ' ' ' ' ' \\",
-      "     /=====================\\ ' ' ' ' ' /",
-      "    /=======================\\ ' ' ' ' /",
-      "   /=========================\\ ' ' ' /",
-      "  /===========================\\ ' ' /",
-      " /=============================\\ ' /",
-      "/===============================\\/",
+      "         /=\\\\",
+      "        /===\\ \\",
+      "       /=====\\ ' \\",
+      "      /=======\\ ' ' \\",
+      "     /=========\\ ' ' '\\",
+      "    /===========\\ ' ' ' /",
+      "   /=============\\ ' ' /",
+      "  /===============\\ ' /",
+      " /=================\\ /",
+      "/===================\\/",
     ];
     function desenhaArte() {
-      const margem = 8, feixe = 8, raios = { 8: "vm", 9: "amar", 10: "mag" };
+      const margem = 8, feixe = 4, raios = { 4: "vm", 5: "amar", 6: "mag" };
       $("#arte").innerHTML = arte.map((l, i) => {
         let s;
         if (i === feixe) {
@@ -446,6 +440,7 @@
 
     /* ---- estado: telas do menu, parâmetros e linha selecionada por tela ---- */
     let telas = [], atual = -1, params = [], selecionado = [], formCampos = [];
+    let prefixoNum = "", prefixoTimer = null; // atalho numérico de dois dígitos (10..14)
 
     /* banner de versão nova, no mesmo espírito da TUI e do oh-my-zsh */
     async function mostraAviso() {
@@ -694,9 +689,26 @@
     document.addEventListener("keydown", ev => {
       if ($("#form").open || ev.target.matches("input, select, textarea")) return;
       if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
-      if (ev.key >= "1" && ev.key <= "9") {
-        const i = +ev.key - 1;
-        if (i < telas.length) abre(i);
+      if (ev.key >= "0" && ev.key <= "9") {
+        if (prefixoTimer) { clearTimeout(prefixoTimer); prefixoTimer = null; }
+        if (prefixoNum) {
+          const dois = +(prefixoNum + ev.key), um = +prefixoNum;
+          prefixoNum = "";
+          if (dois >= 1 && dois <= telas.length) abre(dois - 1);
+          else if (um >= 1 && um <= telas.length) abre(um - 1);
+          return;
+        }
+        const d = +ev.key;
+        if (d >= 1 && d * 10 <= telas.length) {
+          // pode iniciar um número de dois dígitos: espera o segundo
+          prefixoNum = ev.key;
+          prefixoTimer = setTimeout(() => {
+            const n = +prefixoNum; prefixoNum = "";
+            if (n >= 1 && n <= telas.length) abre(n - 1);
+          }, 400);
+        } else if (d >= 1 && d <= telas.length) {
+          abre(d - 1);
+        }
         return;
       }
       if (atual < 0) return;

@@ -26,6 +26,7 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 | **Emergência** | Uma dívida cadastrada com juros e aporte mensal; o Prisma monta o plano de ação mês a mês para quitá-la. |
 | **Plano** | Limite de gasto de uma categoria em uma semana ou mês ("até R$ 800 de mercado em junho"). |
 | **Grupo** | Pessoas que dividem despesas (ex.: "Eu e a Maria"). Uma despesa vinculada a um grupo conta, em todo o sistema, só pela **sua parte**: o valor cheio dividido pelo número de pessoas. |
+| **Cartão / Fatura** | Cartão de crédito: você gasta agora e paga depois. Um gasto de cartão é um lançamento cujo **vencimento é a data da fatura** (calculada do ciclo do cartão), então ele não mexe no saldo do banco até a fatura ser paga. Pagar a fatura quita os gastos do ciclo de uma vez, debitando a conta do cartão. |
 | **Categoria** | Etiqueta livre dos lançamentos (`moradia`, `mercado`...). Categorias novas geram aviso, para pegar erros de digitação. |
 
 **Saldos são sempre calculados**, nunca armazenados: saldo da conta = saldo inicial + lançamentos quitados vinculados ± transferências. Não há como "dessincronizar".
@@ -66,15 +67,17 @@ Telas e seus atalhos específicos:
 | 2 Contas | `a` `e` `t` extrato `l` `x` |
 | 3 Carteiras | `a` `e` `t` extrato `l` `x` |
 | 4 Grupos | `a` `e` `l` `x` |
-| 5 Pagar/Receber | `p` a pagar, `r` a receber, `u` quitar, `e` editar, `x`, `f` filtrar |
-| 6 Recorrências | `a` `e` `x` |
-| 7 Emergência | `a`, `p` ver plano, `e`, `l`, `u` quitar, `x` |
-| 8 Planejamento | `a`, `e`, `s` status, `l`, `x` |
-| 9 Relatório | `m` meses |
-| 10 Gráficos | `m` meses |
-| 11 Previsão | `m` meses |
-| 12 Simulação | `s` simular |
-| 13 Como usar | — (só documentação) |
+| 5 Cartões | `a` `e` `t` ver fatura, `p` pagar fatura, `l` `x` |
+| 6 Pagar/Receber | `p` a pagar, `r` a receber, `u` quitar, `e` editar, `x`, `f` filtrar |
+| 7 Recorrências | `a` `e` `f` filtrar `x` |
+| 8 Assinaturas | `a` `e` `x` |
+| 9 Emergência | `a`, `p` ver plano, `e`, `l`, `u` quitar, `x` |
+| 10 Planejamento | `a`, `e`, `s` status, `l`, `x` |
+| 11 Relatório | `m` meses |
+| 12 Gráficos | `m` meses |
+| 13 Previsão | `m` meses |
+| 14 Simulação | `s` simular |
+| 15 Como usar | — (só documentação) |
 
 ## A interface web (--web)
 
@@ -128,6 +131,25 @@ prisma grupo remover 1                                         # despesas voltam
 - O número de pessoas é o divisor. Uma despesa de R$ 300 num grupo de 2 pesa **R$ 150** no seu bolso.
 - Vincule a despesa com `--grupo N` (veja abaixo). Remover o grupo **não apaga** os lançamentos: eles só deixam de ser divididos.
 
+### cartao / fatura
+
+Cartão de crédito: você gasta agora e paga depois, na fatura. Um gasto de cartão é um lançamento `pagar` cujo **vencimento é a data da fatura** (calculada do ciclo do cartão) — por isso ele **não mexe no saldo do banco até a fatura ser paga**, mas já aparece em "pendente a pagar" e na Previsão do mês da fatura.
+
+```sh
+prisma cartao add --nome "Nubank" --fechamento 20 --vencimento 27 --conta 1 --fatura-atual 1.200,00
+prisma cartao listar                                # mostra ciclo, conta e a fatura em aberto
+prisma pagar add --desc "Tênis" --valor 400 --parcelas 4 --cartao 1 --venc 10/06/2026
+prisma fatura --cartao 1                            # ver a fatura aberta (ou --ref 2026-07)
+prisma fatura pagar --cartao 1                      # quita o ciclo e debita a conta do cartão
+```
+
+- **Data da compra:** com `--cartao`, a data informada (`--venc`) é a **data da compra**; o Prisma calcula em qual fatura ela cai (compra após o fechamento vai pra próxima).
+- **Competência:** o gasto conta nos relatórios e no planejamento pela **data da compra**, não pela data do pagamento da fatura.
+- **Parcelas:** `--parcelas N` espalha a compra por N faturas consecutivas (uma parcela por mês).
+- **Fatura inicial:** `--fatura-atual` lança o que já está em aberto hoje, pra você não precisar recadastrar o passado.
+- **Pagar a fatura** quita todos os gastos do ciclo de uma vez e debita a conta do cartão (ou outra, com `--conta`). A fatura é identificada pelo mês do vencimento (`--ref AAAA-MM`); sem `--ref`, é a aberta.
+- Grupos compõem com cartão: um gasto de cartão dividido conta pela **sua parte** também na fatura.
+
 ### pagar / receber
 
 ```sh
@@ -135,12 +157,14 @@ prisma pagar add --desc "Aluguel" --valor 1200 --venc 05/07/2026 --cat moradia -
 prisma pagar add --desc "Energia" --valor 180 --repetir 12        # repete o valor por 12 meses
 prisma pagar add --desc "Notebook" --valor 3.600,00 --parcelas 10 # divide o TOTAL em 10x
 prisma pagar add --desc "Mercado" --valor 300 --grupo 1           # divide com o grupo: conta R$ 150
+prisma pagar add --desc "Tênis" --valor 400 --parcelas 4 --cartao 1  # 4x na fatura do cartão
 prisma pagar add --desc "Padaria" --valor 15 --quitado            # já pago (histórico)
 prisma receber add --desc "Freela" --valor 800 --venc 20/07/2026 --conta 1
 ```
 
 - `--repetir N` cria N cópias mensais com o mesmo valor; `--parcelas N` divide o total (última parcela absorve o resto da divisão). Não combine os dois.
 - `--grupo N` vincula a despesa a um grupo; o valor que pesa no sistema é o cheio dividido pelas pessoas do grupo.
+- `--cartao N` lança no cartão: a data vira a da compra e o gasto vai pra fatura (veja a seção *cartao / fatura*).
 - Dia 31 em mês curto vira o último dia do mês.
 
 ### lancamentos (listar, filtrar, editar, remover)
@@ -180,13 +204,33 @@ prisma transferir --de carteira:1 --para conta:2 --valor 50 --data 09/06/2026 --
 ```sh
 prisma recorrencia add --tipo receber --desc "Salário" --valor 5000 --dia 1 --conta 1
 prisma recorrencia add --tipo pagar --desc "Aluguel" --valor 1300 --dia 10 --fim 31/12/2027
-prisma recorrencia listar
+prisma recorrencia add --tipo pagar --desc "Internet" --valor 120 --dia 12 --cartao 1   # na fatura
+prisma recorrencia listar --vigentes --tipo pagar      # filtra (esconde encerradas)
 prisma recorrencia editar 1 --valor 5.500,00 --dia 5   # ajusta a regra E os pendentes gerados
 prisma recorrencia editar 2 --fim nunca                # remove a data de término
 prisma recorrencia remover 1 --limpar                  # apaga a regra e os pendentes gerados
 ```
 
 A cada execução do Prisma, as regras materializam lançamentos pendentes até 3 meses à frente (sem duplicar). Editar uma regra atualiza também os pendentes já gerados — os quitados nunca são tocados.
+
+- **`--cartao N`** liga a recorrência a um cartão: cada ocorrência cai na fatura (o dia da regra vira a data da compra e o vencimento, o da fatura). Não combine com `--conta`/`--carteira` — quem paga é a conta do cartão.
+- **`--inicio` no passado:** se a regra começa antes de hoje, o Prisma pergunta se as ocorrências anteriores entram já **quitadas**. Sem terminal interativo (bot/TUI), use `--passados quitar|manter`.
+- **Filtros do `listar`:** `--tipo pagar|receber`, `--vigentes` (esconde as encerradas) e `--assinaturas` (só assinaturas).
+
+### assinatura
+
+Assinaturas (Netflix, Spotify, academia...) são recorrências de despesa marcadas como tal — em geral cobradas no cartão. A tela/comando *Assinaturas* mostra só elas e soma o **custo mensal**.
+
+```sh
+prisma assinaturas add --desc "Netflix" --valor 39,90 --dia 15 --cartao 1
+prisma assinaturas add --desc "Academia" --valor 89,90 --dia 5 --conta 1
+prisma assinaturas listar                              # lista + total mensal
+prisma assinaturas editar 1 --valor 44,90              # mesma engine da recorrência
+prisma assinaturas remover 1 --limpar
+```
+
+- `add` já assume `--tipo pagar` e marca `--assinatura`; o resto dos campos é igual ao da recorrência.
+- Como toda assinatura é uma recorrência, ela também aparece em `prisma recorrencia listar` (marcada com *(assinatura)*) e gera os lançamentos mensais normalmente.
 
 ### emergencia
 
@@ -321,6 +365,8 @@ O formato das mensagens:
 | `3x` | divide o total em 3 parcelas mensais | à vista |
 | `rep:6` | repete por 6 meses | não repete |
 | `conta:2` / `cart:1` | vincula a conta ou carteira | sem vínculo |
+| `grupo:1` | divide a despesa entre o grupo (veja `/grupos`) | sem grupo |
+| `cartao:1` | lança no cartão; a data vira a da compra e vai pra fatura (veja `/cartoes`) | sem cartão |
 
 O que não tem prefixo vira descrição; sem descrição, ela herda o nome da categoria. Os marcadores podem vir em qualquer ordem. Exemplos:
 
@@ -356,6 +402,9 @@ O bot também responde consultas — a saída é a mesma dos comandos da CLI, em
 | `/previsao` | `prisma previsao` |
 | `/simular 4000 12x` | `prisma simular --valor 4000 --parcelas 12` (aceita `2%` de juros e `entrada:500`) |
 | `/plano` | `prisma plano status` |
+| `/grupos` | `prisma grupo listar` (ids para usar em `grupo:N`) |
+| `/cartoes` | `prisma cartao listar` (ids para usar em `cartao:N`) |
+| `/fatura 1` · `/fatura 1 2026-07` | `prisma fatura --cartao 1 [--ref ...]` |
 | `#mercado` (sozinha) | `prisma lancamentos --cat mercado --mes <mês atual>` |
 | `#mercado maio` · `#mercado 3m` · `#mercado 2026-05` · `#mercado tudo` | a categoria em outros períodos |
 

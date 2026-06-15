@@ -45,6 +45,8 @@ COMO O PRISMA PENSA (modelo mental)
                            receber (receitas), com vencimento e categoria.
   O que você divide      → GRUPOS: uma despesa vinculada a um grupo conta só
                            pela sua parte (o valor dividido entre as pessoas).
+  O que paga depois      → CARTÕES: um gasto no cartão vai pra fatura e só sai
+                           do banco quando você paga a fatura.
   O que se repete        → RECORRÊNCIAS viram lançamentos sozinhas todo
                            mês, então você não relança salário nem aluguel.
   Onde isso aparece      → SALDO soma tudo o que já aconteceu; RELATÓRIO
@@ -96,6 +98,17 @@ Grupos
   despesas vinculadas e quanto disso é seu. Remover o grupo faz as despesas
   voltarem a contar pelo valor cheio (os lançamentos não são apagados).
 
+Cartões
+  Seus cartões de crédito. Cadastre o cartão com o dia de fechamento, o de
+  vencimento e a conta que paga a fatura (e, se quiser, a fatura que já está
+  em aberto hoje, pra não recadastrar o passado). Ao lançar uma despesa no
+  cartão, a data que você dá é a da compra e o Prisma joga o gasto na fatura
+  certa — compras parceladas se espalham por faturas consecutivas. O gasto
+  não mexe no saldo do banco até você "pagar a fatura" (tecla p), que quita o
+  ciclo inteiro de uma vez e debita a conta do cartão. "Ver fatura" (t) mostra
+  o que caiu em cada fatura, com total e vencimento. Nos relatórios, o gasto
+  conta pela data da compra.
+
 Pagar/Receber
   O coração do dia a dia. Cada lançamento é uma conta a pagar (gasto) ou a
   receber (receita), com descrição, valor, vencimento, categoria e, se
@@ -118,7 +131,16 @@ Recorrências
   (opcional) fim. Quando a data chega, o Prisma cria o lançamento pendente
   automaticamente — inclusive os meses que ficaram para trás desde a última
   vez que você abriu o programa. Editar uma recorrência ajusta também os
-  pendentes futuros que ela já tinha gerado.
+  pendentes futuros que ela já tinha gerado. Se vincular a um cartão, cada
+  ocorrência cai na fatura. Se o início for no passado, ele pergunta se as
+  ocorrências anteriores já entram quitadas. Use "f" para filtrar (esconder
+  as encerradas, por tipo ou só assinaturas).
+
+Assinaturas
+  As suas despesas recorrentes de serviço (Netflix, Spotify, academia),
+  normalmente cobradas no cartão. É a mesma engine das recorrências, mas a
+  tela mostra só as assinaturas e soma quanto elas pesam por mês — útil para
+  enxergar e cortar gasto fixo.
 
 Emergência
   Plano de ação para sair de uma dívida (cartão, cheque especial). Informe o

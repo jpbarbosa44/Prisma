@@ -36,6 +36,7 @@ type LancamentoParams struct {
 	ContaID  int64
 	CartID   int64
 	GrupoID  int64 // grupo que divide a despesa (0 = sem grupo)
+	CartaoID int64 // cartão de crédito; Venc passa a ser a DATA DA COMPRA
 	Repetir  int   // repete o lançamento por N meses (0 ou 1 = não repete)
 	Parcelas int   // divide o valor TOTAL em N parcelas (0 ou 1 = à vista)
 	Quitado  bool
@@ -105,6 +106,37 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 		grupo = p.GrupoID
 	}
 
+	// Cartão: a despesa cai numa fatura. A data informada vira a DATA DA COMPRA
+	// e o vencimento passa a ser o da fatura; o débito sai da conta do cartão.
+	var cartao any
+	dataCompraBase := "" // vazio = não é cartão
+	if p.CartaoID != 0 {
+		if p.Tipo != "pagar" {
+			return nil, false, fmt.Errorf("cartão só vale para despesas (pagar)")
+		}
+		var fech, venc int
+		var contaCartao sql.NullInt64
+		err := conn.QueryRow(
+			`SELECT dia_fechamento, dia_vencimento, conta_id FROM cartoes WHERE id = ?`, p.CartaoID,
+		).Scan(&fech, &venc, &contaCartao)
+		if err == sql.ErrNoRows {
+			return nil, false, fmt.Errorf("cartão #%d não encontrado", p.CartaoID)
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		cartao = p.CartaoID
+		// a fatura é paga pela conta do cartão, não pela conta/carteira informada
+		conta, carteira = nil, nil
+		if contaCartao.Valid {
+			conta = contaCartao.Int64
+		}
+		dataCompraBase = p.Venc
+		compraT, _ := parseDataT(p.Venc)
+		_, p.Venc = faturaDe(fech, venc, compraT) // vencimento vira o da fatura
+		p.Quitado = false                         // nasce pendente; quita ao pagar a fatura
+	}
+
 	status, quitadoEm := "pendente", any(nil)
 	if p.Quitado {
 		status, quitadoEm = "quitado", p.Venc
@@ -126,10 +158,15 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 			descItem = fmt.Sprintf("%s (%d/%d)", p.Desc, i+1, n)
 		}
 		vencItem := somaMeses(p.Venc, i)
+		var dataCompraItem any
+		if dataCompraBase != "" {
+			// cada parcela do cartão entra na fatura seguinte e conta no seu mês
+			dataCompraItem = somaMeses(dataCompraBase, i)
+		}
 		res, err := conn.Exec(`
-			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id)
-			VALUES (?,?,?,?,?,?,?,?,?,?)`,
-			p.Tipo, descItem, valorItem, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo,
+			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id, cartao_id, data_compra)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+			p.Tipo, descItem, valorItem, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo, cartao, dataCompraItem,
 		)
 		if err != nil {
 			return criados, categoriaNova, err
@@ -149,6 +186,7 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	contaID := fs.Int64("conta", 0, "id da conta vinculada")
 	cartID := fs.Int64("carteira", 0, "id da carteira vinculada")
 	grupoID := fs.Int64("grupo", 0, "id do grupo que divide a despesa")
+	cartaoID := fs.Int64("cartao", 0, "id do cartão (a data vira a da compra; vai pra fatura)")
 	repetir := fs.Int("repetir", 1, "repete o lançamento por N meses consecutivos")
 	parcelas := fs.Int("parcelas", 1, "divide o valor TOTAL em N parcelas mensais")
 	quitado := fs.Bool("quitado", false, "já marca como quitado (pago/recebido)")
@@ -174,7 +212,7 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	}
 	criados, categoriaNova, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: tipo, Desc: *desc, Valor: centavos, Cat: *cat, Venc: data,
-		ContaID: *contaID, CartID: *cartID, GrupoID: *grupoID,
+		ContaID: *contaID, CartID: *cartID, GrupoID: *grupoID, CartaoID: *cartaoID,
 		Repetir: *repetir, Parcelas: *parcelas, Quitado: *quitado,
 	})
 	if err != nil {
@@ -239,8 +277,11 @@ func Lancamentos(conn *sql.DB, args []string) error {
 	}
 
 	query := `SELECT l.id, l.tipo, l.descricao, ` + valEf("l") + `, l.categoria, l.vencimento, l.status, l.quitado_em,
-		g.nome, (SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = l.grupo_id)
-		FROM lancamentos l LEFT JOIN grupos g ON g.id = l.grupo_id WHERE 1=1`
+		g.nome, (SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = l.grupo_id),
+		ca.nome, l.vencimento
+		FROM lancamentos l
+		LEFT JOIN grupos g ON g.id = l.grupo_id
+		LEFT JOIN cartoes ca ON ca.id = l.cartao_id WHERE 1=1`
 	var params []any
 	if *pendentes {
 		query += ` AND status = 'pendente'`
@@ -286,21 +327,25 @@ func Lancamentos(conn *sql.DB, args []string) error {
 	defer rows.Close()
 
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tTIPO\tDESCRIÇÃO\tCATEGORIA\tVENCIMENTO\tVALOR\tGRUPO\tSTATUS")
+	fmt.Fprintln(w, "ID\tTIPO\tDESCRIÇÃO\tCATEGORIA\tVENCIMENTO\tVALOR\tGRUPO\tCARTÃO\tSTATUS")
 	achou := false
+	hoje, _ := parseData("hoje")
 	var totPagar, totReceber int64
 	for rows.Next() {
 		achou = true
 		var id, valor int64
 		var t, desc, categoria, venc, status string
-		var quitadoEm, grupo sql.NullString
+		var quitadoEm, grupo, cartao, cartaoVenc sql.NullString
 		var pessoas int
-		if err := rows.Scan(&id, &t, &desc, &valor, &categoria, &venc, &status, &quitadoEm, &grupo, &pessoas); err != nil {
+		if err := rows.Scan(&id, &t, &desc, &valor, &categoria, &venc, &status, &quitadoEm, &grupo, &pessoas, &cartao, &cartaoVenc); err != nil {
 			return err
 		}
 		st := "pendente"
-		if status == "quitado" {
+		switch {
+		case status == "quitado":
 			st = "quitado em " + dataBR(quitadoEm.String)
+		case venc < hoje:
+			st = "⚠ atrasada" // vencida e ainda não quitada
 		}
 		if status == "pendente" {
 			if t == "pagar" {
@@ -310,12 +355,20 @@ func Lancamentos(conn *sql.DB, args []string) error {
 			}
 		}
 		// valor já vem como a parte efetiva (dividida pelo grupo, se houver);
-		// a coluna grupo mostra qual grupo divide e por quanto
-		grp := ""
+		// a coluna grupo mostra qual grupo divide e por quanto ("-" se nenhum)
+		grp := "-"
 		if grupo.Valid && pessoas > 0 {
 			grp = fmt.Sprintf("%s ÷%d", grupo.String, pessoas)
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, t, desc, categoria, dataBR(venc), money.Format(valor), grp, st)
+		// a coluna cartão mostra o cartão e a fatura (mês do vencimento)
+		crt := "-"
+		if cartao.Valid {
+			crt = cartao.String
+			if len(cartaoVenc.String) >= 7 {
+				crt += " " + cartaoVenc.String[5:7] + "/" + cartaoVenc.String[2:4]
+			}
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, t, desc, categoria, dataBR(venc), money.Format(valor), grp, crt, st)
 	}
 	if !achou {
 		fmt.Println("Nenhum lançamento encontrado.")
@@ -345,6 +398,7 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 	contaID := fs.Int64("conta", -1, "vincular à conta (0 desvincula)")
 	cartID := fs.Int64("carteira", -1, "vincular à carteira (0 desvincula)")
 	grupoID := fs.Int64("grupo", -1, "vincular ao grupo que divide (0 desvincula)")
+	cartaoID := fs.Int64("cartao", -1, "mover para o cartão, na fatura (0 desvincula)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -417,6 +471,38 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 			params = append(params, *grupoID)
 		} else {
 			sets = append(sets, "grupo_id = NULL")
+		}
+	}
+	if informado["cartao"] {
+		if *cartaoID > 0 {
+			var fech, venc int
+			var contaCartao sql.NullInt64
+			err := conn.QueryRow(
+				`SELECT dia_fechamento, dia_vencimento, conta_id FROM cartoes WHERE id = ?`, *cartaoID,
+			).Scan(&fech, &venc, &contaCartao)
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("cartão #%d não encontrado", *cartaoID)
+			}
+			if err != nil {
+				return err
+			}
+			// o vencimento atual vira a data da compra; recalcula a fatura
+			var vencAtual string
+			if err := conn.QueryRow(`SELECT vencimento FROM lancamentos WHERE id = ?`, id).Scan(&vencAtual); err != nil {
+				return err
+			}
+			compraT, _ := parseDataT(vencAtual)
+			_, novoVenc := faturaDe(fech, venc, compraT)
+			sets = append(sets, "cartao_id = ?", "data_compra = ?", "vencimento = ?", "carteira_id = NULL")
+			params = append(params, *cartaoID, vencAtual, novoVenc)
+			if contaCartao.Valid {
+				sets = append(sets, "conta_id = ?")
+				params = append(params, contaCartao.Int64)
+			} else {
+				sets = append(sets, "conta_id = NULL")
+			}
+		} else {
+			sets = append(sets, "cartao_id = NULL", "data_compra = NULL")
 		}
 	}
 	if len(sets) == 0 {
