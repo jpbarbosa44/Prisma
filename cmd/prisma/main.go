@@ -8,6 +8,7 @@ import (
 	"prisma/internal/app"
 	"prisma/internal/bot"
 	"prisma/internal/db"
+	"prisma/internal/remote"
 	"prisma/internal/tui"
 	"prisma/internal/update"
 )
@@ -43,6 +44,8 @@ COMANDOS
   exportar     Lançamentos em CSV          [--saida arq.csv] [--mes AAAA-MM]
   importar     Extrato bancário OFX/CSV    --arquivo extrato.ofx --conta 1
   bot          Bot de Telegram             [--token X] [--chat N] [--instalar-servico]  registra lançamentos por mensagem
+  servidor     Compartilha o banco na rede  --token X [--porta N]  (outro Prisma conecta como cliente)
+  config       Modo de operação             cliente --host X --token Y | local | (sem args mostra o atual)
   atualizar    Baixa e instala a versão nova (do GitHub, com conferência de SHA256)
   versao       Mostra a versão instalada
   resetar      Apaga TODOS os dados        pede confirmação e faz backup antes
@@ -73,6 +76,12 @@ DOCUMENTAÇÃO
 
 DADOS
   Banco SQLite local (Linux: ~/.local/share/prisma/prisma.db; mude com PRISMA_DB).
+
+COMPARTILHAMENTO (casal/família na mesma rede)
+  Numa máquina:   prisma servidor --token SEGREDO   (mantém o banco e fica no ar)
+  Na outra:       prisma config cliente --host <ip> --token SEGREDO --fingerprint <X>
+  Voltar ao normal: prisma config local
+  (o comando "prisma servidor" mostra o host, o token e o fingerprint prontos)
 `
 
 func main() {
@@ -93,20 +102,51 @@ func main() {
 		}
 	}
 
+	// descobre o papel desta instância: banco local (padrão), servidor ou
+	// cliente de outro Prisma na rede.
+	cfg, err := remote.Carrega()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "erro de configuração: %v\n", err)
+		os.Exit(1)
+	}
+
+	// `prisma servidor` libera o banco local na rede e fica em primeiro plano.
+	if len(os.Args) >= 2 && os.Args[1] == "servidor" {
+		if err := rodarServidor(cfg, os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// `prisma config` mexe no modo (cliente/local) sem precisar do banco — roda
+	// antes de qualquer conexão, senão um config de cliente quebrado impediria
+	// até de consertar o config.
+	if len(os.Args) >= 2 && (os.Args[1] == "config" || os.Args[1] == "configurar") {
+		if err := configurar(cfg, os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// checa por uma versão nova em segundo plano (no máximo 1x/dia, em silêncio)
 	go update.AtualizaCache()
 
-	conn, err := db.Open()
+	conn, err := db.Abrir(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
 		os.Exit(1)
 	}
 	defer conn.Close()
 
-	// materializa lançamentos das recorrências antes de qualquer coisa
-	if _, err := app.GerarRecorrencias(conn); err != nil {
-		fmt.Fprintf(os.Stderr, "erro nas recorrências: %v\n", err)
-		os.Exit(1)
+	// materializa as recorrências só quando somos donos do banco; no modo
+	// cliente quem faz isso é o servidor.
+	if cfg.Modo != remote.ModoCliente {
+		if _, err := app.GerarRecorrencias(conn); err != nil {
+			fmt.Fprintf(os.Stderr, "erro nas recorrências: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// sem argumentos: abre a interface de terminal (TUI)
