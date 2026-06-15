@@ -155,7 +155,7 @@ func TestTransferirPeloRemoto(t *testing.T) {
 // quando o fingerprint bate e falha quando não bate.
 func TestTLSComPinning(t *testing.T) {
 	const token = "segredo-tls"
-	t.Setenv("HOME", t.TempDir())                               // redireciona onde o cert é salvo
+	t.Setenv("HOME", t.TempDir()) // redireciona onde o cert é salvo
 	t.Setenv("PRISMA_DB", filepath.Join(t.TempDir(), "p.db"))
 
 	local, err := db.Open()
