@@ -181,6 +181,7 @@ prisma pagar add --desc "Aluguel" --valor 1200 --venc 05/07/2026 --cat moradia -
 prisma pagar add --desc "Energia" --valor 180 --repetir 12        # repete o valor por 12 meses
 prisma pagar add --desc "Notebook" --valor 3.600,00 --parcelas 10 # divide o TOTAL em 10x
 prisma pagar add --desc "Mercado" --valor 300 --grupo 1           # divide com o grupo: conta R$ 150
+prisma pagar add --desc "Mercado" --valor 50 --grupo 1 --recebe-pagamento  # você pagou tudo: nasce com R$ 25 + receita de R$ 25 (reembolso)
 prisma pagar add --desc "Tênis" --valor 400 --parcelas 4 --cartao 1  # 4x na fatura do cartão
 prisma pagar add --desc "IPTU" --valor 600 --venc 10/03 --auto-quitar --obs "cota única"
 prisma pagar add --desc "Padaria" --valor 15 --quitado            # já pago (histórico)
@@ -189,6 +190,7 @@ prisma receber add --desc "Freela" --valor 800 --venc 20/07/2026 --conta 1
 
 - `--repetir N` cria N cópias mensais com o mesmo valor; `--parcelas N` divide o total (última parcela absorve o resto da divisão). Não combine os dois.
 - `--grupo N` vincula a despesa a um grupo; o valor que pesa no sistema é o cheio dividido pelas pessoas do grupo.
+- `--recebe-pagamento` (exige `--grupo`, só em `pagar`): em vez de só dividir virtualmente, a despesa nasce com a **sua parte** (valor ÷ pessoas) e a parte das outras pessoas vira uma **receita pendente** separada ("Reembolso: ..."), com o mesmo vencimento — o que elas te devem. Apagar a despesa apaga junto essa receita.
 - `--cartao N` lança no cartão: a data vira a da compra e o gasto vai pra fatura (veja a seção *cartao / fatura*).
 - `--obs "texto"` guarda uma observação livre (aparece na coluna OBS da listagem).
 - `--auto-quitar` faz o lançamento quitar-se sozinho quando o vencimento chega (a varredura roda toda vez que o Prisma ou o bot executa). Na listagem, esses itens são marcados com `⏱`.
@@ -415,6 +417,7 @@ O formato das mensagens:
 | `rep:6` | repete por 6 meses | não repete |
 | `conta:2` / `cart:1` | vincula a conta ou carteira | sem vínculo |
 | `grupo:1` | divide a despesa entre o grupo (veja `/grupos`) | sem grupo |
+| `grupo:1+` | idem, e lança a parte dos outros como reembolso pendente a receber | sem grupo |
 | `cartao:1` | lança no cartão; a data vira a da compra e vai pra fatura (veja `/cartoes`) | sem cartão |
 
 O que não tem prefixo vira descrição; sem descrição, ela herda o nome da categoria. Os marcadores podem vir em qualquer ordem. Exemplos:

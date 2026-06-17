@@ -596,6 +596,9 @@ func (m model) teclaForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if aviso := validaRepetirParcelas(m.formAcao.campos, vals); aviso != "" {
 			return m, m.defineMsg(aviso, true)
 		}
+		if aviso := validaRecebePagamento(m.formAcao.campos, vals); aviso != "" {
+			return m, m.defineMsg(aviso, true)
+		}
 		cmd := m.aplicaAcao(m.formAcao, vals)
 		return m, cmd
 	}
@@ -627,6 +630,17 @@ func validaRepetirParcelas(campos []campo, vals []string) string {
 	par, ok2 := valorCampo(campos, vals, "parcelas")
 	if ok1 && ok2 && maiorQue1(rep) && maiorQue1(par) {
 		return "use repetir OU parcelas, não os dois (repetir repete o valor; parcelas divide o total)"
+	}
+	return ""
+}
+
+// validaRecebePagamento barra "outros do grupo te pagam?" sem um grupo
+// selecionado: a opção só faz sentido dividindo uma despesa com um grupo.
+func validaRecebePagamento(campos []campo, vals []string) string {
+	recebe, ok1 := valorCampo(campos, vals, "outros do grupo te pagam?")
+	grupo, ok2 := valorCampo(campos, vals, "grupo")
+	if ok1 && sim(recebe) && (!ok2 || grupo == "") {
+		return "selecione um grupo para usar \"outros do grupo te pagam?\""
 	}
 	return ""
 }

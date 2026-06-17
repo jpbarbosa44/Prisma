@@ -68,7 +68,7 @@ func TestCartaoParcelasEspalhamNasFaturas(t *testing.T) {
 	silencia(t, func() error {
 		return Cartao(conn, []string{"add", "--nome", "Visa", "--fechamento", "20", "--vencimento", "27"})
 	})
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "TV", Valor: 30000, Cat: "eletronicos",
 		Venc: "2026-06-10", CartaoID: 1, Parcelas: 3,
 	}); err != nil {
@@ -111,7 +111,7 @@ func TestCartaoCompetenciaNoPlano(t *testing.T) {
 		return Plano(conn, []string{"add", "--cat", "eletronicos", "--valor", "1000", "--periodo", "mes", "--ref", "2026-06"})
 	})
 	// compra de cartão em junho, ainda PENDENTE (fatura não paga)
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Fone", Valor: 30000, Cat: "eletronicos",
 		Venc: "2026-06-10", CartaoID: 1,
 	}); err != nil {
@@ -151,7 +151,7 @@ func TestCartaoSoPagar(t *testing.T) {
 	silencia(t, func() error {
 		return Cartao(conn, []string{"add", "--nome", "X", "--fechamento", "10", "--vencimento", "20"})
 	})
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "receber", Desc: "errado", Valor: 100, Venc: "2026-06-10", CartaoID: 1,
 	}); err == nil {
 		t.Error("cartão numa receita deveria falhar")

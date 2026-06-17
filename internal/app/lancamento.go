@@ -42,6 +42,10 @@ type LancamentoParams struct {
 	Obs      string // observação livre
 	AutoQuit bool   // quita sozinho ao chegar o vencimento
 	Quitado  bool
+	// RecebePagamento só vale com GrupoID e Tipo "pagar": a despesa nasce já
+	// com a sua parte (valor ÷ pessoas do grupo) e a parte das outras pessoas
+	// vira uma receita pendente separada (o reembolso que elas te devem).
+	RecebePagamento bool
 }
 
 // LancamentoCriado resume um lançamento inserido por CriarLancamentos.
@@ -53,8 +57,12 @@ type LancamentoCriado struct {
 }
 
 // CriarLancamentos valida os parâmetros e insere os lançamentos (um ou mais,
-// conforme parcelas/repetir). Retorna os criados e se a categoria é inédita.
-func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, bool, error) {
+// conforme parcelas/repetir). Retorna os criados, as receitas de reembolso
+// (uma por despesa, só quando RecebePagamento) e se a categoria é inédita.
+func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []LancamentoCriado, bool, error) {
+	if p.RecebePagamento && (p.GrupoID == 0 || p.Tipo != "pagar") {
+		return nil, nil, false, fmt.Errorf("recebe-pagamento exige --grupo e tipo pagar")
+	}
 	if p.Repetir < 1 {
 		p.Repetir = 1
 	}
@@ -65,25 +73,25 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 		p.Cat = "geral"
 	}
 	if p.Desc == "" {
-		return nil, false, fmt.Errorf("a descrição é obrigatória")
+		return nil, nil, false, fmt.Errorf("a descrição é obrigatória")
 	}
 	if p.Valor <= 0 {
-		return nil, false, fmt.Errorf("o valor deve ser positivo")
+		return nil, nil, false, fmt.Errorf("o valor deve ser positivo")
 	}
 	if p.ContaID != 0 && p.CartID != 0 {
-		return nil, false, fmt.Errorf("vincule a uma conta OU a uma carteira, não ambas")
+		return nil, nil, false, fmt.Errorf("vincule a uma conta OU a uma carteira, não ambas")
 	}
 	if p.Repetir > 120 {
-		return nil, false, fmt.Errorf("repetir deve estar entre 1 e 120")
+		return nil, nil, false, fmt.Errorf("repetir deve estar entre 1 e 120")
 	}
 	if p.Parcelas > 120 {
-		return nil, false, fmt.Errorf("parcelas deve estar entre 1 e 120")
+		return nil, nil, false, fmt.Errorf("parcelas deve estar entre 1 e 120")
 	}
 	if p.Parcelas > 1 && p.Repetir > 1 {
-		return nil, false, fmt.Errorf("use parcelas (divide o total) OU repetir (repete o valor), não ambos")
+		return nil, nil, false, fmt.Errorf("use parcelas (divide o total) OU repetir (repete o valor), não ambos")
 	}
 	if _, err := parseDataT(p.Venc); err != nil {
-		return nil, false, fmt.Errorf("vencimento inválido: %q", p.Venc)
+		return nil, nil, false, fmt.Errorf("vencimento inválido: %q", p.Venc)
 	}
 	categoriaNova := avisaCategoriaNova(conn, p.Cat)
 	registraCategoria(conn, p.Cat)
@@ -91,20 +99,20 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 	var conta, carteira any
 	if p.ContaID != 0 {
 		if err := existe(conn, "contas", p.ContaID); err != nil {
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		conta = p.ContaID
 	}
 	if p.CartID != 0 {
 		if err := existe(conn, "carteiras", p.CartID); err != nil {
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		carteira = p.CartID
 	}
 	var grupo any
 	if p.GrupoID != 0 {
 		if err := existe(conn, "grupos", p.GrupoID); err != nil {
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		grupo = p.GrupoID
 	}
@@ -115,7 +123,7 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 	dataCompraBase := "" // vazio = não é cartão
 	if p.CartaoID != 0 {
 		if p.Tipo != "pagar" {
-			return nil, false, fmt.Errorf("cartão só vale para despesas (pagar)")
+			return nil, nil, false, fmt.Errorf("cartão só vale para despesas (pagar)")
 		}
 		var fech, venc int
 		var contaCartao sql.NullInt64
@@ -123,10 +131,10 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 			`SELECT dia_fechamento, dia_vencimento, conta_id FROM cartoes WHERE id = ?`, p.CartaoID,
 		).Scan(&fech, &venc, &contaCartao)
 		if err == sql.ErrNoRows {
-			return nil, false, fmt.Errorf("cartão #%d não encontrado", p.CartaoID)
+			return nil, nil, false, fmt.Errorf("cartão #%d não encontrado", p.CartaoID)
 		}
 		if err != nil {
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		cartao = p.CartaoID
 		// a fatura é paga pela conta do cartão, não pela conta/carteira informada
@@ -153,7 +161,23 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 	if p.AutoQuit {
 		autoQuit = 1
 	}
+	// recebe-pagamento: cada despesa nasce só com a sua parte; o resto vira
+	// uma receita de reembolso pendente, vinculada à despesa que a gerou.
+	var pessoasGrupo int64
+	if p.RecebePagamento {
+		if err := conn.QueryRow(
+			`SELECT COUNT(*) FROM grupo_pessoas WHERE grupo_id = ?`, p.GrupoID,
+		).Scan(&pessoasGrupo); err != nil {
+			return nil, nil, false, err
+		}
+		if pessoasGrupo < 1 {
+			pessoasGrupo = 1
+		}
+		registraCategoria(conn, "reembolso")
+	}
+
 	criados := make([]LancamentoCriado, 0, n)
+	var reembolsos []LancamentoCriado
 	var ids []int64
 	for i := 0; i < n; i++ {
 		valorItem, descItem := p.Valor, p.Desc
@@ -171,28 +195,49 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 			// cada parcela do cartão entra na fatura seguinte e conta no seu mês
 			dataCompraItem = somaMeses(dataCompraBase, i)
 		}
+		minhaParte, outrosDevem := valorItem, int64(0)
+		recebePagItem := 0
+		if p.RecebePagamento {
+			minhaParte = valorItem / pessoasGrupo
+			outrosDevem = valorItem - minhaParte
+			recebePagItem = 1
+		}
 		res, err := conn.Exec(`
-			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id, cartao_id, data_compra, observacao, auto_quitar)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			p.Tipo, descItem, valorItem, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo, cartao, dataCompraItem, p.Obs, autoQuit,
+			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id, cartao_id, data_compra, observacao, auto_quitar, recebe_pagamento)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			p.Tipo, descItem, minhaParte, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo, cartao, dataCompraItem, p.Obs, autoQuit, recebePagItem,
 		)
 		if err != nil {
-			return criados, categoriaNova, err
+			return criados, reembolsos, categoriaNova, err
 		}
 		id, _ := res.LastInsertId()
 		ids = append(ids, id)
-		criados = append(criados, LancamentoCriado{id, descItem, valorItem, vencItem})
+		criados = append(criados, LancamentoCriado{id, descItem, minhaParte, vencItem})
+
+		if p.RecebePagamento && outrosDevem > 0 {
+			descReembolso := fmt.Sprintf("Reembolso: %s", descItem)
+			resR, err := conn.Exec(`
+				INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, conta_id, carteira_id, reembolso_de)
+				VALUES ('receber',?,?,'reembolso',?,'pendente',NULL,NULL,?)`,
+				descReembolso, outrosDevem, vencItem, id,
+			)
+			if err != nil {
+				return criados, reembolsos, categoriaNova, err
+			}
+			idR, _ := resR.LastInsertId()
+			reembolsos = append(reembolsos, LancamentoCriado{idR, descReembolso, outrosDevem, vencItem})
+		}
 	}
 	// parcelado: liga todas as parcelas à raiz (a 1ª), para excluir em bloco
 	if p.Parcelas > 1 && len(ids) > 0 {
 		raiz := ids[0]
 		for _, id := range ids {
 			if _, err := conn.Exec(`UPDATE lancamentos SET parcela_grupo = ? WHERE id = ?`, raiz, id); err != nil {
-				return criados, categoriaNova, err
+				return criados, reembolsos, categoriaNova, err
 			}
 		}
 	}
-	return criados, categoriaNova, nil
+	return criados, reembolsos, categoriaNova, nil
 }
 
 func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
@@ -210,6 +255,7 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	obs := fs.String("obs", "", "observação livre")
 	autoQuit := fs.Bool("auto-quitar", false, "quita sozinho ao chegar o vencimento")
 	quitado := fs.Bool("quitado", false, "já marca como quitado (pago/recebido)")
+	recebePag := fs.Bool("recebe-pagamento", false, "as outras pessoas do grupo te pagam: a despesa fica só com a sua parte e o resto vira receita de reembolso")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -222,6 +268,9 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	if *parcelas < 1 {
 		return fmt.Errorf("--parcelas deve estar entre 1 e 120")
 	}
+	if *recebePag && *grupoID == 0 {
+		return fmt.Errorf("--recebe-pagamento exige --grupo")
+	}
 	centavos, err := money.Parse(*valor)
 	if err != nil {
 		return err
@@ -230,10 +279,11 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	if err != nil {
 		return err
 	}
-	criados, categoriaNova, err := CriarLancamentos(conn, LancamentoParams{
+	criados, reembolsos, categoriaNova, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: tipo, Desc: *desc, Valor: centavos, Cat: *cat, Venc: data,
 		ContaID: *contaID, CartID: *cartID, GrupoID: *grupoID, CartaoID: *cartaoID,
 		Repetir: *repetir, Parcelas: *parcelas, Obs: *obs, AutoQuit: *autoQuit, Quitado: *quitado,
+		RecebePagamento: *recebePag,
 	})
 	if err != nil {
 		return err
@@ -242,6 +292,10 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	for _, c := range criados {
 		fmt.Printf("Lançamento #%d (%s) %q de %s com vencimento em %s criado.\n",
 			c.ID, rotulo, c.Desc, money.Format(c.Valor), dataBR(c.Venc))
+	}
+	for _, r := range reembolsos {
+		fmt.Printf("Receita de reembolso #%d %q de %s com vencimento em %s criada.\n",
+			r.ID, r.Desc, money.Format(r.Valor), dataBR(r.Venc))
 	}
 	if categoriaNova {
 		fmt.Printf("Aviso: primeira vez usando a categoria %q — confira se não é um erro de digitação.\n",

@@ -20,7 +20,7 @@ func TestParseDataDDMM(t *testing.T) {
 
 func TestRemoverParcelaRaizCascade(t *testing.T) {
 	conn := abreDB(t)
-	criados, _, err := CriarLancamentos(conn, LancamentoParams{
+	criados, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Notebook", Valor: 90000, Venc: "2026-06-10", Parcelas: 3,
 	})
 	if err != nil || len(criados) != 3 {
@@ -40,7 +40,7 @@ func TestRemoverParcelaRaizCascade(t *testing.T) {
 
 func TestRemoverParcelaNaoRaizMantemResto(t *testing.T) {
 	conn := abreDB(t)
-	criados, _, err := CriarLancamentos(conn, LancamentoParams{
+	criados, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Geladeira", Valor: 60000, Venc: "2026-06-10", Parcelas: 3,
 	})
 	if err != nil {
@@ -58,13 +58,13 @@ func TestRemoverParcelaNaoRaizMantemResto(t *testing.T) {
 
 func TestQuitarVencidos(t *testing.T) {
 	conn := abreDB(t)
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Antiga", Valor: 5000, Venc: "2020-01-01", AutoQuit: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// uma sem auto-quitar, também vencida, deve continuar pendente
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Manual", Valor: 5000, Venc: "2020-01-01",
 	}); err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestQuitarVencidos(t *testing.T) {
 
 func TestCategoriaAutoCadastro(t *testing.T) {
 	conn := abreDB(t)
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "TV", Valor: 100000, Cat: "eletronicos", Venc: "2026-06-10",
 	}); err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestCartaoRemoveDespesas(t *testing.T) {
 	silencia(t, func() error {
 		return Cartao(conn, []string{"add", "--nome", "Visa", "--fechamento", "20", "--vencimento", "27"})
 	})
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Tênis", Valor: 40000, Venc: "2026-06-05", CartaoID: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestGrupoSomaMesVigente(t *testing.T) {
 		return Grupo(conn, []string{"add", "--nome", "Casa", "--pessoas", "Eu, Maria"})
 	})
 	hoje, _ := parseData("hoje")
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Mercado", Valor: 30000, Venc: hoje, GrupoID: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestGrupoSomaMesVigente(t *testing.T) {
 
 func TestEstatisticasNaoQuebra(t *testing.T) {
 	conn := abreDB(t)
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Mercado", Valor: 30000, Cat: "mercado", Venc: "2026-06-05", Quitado: true,
 	}); err != nil {
 		t.Fatal(err)

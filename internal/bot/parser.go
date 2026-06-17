@@ -23,6 +23,8 @@ import (
 //	rep:6              repete o lançamento por 6 meses
 //	conta:2 cart:1     vincula a conta ou carteira pelo id
 //	grupo:1            divide a despesa entre as pessoas do grupo (veja /grupos)
+//	grupo:1+           idem, e além disso lança a parte das outras pessoas como
+//	                   receita de reembolso pendente (elas vão te pagar)
 //	cartao:1           lança no cartão; a data vira a da compra e vai pra fatura
 //
 // O que sobra vira descrição; sem descrição, usa o nome da categoria.
@@ -32,7 +34,7 @@ var (
 	reRepetir  = regexp.MustCompile(`^rep:(\d{1,3})$`)
 	reConta    = regexp.MustCompile(`^conta:(\d+)$`)
 	reCarteira = regexp.MustCompile(`^(?:cart|carteira):(\d+)$`)
-	reGrupo    = regexp.MustCompile(`^grupo:(\d+)$`)
+	reGrupo    = regexp.MustCompile(`^grupo:(\d+)(\+)?$`)
 	reCartao   = regexp.MustCompile(`^(?:cartao|cartão):(\d+)$`)
 	reDia      = regexp.MustCompile(`^\d{1,2}$`)
 	reDiaMes   = regexp.MustCompile(`^(\d{1,2})/(\d{1,2})$`)
@@ -69,7 +71,9 @@ func parseMensagem(msg string, agora time.Time) (app.LancamentoParams, error) {
 		case reCarteira.MatchString(tok):
 			p.CartID, _ = strconv.ParseInt(reCarteira.FindStringSubmatch(tok)[1], 10, 64)
 		case reGrupo.MatchString(tok):
-			p.GrupoID, _ = strconv.ParseInt(reGrupo.FindStringSubmatch(tok)[1], 10, 64)
+			m := reGrupo.FindStringSubmatch(tok)
+			p.GrupoID, _ = strconv.ParseInt(m[1], 10, 64)
+			p.RecebePagamento = m[2] == "+"
 		case reCartao.MatchString(tok):
 			p.CartaoID, _ = strconv.ParseInt(reCartao.FindStringSubmatch(tok)[1], 10, 64)
 		case !temValor && pareceValor(tok):

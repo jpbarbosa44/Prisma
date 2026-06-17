@@ -499,7 +499,7 @@ func TestPlanosDaCategoria(t *testing.T) {
 	silencia(t, func() error {
 		return Plano(conn, []string{"add", "--cat", "mercado", "--valor", "800", "--periodo", "mes"})
 	})
-	_, _, err := CriarLancamentos(conn, LancamentoParams{
+	_, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "compra", Valor: 70000, Cat: "mercado",
 		Venc: refAtual("mes") + "-10",
 	})
@@ -523,7 +523,7 @@ func TestPlanosDaCategoria(t *testing.T) {
 
 func TestComprovantesTabela(t *testing.T) {
 	conn := abreDB(t)
-	criados, _, err := CriarLancamentos(conn, LancamentoParams{
+	criados, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "teste", Valor: 100, Venc: "2026-06-12",
 	})
 	if err != nil {

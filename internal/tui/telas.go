@@ -553,16 +553,16 @@ func novasTelas(conn *sql.DB) []tela {
 			acoes: []acao{
 				{
 					tecla: "p", rotulo: "a pagar",
-					campos: camposLancamento(conn, nenhuma),
+					campos: camposLancamento(conn, nenhuma, "pagar"),
 					executar: func(v []string) (string, error) {
-						return exec(func() error { return app.NovoLancamento(conn, "pagar", argsLancamento(v)) })
+						return exec(func() error { return app.NovoLancamento(conn, "pagar", argsLancamento(v, "pagar")) })
 					},
 				},
 				{
 					tecla: "r", rotulo: "a receber",
-					campos: camposLancamento(conn, nenhuma),
+					campos: camposLancamento(conn, nenhuma, "receber"),
 					executar: func(v []string) (string, error) {
-						return exec(func() error { return app.NovoLancamento(conn, "receber", argsLancamento(v)) })
+						return exec(func() error { return app.NovoLancamento(conn, "receber", argsLancamento(v, "receber")) })
 					},
 				},
 				{
@@ -1143,9 +1143,11 @@ func novasTelas(conn *sql.DB) []tela {
 }
 
 // camposLancamento monta o formulário de novo lançamento, com conta e
-// carteira como seletores (sem precisar saber o id de cor).
-func camposLancamento(conn *sql.DB, nenhuma opcao) []campo {
-	return []campo{
+// carteira como seletores (sem precisar saber o id de cor). O campo de
+// reembolso (recebe-pagamento) só aparece para despesas (tipo "pagar"), já
+// que receitas não podem ser divididas por grupo.
+func camposLancamento(conn *sql.DB, nenhuma opcao, tipo string) []campo {
+	campos := []campo{
 		{rotulo: "descrição", dica: "ex.: Aluguel", obrigatorio: true},
 		{rotulo: "valor", dica: "ex.: 1.200,00 (total, se parcelado)", obrigatorio: true},
 		{rotulo: "vencimento", dica: "DD/MM/AAAA ou DD/MM (padrão: hoje)"},
@@ -1160,9 +1162,17 @@ func camposLancamento(conn *sql.DB, nenhuma opcao) []campo {
 		{rotulo: "quitar no vencimento?", dica: "quita sozinho ao vencer", opcoes: simNao()},
 		{rotulo: "já quitado?", opcoes: simNao()},
 	}
+	if tipo == "pagar" {
+		campos = append(campos, campo{
+			rotulo: "outros do grupo te pagam?",
+			dica:   "a despesa fica só com a sua parte; o resto vira receita de reembolso pendente",
+			opcoes: simNao(),
+		})
+	}
+	return campos
 }
 
-func argsLancamento(v []string) []string {
+func argsLancamento(v []string, tipo string) []string {
 	args := []string{"add"}
 	args = append(args, par("--desc", v[0])...)
 	args = append(args, par("--valor", v[1])...)
@@ -1180,6 +1190,9 @@ func argsLancamento(v []string) []string {
 	}
 	if sim(v[12]) {
 		args = append(args, "--quitado")
+	}
+	if tipo == "pagar" && len(v) > 13 && sim(v[13]) {
+		args = append(args, "--recebe-pagamento")
 	}
 	return args
 }

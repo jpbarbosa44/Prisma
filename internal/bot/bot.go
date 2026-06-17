@@ -31,6 +31,7 @@ Marcadores (opcionais, em qualquer ordem):
 rep:6 — repete por 6 meses
 conta:2 / cart:1 — vincula a conta ou carteira
 grupo:1 — divide a despesa entre o grupo (veja /grupos)
+grupo:1+ — idem, e lança a parte dos outros como reembolso a receber
 cartao:1 — lança no cartão; vai pra fatura (veja /cartoes)
 
 Exemplos:
@@ -38,6 +39,7 @@ Exemplos:
 +3500 #salario salário @05/07
 899,70 #eletronicos fone novo 3x
 300 #mercado feira grupo:1
+50 #mercado feira com a maria grupo:1+
 1200 #eletronicos tv 10x cartao:1 @10/06
 
 Outras ações:
@@ -282,7 +284,7 @@ func (s *sessao) registrar(chatID int64, texto, fileID string) {
 		s.cli.enviar(chatID, "❌ "+err.Error()+"\n\nMande /ajuda para ver o formato.")
 		return
 	}
-	criados, categoriaNova, err := app.CriarLancamentos(s.conn, params)
+	criados, reembolsos, categoriaNova, err := app.CriarLancamentos(s.conn, params)
 	if err != nil {
 		s.cli.enviar(chatID, "❌ "+err.Error())
 		return
@@ -290,7 +292,7 @@ func (s *sessao) registrar(chatID int64, texto, fileID string) {
 	s.ultimoID = criados[len(criados)-1].ID
 
 	txt := textoConfirmacao(params, criados, categoriaNova)
-	txt += s.notaGrupo(params, criados)
+	txt += s.notaGrupo(params, criados, reembolsos)
 	txt += s.notaCartao(params, criados)
 	if fileID != "" {
 		if err := s.anexaComprovante(criados[0].ID, fileID); err != nil {
@@ -307,7 +309,9 @@ func (s *sessao) registrar(chatID int64, texto, fileID string) {
 
 // notaGrupo, quando a despesa foi vinculada a um grupo, mostra o grupo, o
 // divisor e a parte que de fato cabe a você (o resto é das outras pessoas).
-func (s *sessao) notaGrupo(p app.LancamentoParams, criados []app.LancamentoCriado) string {
+// Com recebe-pagamento, os lançamentos já nascem com a sua parte, e o resto
+// foi lançado como receita de reembolso (em reembolsos).
+func (s *sessao) notaGrupo(p app.LancamentoParams, criados, reembolsos []app.LancamentoCriado) string {
 	if p.GrupoID == 0 {
 		return ""
 	}
@@ -319,6 +323,17 @@ func (s *sessao) notaGrupo(p app.LancamentoParams, criados []app.LancamentoCriad
 		WHERE g.id = ? GROUP BY g.id`, p.GrupoID).Scan(&nome, &pessoas)
 	if err != nil || pessoas < 1 {
 		return ""
+	}
+	if p.RecebePagamento {
+		var minha, reembolso int64
+		for _, c := range criados {
+			minha += c.Valor
+		}
+		for _, r := range reembolsos {
+			reembolso += r.Valor
+		}
+		return fmt.Sprintf("\n👥 %s ÷%d — sua parte: %s (reembolso a receber: %s)",
+			nome, pessoas, money.Format(minha), money.Format(reembolso))
 	}
 	var total int64
 	for _, c := range criados {

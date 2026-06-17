@@ -20,7 +20,7 @@ func criaGrupoEDespesa(t *testing.T, conn *sql.DB, pessoas string, valor int64) 
 	if err := conn.QueryRow(`SELECT id FROM grupos ORDER BY id DESC LIMIT 1`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := CriarLancamentos(conn, LancamentoParams{
+	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Mercado", Valor: valor, Cat: "mercado",
 		Venc: "2026-06-10", GrupoID: gid, Quitado: true,
 	}); err != nil {
@@ -115,6 +115,80 @@ func TestDesvincularGrupoVoltaValorCheio(t *testing.T) {
 	total, _ = saldoTotal(conn)
 	if total != -10000 {
 		t.Errorf("após desvincular, saldo = %d, quer -10000 (valor cheio)", total)
+	}
+}
+
+// TestRecebePagamentoCriaReembolso: despesa de R$ 50 num grupo de 2 pessoas
+// com --recebe-pagamento nasce como R$ 25 e gera uma receita pendente de
+// R$ 25 (o que a outra pessoa te deve), sem dobrar a divisão no saldo.
+func TestRecebePagamentoCriaReembolso(t *testing.T) {
+	conn := abreDB(t)
+	silencia(t, func() error {
+		return Grupo(conn, []string{"add", "--nome", "Casal", "--pessoas", "Eu, Maria"})
+	})
+	var gid int64
+	if err := conn.QueryRow(`SELECT id FROM grupos ORDER BY id DESC LIMIT 1`).Scan(&gid); err != nil {
+		t.Fatal(err)
+	}
+	criados, reembolsos, _, err := CriarLancamentos(conn, LancamentoParams{
+		Tipo: "pagar", Desc: "Mercado", Valor: 5000, Cat: "mercado",
+		Venc: "2026-06-10", GrupoID: gid, RecebePagamento: true, Quitado: true,
+	})
+	if err != nil {
+		t.Fatalf("criando despesa com recebe-pagamento: %v", err)
+	}
+	if len(criados) != 1 || criados[0].Valor != 2500 {
+		t.Fatalf("despesa criada = %+v, quer valor 2500 (sua parte)", criados)
+	}
+	if len(reembolsos) != 1 || reembolsos[0].Valor != 2500 {
+		t.Fatalf("reembolso criado = %+v, quer valor 2500 (parte da maria)", reembolsos)
+	}
+	var tipoR, statusR string
+	if err := conn.QueryRow(`SELECT tipo, status FROM lancamentos WHERE id = ?`, reembolsos[0].ID).
+		Scan(&tipoR, &statusR); err != nil {
+		t.Fatal(err)
+	}
+	if tipoR != "receber" || statusR != "pendente" {
+		t.Errorf("reembolso: tipo=%q status=%q, quer receber/pendente", tipoR, statusR)
+	}
+	// saldo não deve dobrar a divisão: -2500 (despesa, sua parte) + nada da
+	// receita ainda (pendente não entra no saldo já realizado)
+	total, err := saldoTotal(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != -2500 {
+		t.Errorf("saldo total = %d, quer -2500 (só a sua parte da despesa)", total)
+	}
+}
+
+// TestRemoverDespesaRemoveReembolso garante que apagar a despesa que gerou o
+// reembolso também apaga a receita pendente (ON DELETE CASCADE via reembolso_de).
+func TestRemoverDespesaRemoveReembolso(t *testing.T) {
+	conn := abreDB(t)
+	silencia(t, func() error {
+		return Grupo(conn, []string{"add", "--nome", "Casal", "--pessoas", "Eu, Maria"})
+	})
+	var gid int64
+	if err := conn.QueryRow(`SELECT id FROM grupos ORDER BY id DESC LIMIT 1`).Scan(&gid); err != nil {
+		t.Fatal(err)
+	}
+	criados, reembolsos, _, err := CriarLancamentos(conn, LancamentoParams{
+		Tipo: "pagar", Desc: "Mercado", Valor: 5000, Cat: "mercado",
+		Venc: "2026-06-10", GrupoID: gid, RecebePagamento: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`DELETE FROM lancamentos WHERE id = ?`, criados[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM lancamentos WHERE id = ?`, reembolsos[0].ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("reembolso ainda existe após apagar a despesa que o gerou")
 	}
 }
 

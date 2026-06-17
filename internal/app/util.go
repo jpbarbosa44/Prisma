@@ -132,11 +132,13 @@ func somaMeses(data string, n int) string {
 
 // valEf devolve a expressão SQL do "valor efetivo" de um lançamento: quando ele
 // está vinculado a um grupo, o valor é dividido pelo número de pessoas do grupo
-// (a minha parte); sem grupo, é o valor cheio. t é o nome ou alias da tabela
-// lancamentos na consulta (ex.: "lancamentos" ou "l") — sempre qualificado para
-// não colidir com a coluna grupo_id da subconsulta.
+// (a minha parte); sem grupo, é o valor cheio. Se recebe_pagamento estiver
+// marcado, o valor já É a minha parte (o resto foi lançado como receita de
+// reembolso por CriarLancamentos), então não divide de novo. t é o nome ou
+// alias da tabela lancamentos na consulta (ex.: "lancamentos" ou "l") — sempre
+// qualificado para não colidir com a coluna grupo_id da subconsulta.
 func valEf(t string) string {
-	return "(CASE WHEN " + t + ".grupo_id IS NULL THEN " + t + ".valor" +
+	return "(CASE WHEN " + t + ".grupo_id IS NULL OR " + t + ".recebe_pagamento = 1 THEN " + t + ".valor" +
 		" ELSE " + t + ".valor / max(1, (SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = " + t + ".grupo_id)) END)"
 }
 

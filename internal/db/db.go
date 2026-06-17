@@ -167,7 +167,9 @@ CREATE TABLE IF NOT EXISTS lancamentos (
 	quitado_em  TEXT,                               -- AAAA-MM-DD
 	conta_id    INTEGER REFERENCES contas(id) ON DELETE SET NULL,
 	carteira_id INTEGER REFERENCES carteiras(id) ON DELETE SET NULL,
-	criado_em   TEXT NOT NULL DEFAULT (date('now','localtime'))
+	criado_em   TEXT NOT NULL DEFAULT (date('now','localtime')),
+	recebe_pagamento INTEGER NOT NULL DEFAULT 0, -- 1 = valor já é a sua parte; o resto foi lançado como receita de reembolso
+	reembolso_de      INTEGER REFERENCES lancamentos(id) ON DELETE CASCADE -- aponta pra despesa que gerou esta receita de reembolso
 );
 
 CREATE TABLE IF NOT EXISTS emergencias (
@@ -331,6 +333,8 @@ func migrate(conn *sql.DB) error {
 		{"lancamentos", "observacao", `ALTER TABLE lancamentos ADD COLUMN observacao TEXT NOT NULL DEFAULT ''`},
 		{"recorrencias", "grupo_id", `ALTER TABLE recorrencias ADD COLUMN grupo_id INTEGER REFERENCES grupos(id) ON DELETE SET NULL`},
 		{"recorrencias", "auto_quitar", `ALTER TABLE recorrencias ADD COLUMN auto_quitar INTEGER NOT NULL DEFAULT 0`},
+		{"lancamentos", "recebe_pagamento", `ALTER TABLE lancamentos ADD COLUMN recebe_pagamento INTEGER NOT NULL DEFAULT 0`},
+		{"lancamentos", "reembolso_de", `ALTER TABLE lancamentos ADD COLUMN reembolso_de INTEGER REFERENCES lancamentos(id) ON DELETE CASCADE`},
 	}
 	for _, c := range colunas {
 		if err := conn.QueryRow(
