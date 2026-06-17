@@ -249,14 +249,33 @@ func cartaoRemover(conn *sql.DB, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("uso: prisma cartao remover <id>")
 	}
-	res, err := conn.Exec(`DELETE FROM cartoes WHERE id = ?`, args[0])
+	id := args[0]
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// as despesas do cartão (faturas) somem junto: não fazem sentido sem o cartão
+	resL, err := tx.Exec(`DELETE FROM lancamentos WHERE cartao_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM cartoes WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("cartão #%s não encontrado", args[0])
+		return fmt.Errorf("cartão #%s não encontrado", id)
 	}
-	fmt.Printf("Cartão #%s removido (os lançamentos vinculados foram mantidos, sem cartão).\n", args[0])
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	nl, _ := resL.RowsAffected()
+	if nl > 0 {
+		fmt.Printf("Cartão #%s removido com %d lançamento(s) de despesa vinculado(s).\n", id, nl)
+	} else {
+		fmt.Printf("Cartão #%s removido.\n", id)
+	}
 	return nil
 }
 

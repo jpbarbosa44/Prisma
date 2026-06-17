@@ -35,10 +35,12 @@ type LancamentoParams struct {
 	Venc     string // AAAA-MM-DD
 	ContaID  int64
 	CartID   int64
-	GrupoID  int64 // grupo que divide a despesa (0 = sem grupo)
-	CartaoID int64 // cartão de crédito; Venc passa a ser a DATA DA COMPRA
-	Repetir  int   // repete o lançamento por N meses (0 ou 1 = não repete)
-	Parcelas int   // divide o valor TOTAL em N parcelas (0 ou 1 = à vista)
+	GrupoID  int64  // grupo que divide a despesa (0 = sem grupo)
+	CartaoID int64  // cartão de crédito; Venc passa a ser a DATA DA COMPRA
+	Repetir  int    // repete o lançamento por N meses (0 ou 1 = não repete)
+	Parcelas int    // divide o valor TOTAL em N parcelas (0 ou 1 = à vista)
+	Obs      string // observação livre
+	AutoQuit bool   // quita sozinho ao chegar o vencimento
 	Quitado  bool
 }
 
@@ -84,6 +86,7 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 		return nil, false, fmt.Errorf("vencimento inválido: %q", p.Venc)
 	}
 	categoriaNova := avisaCategoriaNova(conn, p.Cat)
+	registraCategoria(conn, p.Cat)
 
 	var conta, carteira any
 	if p.ContaID != 0 {
@@ -146,7 +149,12 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 	if p.Parcelas > 1 {
 		n = p.Parcelas
 	}
+	autoQuit := 0
+	if p.AutoQuit {
+		autoQuit = 1
+	}
 	criados := make([]LancamentoCriado, 0, n)
+	var ids []int64
 	for i := 0; i < n; i++ {
 		valorItem, descItem := p.Valor, p.Desc
 		if p.Parcelas > 1 {
@@ -164,15 +172,25 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, boo
 			dataCompraItem = somaMeses(dataCompraBase, i)
 		}
 		res, err := conn.Exec(`
-			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id, cartao_id, data_compra)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-			p.Tipo, descItem, valorItem, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo, cartao, dataCompraItem,
+			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id, cartao_id, data_compra, observacao, auto_quitar)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			p.Tipo, descItem, valorItem, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo, cartao, dataCompraItem, p.Obs, autoQuit,
 		)
 		if err != nil {
 			return criados, categoriaNova, err
 		}
 		id, _ := res.LastInsertId()
+		ids = append(ids, id)
 		criados = append(criados, LancamentoCriado{id, descItem, valorItem, vencItem})
+	}
+	// parcelado: liga todas as parcelas à raiz (a 1ª), para excluir em bloco
+	if p.Parcelas > 1 && len(ids) > 0 {
+		raiz := ids[0]
+		for _, id := range ids {
+			if _, err := conn.Exec(`UPDATE lancamentos SET parcela_grupo = ? WHERE id = ?`, raiz, id); err != nil {
+				return criados, categoriaNova, err
+			}
+		}
 	}
 	return criados, categoriaNova, nil
 }
@@ -189,6 +207,8 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	cartaoID := fs.Int64("cartao", 0, "id do cartão (a data vira a da compra; vai pra fatura)")
 	repetir := fs.Int("repetir", 1, "repete o lançamento por N meses consecutivos")
 	parcelas := fs.Int("parcelas", 1, "divide o valor TOTAL em N parcelas mensais")
+	obs := fs.String("obs", "", "observação livre")
+	autoQuit := fs.Bool("auto-quitar", false, "quita sozinho ao chegar o vencimento")
 	quitado := fs.Bool("quitado", false, "já marca como quitado (pago/recebido)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -213,7 +233,7 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	criados, categoriaNova, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: tipo, Desc: *desc, Valor: centavos, Cat: *cat, Venc: data,
 		ContaID: *contaID, CartID: *cartID, GrupoID: *grupoID, CartaoID: *cartaoID,
-		Repetir: *repetir, Parcelas: *parcelas, Quitado: *quitado,
+		Repetir: *repetir, Parcelas: *parcelas, Obs: *obs, AutoQuit: *autoQuit, Quitado: *quitado,
 	})
 	if err != nil {
 		return err
@@ -272,19 +292,24 @@ func Lancamentos(conn *sql.DB, args []string) error {
 	de := fs.String("de", "", "vencimento a partir desta data")
 	ate := fs.String("ate", "", "vencimento até esta data (inclusive)")
 	cat := fs.String("cat", "", "filtra por categoria")
+	grupo := fs.String("grupo", "", "filtra pelos lançamentos vinculados a um grupo")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	query := `SELECT l.id, l.tipo, l.descricao, ` + valEf("l") + `, l.categoria, l.vencimento, l.status, l.quitado_em,
 		g.nome, (SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = l.grupo_id),
-		ca.nome, l.vencimento
+		ca.nome, l.vencimento, l.observacao, l.auto_quitar
 		FROM lancamentos l
 		LEFT JOIN grupos g ON g.id = l.grupo_id
 		LEFT JOIN cartoes ca ON ca.id = l.cartao_id WHERE 1=1`
 	var params []any
 	if *pendentes {
 		query += ` AND status = 'pendente'`
+	}
+	if *grupo != "" {
+		query += ` AND l.grupo_id = ?`
+		params = append(params, *grupo)
 	}
 	if *tipo != "" {
 		query += ` AND tipo = ?`
@@ -327,17 +352,17 @@ func Lancamentos(conn *sql.DB, args []string) error {
 	defer rows.Close()
 
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tTIPO\tDESCRIÇÃO\tCATEGORIA\tVENCIMENTO\tVALOR\tGRUPO\tCARTÃO\tSTATUS")
+	fmt.Fprintln(w, "ID\tTIPO\tDESCRIÇÃO\tCATEGORIA\tVENCIMENTO\tVALOR\tGRUPO\tCARTÃO\tOBS\tSTATUS")
 	achou := false
 	hoje, _ := parseData("hoje")
 	var totPagar, totReceber int64
 	for rows.Next() {
 		achou = true
 		var id, valor int64
-		var t, desc, categoria, venc, status string
+		var t, desc, categoria, venc, status, obs string
 		var quitadoEm, grupo, cartao, cartaoVenc sql.NullString
-		var pessoas int
-		if err := rows.Scan(&id, &t, &desc, &valor, &categoria, &venc, &status, &quitadoEm, &grupo, &pessoas, &cartao, &cartaoVenc); err != nil {
+		var pessoas, autoQuit int
+		if err := rows.Scan(&id, &t, &desc, &valor, &categoria, &venc, &status, &quitadoEm, &grupo, &pessoas, &cartao, &cartaoVenc, &obs, &autoQuit); err != nil {
 			return err
 		}
 		st := "pendente"
@@ -346,6 +371,9 @@ func Lancamentos(conn *sql.DB, args []string) error {
 			st = "quitado em " + dataBR(quitadoEm.String)
 		case venc < hoje:
 			st = "⚠ atrasada" // vencida e ainda não quitada
+		}
+		if autoQuit == 1 && status == "pendente" {
+			st += " ⏱" // quita sozinho no vencimento
 		}
 		if status == "pendente" {
 			if t == "pagar" {
@@ -368,7 +396,8 @@ func Lancamentos(conn *sql.DB, args []string) error {
 				crt += " " + cartaoVenc.String[5:7] + "/" + cartaoVenc.String[2:4]
 			}
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, t, desc, categoria, dataBR(venc), money.Format(valor), grp, crt, st)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			id, t, desc, categoria, dataBR(venc), money.Format(valor), grp, crt, ouTraco(truncar(obs, 24)), st)
 	}
 	if !achou {
 		fmt.Println("Nenhum lançamento encontrado.")
@@ -399,6 +428,8 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 	cartID := fs.Int64("carteira", -1, "vincular à carteira (0 desvincula)")
 	grupoID := fs.Int64("grupo", -1, "vincular ao grupo que divide (0 desvincula)")
 	cartaoID := fs.Int64("cartao", -1, "mover para o cartão, na fatura (0 desvincula)")
+	obs := fs.String("obs", "", "observação livre (use \"-\" para limpar)")
+	autoQuit := fs.String("auto-quitar", "", "quita no vencimento: sim | nao")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -435,6 +466,7 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 			defer fmt.Printf("Aviso: primeira vez usando a categoria %q — confira se não é um erro de digitação.\n",
 				strings.ToLower(*cat))
 		}
+		registraCategoria(conn, *cat)
 		sets, params = append(sets, "categoria = ?"), append(params, strings.ToLower(*cat))
 	}
 	if informado["conta"] && informado["carteira"] && *contaID > 0 && *cartID > 0 {
@@ -472,6 +504,25 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 		} else {
 			sets = append(sets, "grupo_id = NULL")
 		}
+	}
+	if informado["obs"] {
+		valor := *obs
+		if valor == "-" { // "-" limpa a observação
+			valor = ""
+		}
+		sets, params = append(sets, "observacao = ?"), append(params, valor)
+	}
+	if informado["auto-quitar"] {
+		v := 0
+		switch strings.ToLower(strings.TrimSpace(*autoQuit)) {
+		case "sim", "s", "1", "true":
+			v = 1
+		case "nao", "não", "n", "0", "false":
+			v = 0
+		default:
+			return fmt.Errorf("--auto-quitar deve ser sim ou nao")
+		}
+		sets, params = append(sets, "auto_quitar = ?"), append(params, v)
 	}
 	if informado["cartao"] {
 		if *cartaoID > 0 {
@@ -525,15 +576,48 @@ func lancamentoRemover(conn *sql.DB, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("uso: prisma lancamentos remover <id>")
 	}
-	res, err := conn.Exec(`DELETE FROM lancamentos WHERE id = ?`, args[0])
+	id := args[0]
+	// se for a parcela raiz (parcela_grupo aponta para si mesma), remove todas as
+	// parcelas do grupo; senão, só o lançamento informado.
+	var parcelaGrupo sql.NullInt64
+	if err := conn.QueryRow(`SELECT parcela_grupo FROM lancamentos WHERE id = ?`, id).Scan(&parcelaGrupo); err == sql.ErrNoRows {
+		return fmt.Errorf("lançamento #%s não encontrado", id)
+	} else if err != nil {
+		return err
+	}
+	if parcelaGrupo.Valid && fmt.Sprint(parcelaGrupo.Int64) == id {
+		res, err := conn.Exec(`DELETE FROM lancamentos WHERE parcela_grupo = ?`, parcelaGrupo.Int64)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		fmt.Printf("Parcela raiz #%s removida com todas as %d parcela(s) do grupo.\n", id, n)
+		return nil
+	}
+	res, err := conn.Exec(`DELETE FROM lancamentos WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("lançamento #%s não encontrado", args[0])
+		return fmt.Errorf("lançamento #%s não encontrado", id)
 	}
-	fmt.Printf("Lançamento #%s removido.\n", args[0])
+	fmt.Printf("Lançamento #%s removido.\n", id)
 	return nil
+}
+
+// QuitarVencidos quita automaticamente os lançamentos pendentes marcados com
+// auto_quitar cujo vencimento já chegou, usando a própria data de vencimento.
+// Idempotente; roda a cada inicialização do Prisma e do bot.
+func QuitarVencidos(conn *sql.DB) (int, error) {
+	hoje, _ := parseData("hoje")
+	res, err := conn.Exec(`
+		UPDATE lancamentos SET status = 'quitado', quitado_em = vencimento
+		WHERE status = 'pendente' AND auto_quitar = 1 AND vencimento <= ?`, hoje)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // Quitar marca um lançamento como pago/recebido: `prisma quitar <id> [--data AAAA-MM-DD]`.

@@ -26,18 +26,20 @@ Digite `prisma` e a interface abre em tela cheia (como o btop), com o prisma em 
    2  Contas         cadastro de contas bancárias
    3  Carteiras      dinheiro fora do banco
    4  Grupos         pessoas que dividem despesas
-   5  Cartões        cartões de crédito e faturas
-   6  Pagar/Receber  lançamentos e quitação
-   7  Recorrências   salário, aluguel: todo mês, sozinho
-   8  Assinaturas    serviços recorrentes (Netflix, Spotify...)
-   9  Emergência     plano de ação para quitar dívidas
-  10  Planejamento   limites de gasto por semana ou mês
-  11  Relatório      análise do passado, por categoria
-  12  Gráficos       categorias, saldo, receitas × despesas
-  13  Previsão       projeção de saldo futuro
-  14  Simulação      e se eu comprar isto?
+   5  Categorias     catálogo de categorias
+   6  Cartões        cartões de crédito e faturas
+   7  Pagar/Receber  lançamentos e quitação
+   8  Recorrências   salário, aluguel: todo mês, sozinho
+   9  Assinaturas    serviços recorrentes (Netflix, Spotify...)
+  10  Emergência     plano de ação para quitar dívidas
+  11  Planejamento   limites de gasto por semana ou mês
+  12  Relatório      análise do passado, por categoria
+  13  Estatísticas   tendência, top gastos, saúde financeira
+  14  Gráficos       categorias, saldo, receitas × despesas
+  15  Previsão       projeção de saldo futuro
+  16  Simulação      e se eu comprar isto?
 
-  ↑/↓ navegar · enter abrir · 1-14 atalho · q sair
+  ↑/↓ navegar · enter abrir · 1-17 atalho · q sair
 ```
 
 Nas tabelas, `↑/↓` selecionam a linha e as ações usam o item selecionado (quitar, editar, remover — sem digitar o id). Remoções pedem confirmação `s/n`. Os formulários navegam com `tab`/`enter` e cancelam com `esc`.
@@ -90,16 +92,19 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o di
 
 - **Conta** — conta bancária (corrente, poupança ou investimento).
 - **Carteira** — dinheiro fora do banco (físico, vale, etc.).
-- **Lançamento** — algo a **pagar** ou a **receber**, com vencimento, categoria e status (`pendente` → `quitado`). Pode ser vinculado a uma conta ou carteira; ao quitar, o saldo dela é atualizado.
+- **Lançamento** — algo a **pagar** ou a **receber**, com vencimento, categoria, observação e status (`pendente` → `quitado`). Pode ser vinculado a uma conta ou carteira; ao quitar, o saldo dela é atualizado. Pode ainda **quitar sozinho no vencimento** (`--auto-quitar`).
+- **Categoria** — etiqueta dos lançamentos (mercado, moradia, salário...). O Prisma mantém um **catálogo**: ao usar uma categoria nova, ela é cadastrada automaticamente; na interface, o campo sugere as existentes enquanto você digita.
 - **Grupo** — pessoas que dividem despesas (ex.: "eu e a Maria"). Uma despesa vinculada a um grupo passa a contar, no sistema inteiro, só pela **sua parte** (valor cheio ÷ nº de pessoas).
 - **Cartão** — cartão de crédito, com dias de fechamento e vencimento. Uma compra no cartão é um lançamento que cai na **fatura** do ciclo e só mexe no saldo do banco quando a fatura é paga.
 - **Assinatura** — serviço recorrente (Netflix, Spotify, academia...), em geral pago no cartão. É uma recorrência de despesa com visão e total mensal próprios.
 - **Emergência** — uma dívida com plano de ação mês a mês para quitá-la.
 - **Plano** — limite de gasto por categoria, por semana ou por mês.
+- **Relatório** — análise do passado: gastos por categoria e balanço mês a mês.
+- **Estatísticas** — análise estatística mais profunda: média/mediana por categoria, tendência e variação, top gastos e recorrentes, projeção e saúde financeira.
 - **Previsão** — projeção do saldo nos próximos meses.
 - **Simulação** — projeta o impacto de uma compra parcelada no saldo futuro, sem gravar nada.
 
-Valores aceitam os formatos `1234`, `1234,56` e `1.234,56`; datas aceitam `AAAA-MM-DD` e `DD/MM/AAAA`.
+Valores aceitam os formatos `1234`, `1234,56` e `1.234,56`; datas aceitam `AAAA-MM-DD`, `DD/MM/AAAA` e `DD/MM` (assume o ano vigente).
 
 ## Uso
 
@@ -119,14 +124,15 @@ prisma pagar add --desc "Aluguel" --valor 1200 --venc 05/07/2026 --cat moradia -
 prisma pagar add --desc "Notebook" --valor 3.600,00 --parcelas 10   # divide o TOTAL em 10x
 prisma pagar add --desc "Mercado" --valor 300 --grupo 1            # conta só a sua parte
 prisma pagar add --desc "Tênis" --valor 400 --parcelas 4 --cartao 1 # 4x na fatura do cartão
+prisma pagar add --desc "IPTU" --valor 600 --venc 10/03 --auto-quitar --obs "cota única"
 prisma receber add --desc "Freela" --valor 800 --venc 01/07/2026 --conta 1
-prisma lancamentos --pendentes     # filtros: --tipo, --mes, --de, --ate, --cat
+prisma lancamentos --pendentes     # filtros: --tipo, --mes, --de, --ate, --cat, --grupo
 prisma quitar 4                    # marca como pago/recebido (aceita --data)
 prisma lancamentos editar 7 --valor 1.250,00 --cat moradia   # altera só o que for passado
-prisma lancamentos remover 7
+prisma lancamentos remover 7       # se for a parcela raiz, remove TODAS as parcelas
 ```
 
-`--repetir N` repete o mesmo valor por N meses; `--parcelas N` divide o valor total em N parcelas; `--quitado` registra algo já pago. `--grupo N` divide a despesa (só a sua parte conta); `--cartao N` joga a compra na fatura do cartão. Categorias nunca usadas geram um aviso (proteção contra erros de digitação).
+`--repetir N` repete o mesmo valor por N meses; `--parcelas N` divide o valor total em N parcelas (não use os dois juntos); `--quitado` registra algo já pago. `--grupo N` divide a despesa (só a sua parte conta); `--cartao N` joga a compra na fatura do cartão. `--obs` guarda uma observação; `--auto-quitar` faz o lançamento quitar sozinho quando o vencimento chega. Remover a **parcela raiz** (a 1ª) apaga todas as parcelas do grupo. Categorias nunca usadas geram um aviso (proteção contra erros de digitação) e entram no catálogo.
 
 ### Recorrências
 
@@ -136,11 +142,12 @@ Regras que geram lançamentos sozinhas, 3 meses à frente, a cada execução do 
 prisma recorrencia add --tipo receber --desc "Salário" --valor 5000 --dia 1 --conta 1
 prisma recorrencia add --tipo pagar --desc "Aluguel" --valor 1300 --dia 10 --cat moradia --fim 31/12/2027
 prisma recorrencia add --tipo pagar --desc "Internet" --valor 100 --dia 15 --cartao 1   # gera na fatura
-prisma recorrencia listar
+prisma recorrencia add --tipo pagar --desc "Faxina" --valor 200 --dia 5 --grupo 1 --auto-quitar
+prisma recorrencia listar          # com fim definido, mostra quantas ocorrências faltam
 prisma recorrencia remover 1 --limpar   # apaga a regra e os pendentes gerados
 ```
 
-A recorrência pode vincular a uma conta, carteira ou cartão (`--cartao N`, cai na fatura). As assinaturas são recorrências de despesa com visão própria — veja abaixo.
+A recorrência pode vincular a uma conta, carteira ou cartão (`--cartao N`, cai na fatura) e a um grupo (`--grupo N`, divide a sua parte). `--auto-quitar` faz os lançamentos gerados quitarem sozinhos no vencimento. Quando a regra tem início **e** fim, a listagem mostra quantas ocorrências ainda faltam. As assinaturas são recorrências de despesa com visão própria — veja abaixo.
 
 ### Transferências
 
@@ -157,9 +164,25 @@ Para gastos divididos com outras pessoas: vincule a despesa a um grupo e o Prism
 ```sh
 prisma grupo add --nome "Eu e a Maria" --pessoas "Eu, Maria"   # 2 pessoas: divide por 2
 prisma pagar add --desc "Mercado" --valor 300 --grupo 1        # pesa só 150,00 no seu bolso
-prisma grupo listar                                            # total cheio x a sua parte
+prisma grupo listar                                            # total cheio, sua parte e gasto do mês atual
+prisma lancamentos --grupo 1                                   # vê os gastos vinculados ao grupo
 prisma grupo editar 1 --pessoas "Eu, Maria, João"             # passa a dividir por 3
 ```
+
+A listagem de grupos mostra também a **soma do mês vigente** (a sua parte). Na interface, a tela Grupos tem a ação **ver despesas**, que lista os lançamentos vinculados.
+
+### Categorias
+
+O Prisma mantém um catálogo de categorias. Categorias usadas num lançamento ou recorrência entram nele automaticamente; você também pode gerenciá-las à mão:
+
+```sh
+prisma categoria add --nome mercado
+prisma categoria listar              # cada categoria + nº de lançamentos
+prisma categoria editar 3 --nome supermercado   # renomeia e atualiza os lançamentos
+prisma categoria remover 5           # tira do catálogo (os lançamentos ficam)
+```
+
+Na interface, o campo de categoria sugere as existentes enquanto você digita (←/→ navega nelas) e cria a nova se você digitar um nome inédito.
 
 ### Cartões de crédito e faturas
 
@@ -173,7 +196,7 @@ prisma fatura --cartao 1           # detalhe da fatura em aberto (ou --ref AAAA-
 prisma fatura pagar --cartao 1     # quita a fatura em bloco e debita a conta do cartão
 ```
 
-`--fatura-atual` lança o saldo já em aberto ao cadastrar o cartão, sem precisar relançar o passado. A divisão por grupo continua valendo: a fatura reflete a sua parte.
+`--fatura-atual` lança o saldo já em aberto ao cadastrar o cartão, sem precisar relançar o passado. A divisão por grupo continua valendo: a fatura reflete a sua parte. **Remover um cartão apaga junto os lançamentos de despesa vinculados a ele.**
 
 ### Assinaturas
 
@@ -181,9 +204,12 @@ Serviços recorrentes (Netflix, Spotify, academia...). É uma recorrência de de
 
 ```sh
 prisma assinaturas add --desc "Netflix" --valor 39,90 --dia 20 --cartao 1
-prisma assinaturas listar          # cada assinatura + total mensal
+prisma assinaturas add --desc "Spotify Família" --valor 34,90 --dia 10 --conta 1 --grupo 1  # dividida
+prisma assinaturas listar          # cada assinatura + total mensal (e quantas cobranças faltam, se tiver fim)
 prisma assinaturas remover 3
 ```
+
+`--grupo N` divide a assinatura entre as pessoas do grupo (só a sua parte conta).
 
 ### Modo de emergência (quitar dívidas)
 
@@ -213,6 +239,16 @@ O gasto considera lançamentos *a pagar* da categoria: quitados dentro do perío
 prisma relatorio --meses 6         # gastos por categoria (com barras), balanço mês a mês, taxa de poupança
 prisma extrato --conta 1 --meses 3 # movimentação com saldo corrente, incluindo transferências
 ```
+
+### Estatísticas
+
+Análise estatística mais profunda do histórico quitado:
+
+```sh
+prisma estatisticas --meses 6
+```
+
+Quatro blocos: **resumo por categoria** (média, mediana, maior/menor mês e % do total), **tendência e variação** (mês a mês, média móvel e alerta de categorias acima da própria média), **top gastos e recorrentes** (maiores lançamentos e despesas repetidas, candidatas a virar recorrência) e **projeção e saúde financeira** (sobra, taxa de poupança, projeção do saldo e meses de fôlego).
 
 ### Gráficos
 

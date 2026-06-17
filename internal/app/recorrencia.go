@@ -49,8 +49,10 @@ func recorrenciaAdd(conn *sql.DB, args []string) error {
 	cat := fs.String("cat", "geral", "categoria")
 	contaID := fs.Int64("conta", 0, "id da conta vinculada")
 	cartID := fs.Int64("carteira", 0, "id da carteira vinculada")
+	grupoID := fs.Int64("grupo", 0, "id do grupo que divide a despesa")
 	cartaoID := fs.Int64("cartao", 0, "id do cartão (gera os lançamentos na fatura)")
 	assinatura := fs.Bool("assinatura", false, "marca como assinatura (Netflix, Spotify...)")
+	autoQuit := fs.Bool("auto-quitar", false, "quita os lançamentos gerados no vencimento")
 	inicio := fs.String("inicio", "hoje", "a partir de quando vale")
 	fim := fs.String("fim", "", "até quando vale (vazio = sem fim)")
 	passados := fs.String("passados", "", "ocorrências antes de hoje: quitar | manter (vazio pergunta)")
@@ -119,12 +121,20 @@ func recorrenciaAdd(conn *sql.DB, args []string) error {
 	if *cartaoID != 0 {
 		cartao = *cartaoID
 	}
+	var grupo any
+	if *grupoID != 0 {
+		if err := existe(conn, "grupos", *grupoID); err != nil {
+			return err
+		}
+		grupo = *grupoID
+	}
 	categoriaNova := avisaCategoriaNova(conn, *cat)
+	registraCategoria(conn, *cat)
 
 	res, err := conn.Exec(`
-		INSERT INTO recorrencias (tipo, descricao, valor, categoria, dia, conta_id, carteira_id, inicio, fim, cartao_id, assinatura)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		*tipo, *desc, centavos, strings.ToLower(*cat), *dia, conta, carteira, dIni, dFim, cartao, *assinatura,
+		INSERT INTO recorrencias (tipo, descricao, valor, categoria, dia, conta_id, carteira_id, inicio, fim, cartao_id, assinatura, grupo_id, auto_quitar)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		*tipo, *desc, centavos, strings.ToLower(*cat), *dia, conta, carteira, dIni, dFim, cartao, *assinatura, grupo, *autoQuit,
 	)
 	if err != nil {
 		return err
@@ -216,8 +226,10 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	cat := fs.String("cat", "", "nova categoria")
 	contaID := fs.Int64("conta", -1, "vincular à conta (0 desvincula)")
 	cartID := fs.Int64("carteira", -1, "vincular à carteira (0 desvincula)")
+	grupoID := fs.Int64("grupo", -1, "vincular ao grupo que divide (0 desvincula)")
 	cartaoID := fs.Int64("cartao", -1, "vincular ao cartão, na fatura (0 desvincula)")
 	assinatura := fs.String("assinatura", "", "marca como assinatura: sim | nao")
+	autoQuit := fs.String("auto-quitar", "", "quita os gerados no vencimento: sim | nao")
 	fim := fs.String("fim", "", "nova data de término (ou \"nunca\" para remover)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -235,13 +247,13 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 		dia                     int
 		conta, carteira         sql.NullInt64
 		fim                     sql.NullString
-		cartao                  sql.NullInt64
-		assinatura              bool
+		cartao, grupo           sql.NullInt64
+		assinatura, autoQuitar  bool
 	}
 	err := conn.QueryRow(`
-		SELECT tipo, descricao, valor, categoria, dia, conta_id, carteira_id, inicio, fim, cartao_id, assinatura
+		SELECT tipo, descricao, valor, categoria, dia, conta_id, carteira_id, inicio, fim, cartao_id, assinatura, grupo_id, auto_quitar
 		FROM recorrencias WHERE id = ?`, id,
-	).Scan(&r.tipo, &r.desc, &r.valor, &r.cat, &r.dia, &r.conta, &r.carteira, &r.inicio, &r.fim, &r.cartao, &r.assinatura)
+	).Scan(&r.tipo, &r.desc, &r.valor, &r.cat, &r.dia, &r.conta, &r.carteira, &r.inicio, &r.fim, &r.cartao, &r.assinatura, &r.grupo, &r.autoQuitar)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("recorrência #%s não encontrada", id)
 	}
@@ -276,6 +288,7 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 			return fmt.Errorf("a categoria não pode ficar vazia")
 		}
 		r.cat = strings.ToLower(*cat)
+		registraCategoria(conn, r.cat)
 	}
 	if informado["conta"] {
 		if *contaID > 0 {
@@ -320,6 +333,16 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 			r.cartao = sql.NullInt64{}
 		}
 	}
+	if informado["grupo"] {
+		if *grupoID > 0 {
+			if err := existe(conn, "grupos", *grupoID); err != nil {
+				return err
+			}
+			r.grupo = sql.NullInt64{Int64: *grupoID, Valid: true}
+		} else {
+			r.grupo = sql.NullInt64{}
+		}
+	}
 	if informado["assinatura"] {
 		switch strings.ToLower(strings.TrimSpace(*assinatura)) {
 		case "sim", "s", "true", "1":
@@ -328,6 +351,16 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 			r.assinatura = false
 		default:
 			return fmt.Errorf("--assinatura deve ser sim ou nao")
+		}
+	}
+	if informado["auto-quitar"] {
+		switch strings.ToLower(strings.TrimSpace(*autoQuit)) {
+		case "sim", "s", "true", "1":
+			r.autoQuitar = true
+		case "nao", "não", "n", "false", "0":
+			r.autoQuitar = false
+		default:
+			return fmt.Errorf("--auto-quitar deve ser sim ou nao")
 		}
 	}
 	if informado["fim"] {
@@ -345,7 +378,7 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 		}
 	}
 
-	var conta, carteira, cartao, dFim any
+	var conta, carteira, cartao, grupo, dFim any
 	if r.conta.Valid {
 		conta = r.conta.Int64
 	}
@@ -355,23 +388,26 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	if r.cartao.Valid {
 		cartao = r.cartao.Int64
 	}
+	if r.grupo.Valid {
+		grupo = r.grupo.Int64
+	}
 	if r.fim.Valid {
 		dFim = r.fim.String
 	}
 	_, err = conn.Exec(`
 		UPDATE recorrencias SET descricao = ?, valor = ?, categoria = ?, dia = ?,
-		       conta_id = ?, carteira_id = ?, fim = ?, cartao_id = ?, assinatura = ? WHERE id = ?`,
-		r.desc, r.valor, r.cat, r.dia, conta, carteira, dFim, cartao, r.assinatura, id,
+		       conta_id = ?, carteira_id = ?, fim = ?, cartao_id = ?, assinatura = ?, grupo_id = ?, auto_quitar = ? WHERE id = ?`,
+		r.desc, r.valor, r.cat, r.dia, conta, carteira, dFim, cartao, r.assinatura, grupo, r.autoQuitar, id,
 	)
 	if err != nil {
 		return err
 	}
 
-	// desc/valor/categoria sempre propagam aos pendentes já gerados
+	// desc/valor/categoria/grupo/auto_quitar sempre propagam aos pendentes já gerados
 	res, err := conn.Exec(`
-		UPDATE lancamentos SET descricao = ?, valor = ?, categoria = ?
+		UPDATE lancamentos SET descricao = ?, valor = ?, categoria = ?, grupo_id = ?, auto_quitar = ?
 		WHERE recorrencia_id = ? AND status = 'pendente'`,
-		r.desc, r.valor, r.cat, id,
+		r.desc, r.valor, r.cat, grupo, r.autoQuitar, id,
 	)
 	if err != nil {
 		return err
@@ -477,7 +513,7 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 	rows, err := conn.Query(`
 		SELECT r.id, r.tipo, r.descricao, r.valor, r.categoria, r.dia, r.conta_id, r.carteira_id,
 		       r.inicio, COALESCE(r.fim, ''), r.ultima_ref,
-		       r.cartao_id, c.dia_fechamento, c.dia_vencimento, c.conta_id
+		       r.cartao_id, c.dia_fechamento, c.dia_vencimento, c.conta_id, r.grupo_id, r.auto_quitar
 		FROM recorrencias r LEFT JOIN cartoes c ON c.id = r.cartao_id`)
 	if err != nil {
 		return 0, err
@@ -489,13 +525,15 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 		conta, carteira              sql.NullInt64
 		inicio, fim, refUl           string
 		cartao, cFech, cVenc, cConta sql.NullInt64
+		grupo                        sql.NullInt64
+		autoQuitar                   bool
 	}
 	var regras []regra
 	for rows.Next() {
 		var r regra
 		if err := rows.Scan(&r.id, &r.tipo, &r.desc, &r.valor, &r.cat, &r.dia,
 			&r.conta, &r.carteira, &r.inicio, &r.fim, &r.refUl,
-			&r.cartao, &r.cFech, &r.cVenc, &r.cConta); err != nil {
+			&r.cartao, &r.cFech, &r.cVenc, &r.cConta, &r.grupo, &r.autoQuitar); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -515,12 +553,15 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 			// a vigência (início/fim) é medida pela data da ocorrência (a compra),
 			// mesmo quando o vencimento depois vira o da fatura do cartão
 			if venc >= r.inicio && (r.fim == "" || venc <= r.fim) {
-				var conta, carteira, cartao, dataCompra any
+				var conta, carteira, cartao, dataCompra, grupo any
 				if r.conta.Valid {
 					conta = r.conta.Int64
 				}
 				if r.carteira.Valid {
 					carteira = r.carteira.Int64
+				}
+				if r.grupo.Valid {
+					grupo = r.grupo.Int64
 				}
 				// cartão: a ocorrência cai numa fatura — a data vira a da compra,
 				// o vencimento passa a ser o da fatura e quem paga é a conta do cartão
@@ -538,9 +579,9 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 					}
 				}
 				_, err := conn.Exec(`
-					INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, conta_id, carteira_id, recorrencia_id, cartao_id, data_compra)
-					VALUES (?,?,?,?,?,?,?,?,?,?)`,
-					r.tipo, r.desc, r.valor, r.cat, venc, conta, carteira, r.id, cartao, dataCompra,
+					INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, conta_id, carteira_id, recorrencia_id, cartao_id, data_compra, grupo_id, auto_quitar)
+					VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+					r.tipo, r.desc, r.valor, r.cat, venc, conta, carteira, r.id, cartao, dataCompra, grupo, r.autoQuitar,
 				)
 				if err != nil {
 					return total, err
@@ -554,6 +595,29 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 		}
 	}
 	return total, nil
+}
+
+// ocorrenciasRestantes conta quantas cobranças ainda faltam de uma recorrência
+// com término definido: as ocorrências (dia de cada mês, de início a fim) que
+// caem de hoje em diante. Retorna 0 quando já encerrou.
+func ocorrenciasRestantes(inicio, fim string, dia int) int {
+	if fim == "" {
+		return -1 // sem fim
+	}
+	hoje, _ := parseData("hoje")
+	ref := inicio[:7]
+	if hoje[:7] > ref {
+		ref = hoje[:7]
+	}
+	cont := 0
+	for ref <= fim[:7] {
+		venc := diaNoMes(ref, dia)
+		if venc >= inicio && venc <= fim && venc >= hoje {
+			cont++
+		}
+		ref = proximoMes(ref)
+	}
+	return cont
 }
 
 // proximoMes avança uma referência AAAA-MM em um mês.
@@ -590,8 +654,10 @@ func recorrenciaListar(conn *sql.DB, args []string) error {
 	}
 	query := `
 		SELECT r.id, r.tipo, r.descricao, r.valor, r.categoria, r.dia, r.inicio, COALESCE(r.fim, ''),
-		       COALESCE(c.nome, ''), r.assinatura
-		FROM recorrencias r LEFT JOIN cartoes c ON c.id = r.cartao_id WHERE 1=1`
+		       COALESCE(c.nome, ''), r.assinatura, COALESCE(g.nome, ''), r.auto_quitar
+		FROM recorrencias r
+		LEFT JOIN cartoes c ON c.id = r.cartao_id
+		LEFT JOIN grupos g ON g.id = r.grupo_id WHERE 1=1`
 	var params []any
 	if *tipo != "" {
 		query += ` AND r.tipo = ?`
@@ -613,24 +679,30 @@ func recorrenciaListar(conn *sql.DB, args []string) error {
 	defer rows.Close()
 
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tTIPO\tDESCRIÇÃO\tCATEGORIA\tVALOR\tDIA\tCARTÃO\tVIGÊNCIA")
+	fmt.Fprintln(w, "ID\tTIPO\tDESCRIÇÃO\tCATEGORIA\tVALOR\tDIA\tCARTÃO\tGRUPO\tVIGÊNCIA\tRESTANTES")
 	achou := false
 	for rows.Next() {
 		achou = true
 		var id, valor int64
-		var dia, assin int
-		var tipo, desc, cat, ini, fim, cartao string
-		if err := rows.Scan(&id, &tipo, &desc, &valor, &cat, &dia, &ini, &fim, &cartao, &assin); err != nil {
+		var dia, assin, autoQuit int
+		var tipo, desc, cat, ini, fim, cartao, grupo string
+		if err := rows.Scan(&id, &tipo, &desc, &valor, &cat, &dia, &ini, &fim, &cartao, &assin, &grupo, &autoQuit); err != nil {
 			return err
 		}
 		if assin == 1 {
 			desc += " (assinatura)"
 		}
+		if autoQuit == 1 {
+			desc += " ⏱"
+		}
 		vig := "desde " + dataBR(ini)
+		rest := "-"
 		if fim != "" {
 			vig = dataBR(ini) + " a " + dataBR(fim)
+			rest = fmt.Sprintf("%d ocorrência(s)", ocorrenciasRestantes(ini, fim, dia))
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", id, tipo, desc, cat, money.Format(valor), dia, ouTraco(cartao), vig)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+			id, tipo, desc, cat, money.Format(valor), dia, ouTraco(cartao), ouTraco(grupo), vig, rest)
 	}
 	if !achou {
 		fmt.Println("Nenhuma recorrência. Use: prisma recorrencia add --tipo receber --desc \"Salário\" --valor 5000 --dia 1")

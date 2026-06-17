@@ -671,6 +671,9 @@ func (s *sessao) enviaLembretes(hoje string) {
 	if _, err := app.GerarRecorrencias(s.conn); err != nil {
 		fmt.Fprintf(os.Stderr, "aviso: recorrências: %v\n", err)
 	}
+	if _, err := app.QuitarVencidos(s.conn); err != nil {
+		fmt.Fprintf(os.Stderr, "aviso: auto-quitar: %v\n", err)
+	}
 	amanha := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
 	rows, err := s.conn.Query(`
 		SELECT id, tipo, descricao, valor, vencimento FROM lancamentos

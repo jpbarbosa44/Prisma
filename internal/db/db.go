@@ -232,6 +232,12 @@ CREATE TABLE IF NOT EXISTS grupos (
 	criado_em TEXT NOT NULL DEFAULT (date('now','localtime'))
 );
 
+CREATE TABLE IF NOT EXISTS categorias (
+	id        INTEGER PRIMARY KEY AUTOINCREMENT,
+	nome      TEXT NOT NULL UNIQUE,
+	criada_em TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS grupo_pessoas (
 	id       INTEGER PRIMARY KEY AUTOINCREMENT,
 	grupo_id INTEGER NOT NULL REFERENCES grupos(id) ON DELETE CASCADE,
@@ -316,6 +322,35 @@ func migrate(conn *sql.DB) error {
 				return err
 			}
 		}
+	}
+	// colunas novas das melhorias de 2026: parcelas vinculadas, auto-quitar,
+	// observação nos lançamentos e grupo nas recorrências.
+	colunas := []struct{ tabela, coluna, ddl string }{
+		{"lancamentos", "parcela_grupo", `ALTER TABLE lancamentos ADD COLUMN parcela_grupo INTEGER`},
+		{"lancamentos", "auto_quitar", `ALTER TABLE lancamentos ADD COLUMN auto_quitar INTEGER NOT NULL DEFAULT 0`},
+		{"lancamentos", "observacao", `ALTER TABLE lancamentos ADD COLUMN observacao TEXT NOT NULL DEFAULT ''`},
+		{"recorrencias", "grupo_id", `ALTER TABLE recorrencias ADD COLUMN grupo_id INTEGER REFERENCES grupos(id) ON DELETE SET NULL`},
+		{"recorrencias", "auto_quitar", `ALTER TABLE recorrencias ADD COLUMN auto_quitar INTEGER NOT NULL DEFAULT 0`},
+	}
+	for _, c := range colunas {
+		if err := conn.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, c.tabela, c.coluna,
+		).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := conn.Exec(c.ddl); err != nil {
+				return err
+			}
+		}
+	}
+	// catálogo de categorias: semeia a partir das já usadas nos lançamentos e
+	// nas recorrências (idempotente — categorias.nome é UNIQUE).
+	if _, err := conn.Exec(`
+		INSERT OR IGNORE INTO categorias (nome)
+		SELECT DISTINCT categoria FROM lancamentos WHERE categoria <> ''
+		UNION SELECT DISTINCT categoria FROM recorrencias WHERE categoria <> ''`); err != nil {
+		return err
 	}
 	return nil
 }

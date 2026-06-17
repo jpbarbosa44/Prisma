@@ -42,7 +42,8 @@ type campo struct {
 	rotulo      string
 	dica        string // placeholder (campos de texto)
 	obrigatorio bool
-	opcoes      func() []opcao // nil = texto livre
+	opcoes      func() []opcao  // nil = texto livre
+	sugestoes   func() []string // texto livre com sugestões navegáveis por ←/→ (ex.: categorias)
 }
 
 // acao é um atalho de teclado dentro de uma tela. Pode executar um comando
@@ -56,6 +57,9 @@ type acao struct {
 	confirma bool
 	executar func(vals []string) (string, error)
 	params   func(vals []string) []string
+	// carregar devolve os valores atuais dos campos editáveis (campos[1:], na
+	// mesma ordem) de um registro, para o formulário de edição abrir preenchido.
+	carregar func(id string) ([]string, error)
 }
 
 // tela é uma funcionalidade do menu: conteúdo (gerado pelos comandos da CLI)
@@ -92,11 +96,14 @@ type model struct {
 	selPos int // posição na seleta (-1 = nenhuma)
 	msg    string
 	msgErr bool
+	msgGen int // invalida ticks de auto-dismiss antigos
 
 	formAcao   *acao
 	inputs     []textinput.Model
-	formOpcoes [][]opcao // opções resolvidas por campo (vazio = texto livre)
-	selIdx     []int     // opção escolhida em cada campo-seletor
+	formOpcoes [][]opcao  // opções resolvidas por campo (vazio = texto livre)
+	selIdx     []int      // opção escolhida em cada campo-seletor
+	sugest     [][]string // sugestões de campos-combo (nil = não é combo)
+	sugestIdx  []int      // posição atual na navegação de sugestões (-1 = nenhuma)
 	foco       int
 
 	pendente     *acao // ação aguardando confirmação s/n
@@ -130,11 +137,34 @@ func (m model) Init() tea.Cmd { return nil }
 // flushPrefixoMsg fecha a janela de espera do segundo dígito de um atalho.
 type flushPrefixoMsg int
 
+// limpaMsgMsg apaga a mensagem verde/vermelha depois de alguns segundos.
+type limpaMsgMsg int
+
+// duracaoMsg é quanto tempo a mensagem de status fica visível.
+const duracaoMsg = 10 * time.Second
+
+// defineMsg registra a mensagem de status e devolve o comando que a apaga
+// após duracaoMsg (msgGen invalida ticks de mensagens já substituídas).
+func (m *model) defineMsg(texto string, erro bool) tea.Cmd {
+	m.msg, m.msgErr = strings.TrimSpace(texto), erro
+	m.msgGen++
+	if m.msg == "" {
+		return nil
+	}
+	gen := m.msgGen
+	return tea.Tick(duracaoMsg, func(time.Time) tea.Msg { return limpaMsgMsg(gen) })
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.largura, m.altura = msg.Width, msg.Height
 		m.ajustaViewport()
+		return m, nil
+	case limpaMsgMsg:
+		if int(msg) == m.msgGen {
+			m.msg = ""
+		}
 		return m, nil
 	case flushPrefixoMsg:
 		// passou o tempo sem segundo dígito: abre a tela do dígito sozinho
@@ -316,6 +346,12 @@ func (m *model) moveSelecao(delta int) {
 		m.selPos = len(m.seleta) - 1
 	}
 	m.renderConteudo()
+	// na primeira linha selecionável, volta ao topo para o cabeçalho da tabela
+	// (e qualquer preâmbulo acima dela) reaparecer
+	if m.selPos == 0 {
+		m.vp.GotoTop()
+		return
+	}
 	// mantém a linha selecionada visível
 	alvo := m.seleta[m.selPos].linha
 	if alvo < m.vp.YOffset {
@@ -358,8 +394,8 @@ func (m model) teclaTela(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			continue
 		}
 		if len(a.campos) == 0 {
-			m.aplicaAcao(a, nil)
-			return m, nil
+			cmd := m.aplicaAcao(a, nil)
+			return m, cmd
 		}
 		m.abreForm(a)
 		return m, textinput.Blink
@@ -375,10 +411,16 @@ func (m *model) abreForm(a *acao) {
 	m.inputs = make([]textinput.Model, len(a.campos))
 	m.formOpcoes = make([][]opcao, len(a.campos))
 	m.selIdx = make([]int, len(a.campos))
+	m.sugest = make([][]string, len(a.campos))
+	m.sugestIdx = make([]int, len(a.campos))
 	for i, c := range a.campos {
 		if c.opcoes != nil {
 			m.formOpcoes[i] = c.opcoes()
 		}
+		if c.sugestoes != nil {
+			m.sugest[i] = c.sugestoes()
+		}
+		m.sugestIdx[i] = -1
 		ti := textinput.New()
 		ti.Placeholder = c.dica
 		ti.CharLimit = 80
@@ -393,8 +435,54 @@ func (m *model) abreForm(a *acao) {
 		if id := m.idSelecionado(); id != "" {
 			m.inputs[0].SetValue(id)
 			m.inputs[0].CursorEnd()
+			// e, na edição, traz os valores atuais do registro do banco
+			m.preencheEdicao(a, id)
 		}
 	}
+}
+
+// preencheEdicao carrega os valores atuais do registro e os coloca nos campos
+// editáveis (campos[1:]), para o formulário de edição abrir já preenchido.
+func (m *model) preencheEdicao(a *acao, id string) {
+	if a.carregar == nil {
+		return
+	}
+	vals, err := a.carregar(id)
+	if err != nil {
+		m.msg, m.msgErr = "erro ao carregar: "+err.Error(), true
+		return
+	}
+	for i, v := range vals {
+		campo := i + 1 // campos[0] é o id
+		if campo >= len(m.inputs) {
+			break
+		}
+		if m.seletor(campo) {
+			for j, op := range m.formOpcoes[campo] {
+				if op.valor == v {
+					m.selIdx[campo] = j
+					break
+				}
+			}
+		} else {
+			m.inputs[campo].SetValue(v)
+			m.inputs[campo].CursorEnd()
+		}
+	}
+}
+
+// combo diz se o campo i é texto livre com sugestões navegáveis.
+func (m model) combo(i int) bool { return len(m.sugest[i]) > 0 }
+
+// navegaSugestao troca o valor do campo-combo pela sugestão seguinte/anterior.
+func (m *model) navegaSugestao(i, delta int) {
+	n := len(m.sugest[i])
+	if n == 0 {
+		return
+	}
+	m.sugestIdx[i] = (m.sugestIdx[i] + delta + n) % n
+	m.inputs[i].SetValue(m.sugest[i][m.sugestIdx[i]])
+	m.inputs[i].CursorEnd()
 }
 
 // seletor diz se o campo i é um seletor de opções (e não texto livre).
@@ -414,30 +502,30 @@ func (m model) valoresForm() []string {
 	return vals
 }
 
-func (m *model) aplicaAcao(a *acao, vals []string) {
+func (m *model) aplicaAcao(a *acao, vals []string) tea.Cmd {
 	if a.confirma {
 		m.pendente, m.pendenteVals = a, vals
 		m.modo = modoConfirma
-		return
+		return nil
 	}
-	m.executaAcao(a, vals)
+	return m.executaAcao(a, vals)
 }
 
-func (m *model) executaAcao(a *acao, vals []string) {
+func (m *model) executaAcao(a *acao, vals []string) tea.Cmd {
 	m.modo = modoTela
 	if a.params != nil {
 		m.params[m.atual] = a.params(vals)
 		m.msg = ""
 		m.recarrega()
-		return
+		return nil
 	}
 	saida, err := a.executar(vals)
 	if err != nil {
-		m.msg, m.msgErr = "erro: "+err.Error(), true
-		return
+		return m.defineMsg("erro: "+err.Error(), true)
 	}
-	m.msg, m.msgErr = strings.TrimSpace(saida), false
+	cmd := m.defineMsg(saida, false)
 	m.recarrega()
+	return cmd
 }
 
 func (m model) teclaConfirma(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -446,13 +534,14 @@ func (m model) teclaConfirma(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	a, vals := m.pendente, m.pendenteVals
 	m.pendente, m.pendenteVals = nil, nil
+	var cmd tea.Cmd
 	if strings.ToLower(msg.String()) == "s" {
-		m.executaAcao(a, vals)
+		cmd = m.executaAcao(a, vals)
 	} else {
 		m.modo = modoTela
-		m.msg, m.msgErr = "cancelado", false
+		cmd = m.defineMsg("cancelado", false)
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m model) teclaForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -473,6 +562,15 @@ func (m model) teclaForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		// campo-combo (categoria): ←/→ navega nas existentes; espaço é digitado
+		if m.combo(m.foco) && msg.String() != " " {
+			if msg.String() == "left" {
+				m.navegaSugestao(m.foco, -1)
+			} else {
+				m.navegaSugestao(m.foco, 1)
+			}
+			return m, nil
+		}
 	case "tab", "down":
 		m.foco = (m.foco + 1) % len(m.inputs)
 		return m.focaCampo()
@@ -488,21 +586,54 @@ func (m model) teclaForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// valida os obrigatórios antes de confirmar
 		for i, c := range m.formAcao.campos {
 			if c.obrigatorio && strings.TrimSpace(vals[i]) == "" {
-				m.msg = fmt.Sprintf("o campo %q é obrigatório", c.rotulo)
 				m.foco = i
-				novo, cmd := m.focaCampo()
-				return novo, cmd
+				msgCmd := m.defineMsg(fmt.Sprintf("o campo %q é obrigatório", c.rotulo), true)
+				novo, blink := m.focaCampo()
+				return novo, tea.Batch(msgCmd, blink)
 			}
 		}
-		m.aplicaAcao(m.formAcao, vals)
-		return m, nil
+		// repetir e parcelar são mutuamente exclusivos
+		if aviso := validaRepetirParcelas(m.formAcao.campos, vals); aviso != "" {
+			return m, m.defineMsg(aviso, true)
+		}
+		cmd := m.aplicaAcao(m.formAcao, vals)
+		return m, cmd
 	}
 	if m.seletor(m.foco) {
 		return m, nil // seletores não recebem texto
 	}
+	if m.combo(m.foco) {
+		m.sugestIdx[m.foco] = -1 // digitar reinicia a navegação de sugestões
+	}
 	var cmd tea.Cmd
 	m.inputs[m.foco], cmd = m.inputs[m.foco].Update(msg)
 	return m, cmd
+}
+
+// valorCampo devolve o valor coletado do campo de rótulo `rotulo`, se existir.
+func valorCampo(campos []campo, vals []string, rotulo string) (string, bool) {
+	for i, c := range campos {
+		if c.rotulo == rotulo && i < len(vals) {
+			return vals[i], true
+		}
+	}
+	return "", false
+}
+
+// validaRepetirParcelas barra o uso simultâneo de repetir e parcelas no
+// formulário (a CLI também recusa, mas aqui evitamos a viagem).
+func validaRepetirParcelas(campos []campo, vals []string) string {
+	rep, ok1 := valorCampo(campos, vals, "repetir")
+	par, ok2 := valorCampo(campos, vals, "parcelas")
+	if ok1 && ok2 && maiorQue1(rep) && maiorQue1(par) {
+		return "use repetir OU parcelas, não os dois (repetir repete o valor; parcelas divide o total)"
+	}
+	return ""
+}
+
+func maiorQue1(s string) bool {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	return err == nil && n > 1
 }
 
 func (m model) focaCampo() (tea.Model, tea.Cmd) {
@@ -616,6 +747,9 @@ func (m model) viewForm() string {
 			}
 		} else {
 			valor = m.inputs[i].View()
+			if m.combo(i) && i == m.foco {
+				valor += corApagada.Render("  ←/→ existentes")
+			}
 		}
 		b.WriteString(fmt.Sprintf(" %s%s %s\n", marca, rotulo, valor))
 	}

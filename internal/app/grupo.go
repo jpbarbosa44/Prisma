@@ -188,8 +188,9 @@ func grupoListar(conn *sql.DB) error {
 		return nil
 	}
 
+	mesRef := refAtual("mes") // AAAA-MM vigente
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tNOME\tPESSOAS\tDIVIDE POR\tDESPESAS VINCULADAS")
+	fmt.Fprintln(w, "ID\tNOME\tPESSOAS\tDIVIDE POR\tDESPESAS VINCULADAS\tMÊS ATUAL (sua parte)")
 	for _, l := range grupos {
 		// total cheio das despesas vinculadas e a parte que cabe a você
 		var cheio, minha int64
@@ -199,8 +200,16 @@ func grupoListar(conn *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%d\t%s (sua parte: %s)\n",
-			l.id, l.nome, l.pessoas, l.qtd, money.Format(cheio), money.Format(minha))
+		// gastos do mês vigente (pela sua parte), por mês de vencimento
+		var mes int64
+		if err := conn.QueryRow(`
+			SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0)
+			FROM lancamentos WHERE grupo_id = ? AND tipo = 'pagar' AND substr(vencimento,1,7) = ?`,
+			l.id, mesRef).Scan(&mes); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%d\t%s (sua parte: %s)\t%s\n",
+			l.id, l.nome, l.pessoas, l.qtd, money.Format(cheio), money.Format(minha), money.Format(mes))
 	}
 	return w.Flush()
 }

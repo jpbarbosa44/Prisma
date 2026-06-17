@@ -10,7 +10,8 @@ import (
 	"time"
 )
 
-// parseData aceita "AAAA-MM-DD" e "DD/MM/AAAA" e retorna a data normalizada AAAA-MM-DD.
+// parseData aceita "AAAA-MM-DD", "DD/MM/AAAA" e "DD/MM" (ano vigente) e retorna
+// a data normalizada AAAA-MM-DD.
 func parseData(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "hoje" {
@@ -21,7 +22,12 @@ func parseData(s string) (string, error) {
 			return t.Format("2006-01-02"), nil
 		}
 	}
-	return "", fmt.Errorf("data inválida: %q (use AAAA-MM-DD ou DD/MM/AAAA)", s)
+	// DD/MM sem ano: assume o ano vigente.
+	if t, err := time.Parse("02/01", s); err == nil {
+		t = t.AddDate(time.Now().Year(), 0, 0)
+		return t.Format("2006-01-02"), nil
+	}
+	return "", fmt.Errorf("data inválida: %q (use AAAA-MM-DD, DD/MM/AAAA ou DD/MM)", s)
 }
 
 // dataBR converte AAAA-MM-DD para DD/MM/AAAA para exibição.
@@ -146,6 +152,18 @@ func ouTraco(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// truncar encurta um texto a no máximo n runas, terminando em "…".
+func truncar(s string, n int) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= n {
+		return string(r)
+	}
+	if n <= 1 {
+		return "…"
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // barra desenha uma barra de progresso textual de 20 colunas.

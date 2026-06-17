@@ -24,6 +24,7 @@ COMANDOS
   conta        Contas bancárias            add | listar | editar | remover
   carteira     Carteiras (dinheiro etc.)   add | listar | editar | remover
   grupo        Pessoas que dividem gastos  add | listar | editar | remover
+  categoria    Catálogo de categorias      add | listar | editar | remover
   cartao       Cartões de crédito          add | listar | editar | remover
   fatura       Fatura do cartão            --cartao N [--ref AAAA-MM] | pagar --cartao N
   pagar        Contas a pagar              add | listar
@@ -36,6 +37,7 @@ COMANDOS
   emergencia   Plano de ação p/ dívidas    add | listar | plano | editar | quitar | remover
   plano        Planejamento de gastos      add | listar | status | editar | remover  (semana ou mês)
   relatorio    Análise do passado          [--meses N]  (categorias, mês a mês)
+  estatisticas Análises estatísticas        [--meses N]  (tendência, top gastos, saúde financeira)
   graficos     Gráficos em ASCII           [--meses N]  (categorias, saldo, receitas×despesas, grupos)
   extrato      Movimentação com saldo      --conta 1 | --carteira 1  [--meses N]
   previsao     Projeção de saldo futuro    [--meses N]
@@ -147,6 +149,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "erro nas recorrências: %v\n", err)
 			os.Exit(1)
 		}
+		// quita automaticamente os pendentes marcados que já venceram
+		if _, err := app.QuitarVencidos(conn); err != nil {
+			fmt.Fprintf(os.Stderr, "erro ao quitar vencidos: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// sem argumentos: abre a interface de terminal (TUI)
@@ -168,6 +175,8 @@ func main() {
 		err = app.Carteira(conn, args)
 	case "grupo", "grupos":
 		err = app.Grupo(conn, args)
+	case "categoria", "categorias":
+		err = app.Categoria(conn, args)
 	case "cartao", "cartoes", "cartão", "cartões":
 		err = app.Cartao(conn, args)
 	case "fatura", "faturas":
@@ -192,6 +201,8 @@ func main() {
 		err = app.Plano(conn, args)
 	case "relatorio":
 		err = app.Relatorio(conn, args)
+	case "estatisticas", "estatistica", "estatísticas":
+		err = app.Estatisticas(conn, args)
 	case "graficos", "grafico", "gráficos", "gráfico":
 		err = app.Graficos(conn, args)
 	case "extrato":

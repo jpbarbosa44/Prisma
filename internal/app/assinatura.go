@@ -36,8 +36,10 @@ func Assinaturas(conn *sql.DB, args []string) error {
 
 func assinaturasListar(conn *sql.DB) error {
 	rows, err := conn.Query(`
-		SELECT r.id, r.descricao, r.valor, r.dia, COALESCE(c.nome, ''), r.inicio, COALESCE(r.fim, '')
-		FROM recorrencias r LEFT JOIN cartoes c ON c.id = r.cartao_id
+		SELECT r.id, r.descricao, r.valor, r.dia, COALESCE(c.nome, ''), r.inicio, COALESCE(r.fim, ''), COALESCE(g.nome, '')
+		FROM recorrencias r
+		LEFT JOIN cartoes c ON c.id = r.cartao_id
+		LEFT JOIN grupos g ON g.id = r.grupo_id
 		WHERE r.assinatura = 1 ORDER BY r.id`)
 	if err != nil {
 		return err
@@ -45,23 +47,26 @@ func assinaturasListar(conn *sql.DB) error {
 	defer rows.Close()
 
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tNOME\tVALOR\tDIA\tCARTÃO\tVIGÊNCIA")
+	fmt.Fprintln(w, "ID\tNOME\tVALOR\tDIA\tCARTÃO\tGRUPO\tVIGÊNCIA\tRESTANTES")
 	achou := false
 	var totalMensal int64
 	for rows.Next() {
 		achou = true
 		var id, valor int64
 		var dia int
-		var desc, cartao, ini, fim string
-		if err := rows.Scan(&id, &desc, &valor, &dia, &cartao, &ini, &fim); err != nil {
+		var desc, cartao, ini, fim, grupo string
+		if err := rows.Scan(&id, &desc, &valor, &dia, &cartao, &ini, &fim, &grupo); err != nil {
 			return err
 		}
 		totalMensal += valor
 		vig := "desde " + dataBR(ini)
+		rest := "-"
 		if fim != "" {
 			vig = dataBR(ini) + " a " + dataBR(fim)
+			rest = fmt.Sprintf("%d cobrança(s)", ocorrenciasRestantes(ini, fim, dia))
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\tdia %d\t%s\t%s\n", id, desc, money.Format(valor), dia, ouTraco(cartao), vig)
+		fmt.Fprintf(w, "%d\t%s\t%s\tdia %d\t%s\t%s\t%s\t%s\n",
+			id, desc, money.Format(valor), dia, ouTraco(cartao), ouTraco(grupo), vig, rest)
 	}
 	if !achou {
 		fmt.Println("Nenhuma assinatura. Use: prisma assinaturas add --desc \"Netflix\" --valor 39,90 --dia 20 --cartao 1")

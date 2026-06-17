@@ -163,6 +163,19 @@ Relatório
   por categoria (onde seu dinheiro realmente vai) e a evolução mês a mês,
   para enxergar tendências.
 
+Estatísticas
+  Uma leitura mais profunda do histórico quitado, em quatro blocos:
+    1) Resumo por categoria — total, média/mês, mediana e maior/menor mês de
+       cada categoria, além do quanto ela pesa no total (%).
+    2) Tendência e variação — a despesa do mês contra a do mês anterior, a
+       média móvel dos últimos meses e um alerta das categorias que estouraram
+       a própria média.
+    3) Top gastos e recorrentes — seus maiores lançamentos do período e as
+       despesas que se repetem (candidatas a virar recorrência).
+    4) Projeção e saúde financeira — sobra, taxa de poupança, projeção do
+       saldo em 6 meses e quantos meses de fôlego o saldo atual cobre.
+  A tecla m troca a janela de meses analisada.
+
 Gráficos
   A mesma leitura do Relatório, em forma visual: gastos por categoria,
   receitas × despesas por mês, evolução do saldo e despesa por grupo (sua
@@ -219,12 +232,14 @@ A SIMULAÇÃO EM DETALHE
 
 VALORES, DATAS E CATEGORIAS
   - Valores aceitam 1500, 1.500,00 ou 1500.00 — com ou sem "R$".
-  - Datas aceitam DD/MM/AAAA ou AAAA-MM-DD. Campo de data vazio = hoje.
+  - Datas aceitam DD/MM/AAAA, AAAA-MM-DD ou DD/MM (ano vigente). Vazio = hoje.
   - Dia 31 num mês curto vira o último dia do mês.
-  - Categorias são livres (mercado, moradia, lazer...). Cuidado com a grafia:
-    "mercado" e "mercados" viram categorias diferentes — o Prisma avisa na
-    primeira vez que vê uma categoria nova, para pegar erros de digitação.
-  - Campos marcados com * são obrigatórios.
+  - Categorias entram num catálogo: o campo sugere as existentes enquanto você
+    digita (←/→ navega nelas) e cria a nova se você digitar um nome inédito;
+    "mercado" e "mercados" ainda são diferentes, então o Prisma avisa na
+    primeira vez que vê uma. A tela Categorias gerencia a lista.
+  - Em edições, os campos já abrem com os valores atuais do registro.
+  - Campos marcados com * são obrigatórios. Repetir e parcelas não se combinam.
 
 
 OUTRAS FORMAS DE USAR
