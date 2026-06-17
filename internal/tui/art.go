@@ -42,12 +42,51 @@ const (
 // raios é o espectro que sai da face frontal: linha → cor.
 var raios = map[int]lipgloss.Style{4: corVerm, 5: corAmar, 6: corMagenta}
 
+// corCorp é o selo "CORP" que marca o modo empresa (`prisma --empresa`),
+// numa cor diferente do resto da arte pra ficar óbvio que é outro banco.
+var corCorp = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // âmbar
+
+// badgeCorp é um selo emoldurado de 3 linhas — bem maior que um texto inline
+// solto, sem precisar desenhar "CORP" em letras de bloco caractere a
+// caractere (risco de desalinhar sem ver renderizado).
+var badgeCorp = []string{
+	"┌─────────────┐",
+	"│   C O R P   │",
+	"└─────────────┘",
+}
+
+// badgeCorpAoLado devolve o badgeCorp colorido, alinhado verticalmente para
+// ficar ao lado de um bloco de altura linhas (ex.: as letras grandes do
+// PRISMA), com o badge centrado nessa altura.
+func badgeCorpAoLado(altura int) string {
+	topo := (altura - len(badgeCorp)) / 2
+	linhas := make([]string, altura)
+	for i := range linhas {
+		linhas[i] = ""
+	}
+	for i, l := range badgeCorp {
+		linhas[topo+i] = corCorp.Render(l)
+	}
+	return strings.Join(linhas, "\n")
+}
+
 // cabecalho monta o prisma 3D (com feixe de luz entrando e o espectro saindo)
 // ao lado da palavra PRISMA em letras grandes; em telas estreitas, versões
-// mais compactas.
-func cabecalho(largura int) string {
+// mais compactas. Em modoEmpresa, troca o subtítulo e acrescenta o
+// badgeCorp — não redesenha PRISMA em letras de bloco com sufixo CORP porque
+// dá pra errar o alinhamento sem ver renderizado; se quiser isso depois, ajusta.
+func cabecalho(largura int, modoEmpresa bool) string {
+	subtitulo := "— finanças pessoais"
+	if modoEmpresa {
+		subtitulo = "— finanças empresariais"
+	}
+
 	if largura < 60 {
-		return corTitulo.Render(" ◆ P R I S M A ") + corApagada.Render("— finanças pessoais")
+		s := corTitulo.Render(" ◆ P R I S M A ") + corApagada.Render(subtitulo)
+		if modoEmpresa {
+			s += " " + corCorp.Render("[CORP]")
+		}
+		return s
 	}
 
 	linhas := make([]string, len(arte))
@@ -71,8 +110,11 @@ func cabecalho(largura int) string {
 
 	// sem espaço para as letras grandes: título sob o prisma
 	if largura < 110 {
-		return prisma + "\n\n" + strings.Repeat(" ", margem) +
-			corTitulo.Render("P R I S M A ") + corApagada.Render("— finanças pessoais")
+		linha := strings.Repeat(" ", margem) + corTitulo.Render("P R I S M A ") + corApagada.Render(subtitulo)
+		if modoEmpresa {
+			linha += "  " + corCorp.Render("◆ C O R P ◆")
+		}
+		return prisma + "\n\n" + linha
 	}
 
 	letras := []string{
@@ -86,6 +128,8 @@ func cabecalho(largura int) string {
 	for i := range letras {
 		letras[i] = corTitulo.Render(letras[i])
 	}
-
+	if modoEmpresa {
+		return lipgloss.JoinHorizontal(lipgloss.Center, prisma, "   ", strings.Join(letras, "\n"), "  ", badgeCorpAoLado(len(letras)))
+	}
 	return lipgloss.JoinHorizontal(lipgloss.Center, prisma, "   ", strings.Join(letras, "\n"))
 }

@@ -9,9 +9,10 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 3. [A interface de terminal (TUI)](#a-interface-de-terminal-tui)
 4. [A interface web (--web)](#a-interface-web---web)
 5. [Comandos](#comandos)
-6. [Receitas prontas](#receitas-prontas)
-7. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
-8. [Dados e backup](#dados-e-backup)
+6. [Empresa (`prisma --empresa`)](#empresa-prisma---empresa)
+7. [Receitas prontas](#receitas-prontas)
+8. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
+9. [Dados e backup](#dados-e-backup)
 
 ---
 
@@ -496,6 +497,65 @@ prisma config local                          # volta ao banco local desta máqui
 ```
 
 `config cliente` grava a configuração e já testa a conexão. `config local` desfaz (volta ao normal). As mesmas chaves podem ser definidas por variáveis de ambiente (`PRISMA_MODO`, `PRISMA_HOST`, `PRISMA_TOKEN`, `PRISMA_FINGERPRINT`), que têm prioridade sobre o arquivo.
+
+## Empresa (`prisma --empresa`)
+
+Pra controlar o financeiro de uma empresa (capital social, sócios, imposto, investimento, lucro) sem misturar com as suas finanças pessoais, use a flag `--empresa` antes de qualquer comando. Ela troca o banco para um arquivo totalmente separado (`empresa.db`, ou o caminho de `PRISMA_EMPRESA_DB`) e, na TUI, troca o cabeçalho pelo selo **CORP**. Todos os comandos do Prisma (`conta`, `cartao`, `relatorio`, `previsao`, `graficos`...) funcionam normalmente dentro desse banco — só os cinco abaixo são exclusivos da empresa.
+
+```sh
+prisma --empresa                              # abre a TUI no banco da empresa (selo CORP)
+prisma --empresa --web                        # idem, no navegador
+prisma --empresa lancamentos                  # qualquer comando normal funciona aqui também
+```
+
+### socio
+
+Sócios têm participação própria (não precisa ser 50/50).
+
+```sh
+prisma socio add --nome "Você" --participacao 60
+prisma socio add --nome "Sócio" --participacao 40
+prisma socio listar                           # avisa se a soma não bater 100%
+prisma socio editar 1 --participacao 55
+prisma socio remover 1                        # falha se houver aporte/distribuição vinculados
+```
+
+### capital
+
+Aporte de capital social: gera uma receita (categoria `capital`, já quitada) vinculada ao sócio.
+
+```sh
+prisma capital aportar --socio 1 --valor 6.000,00 --conta 1
+prisma capital listar                         # quanto cada sócio aportou e o % do capital total
+```
+
+### imposto / investimento
+
+Atalhos sobre `pagar`/`recorrencia` que já fixam a categoria certa (`imposto` ou `investimento`), pra não depender de lembrar na hora de lançar.
+
+```sh
+prisma imposto add --desc "DAS" --valor 250 --recorrente --dia 20   # todo mês
+prisma imposto add --desc "ISS" --valor 80 --venc 10/07              # avulso
+prisma investimento add --desc "Notebook" --valor 4.500,00 --conta 1
+prisma investimento add --desc "Maquinário" --valor 12.000,00 --parcelas 12   # financiado
+prisma imposto listar
+prisma investimento listar
+```
+
+`--parcelas N`/`--repetir N`/`--obs` funcionam igual ao `pagar add` — só não combinam com `--recorrente` (a regra já se repete todo mês por conta própria).
+
+### lucro
+
+```sh
+prisma lucro calcular                          # receitas - despesas do mês (exclui capital/distribuição)
+prisma lucro calcular --de 01/01/2026 --ate 31/12/2026
+prisma lucro distribuir --valor 2.000,00       # divide pela participação de cada sócio
+prisma lucro listar                            # histórico de distribuições por sócio
+```
+
+`lucro distribuir` cria uma saída de caixa (`pagar`, categoria `distribuicao`) por sócio, proporcional à participação — recusa se as participações não somarem 100%. Se o valor distribuído passar do lucro acumulado (receitas − despesas de sempre, menos o que já foi distribuído antes), avisa — mas não bloqueia, já que retirar mais do que o lucro do período pode ser uma decisão válida (ex.: usando capital de reserva). `lucro calcular` é só informativo: não grava nada, exclui aportes de capital (não são receita operacional) e distribuições já feitas (não são despesa do período).
+
+**Limitações desta primeira versão:** sem modo cliente/servidor (a empresa é sempre local) e sem suporte a recorrência/assinatura com `--recebe-pagamento` ou outras combinações mais avançadas — o módulo cobre o fluxo básico de capital → operação → imposto/investimento → lucro.
 
 ## Receitas prontas
 

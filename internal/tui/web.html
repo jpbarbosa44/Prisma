@@ -7,7 +7,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Prisma — finanças pessoais</title>
+  <title id="tituloPagina">Prisma — finanças pessoais</title>
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,8 95,92 5,92' fill='%234dd8e6'/></svg>">
   <style>
@@ -88,6 +88,19 @@
 
     #marca p {
       margin: 4px 0 0;
+    }
+
+    .selo-corp {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 1px 9px;
+      border: 1px solid var(--amar);
+      border-radius: 4px;
+      color: var(--amar);
+      font-weight: bold;
+      font-size: 20px;
+      letter-spacing: 1px;
+      vertical-align: middle;
     }
 
     #aviso {
@@ -343,8 +356,8 @@
   <header>
     <pre id="arte"></pre>
     <div id="marca">
-      <h1>P R I S M A</h1>
-      <p class="dim">— finanças pessoais</p>
+      <h1>P R I S M A<span id="seloCorp" class="selo-corp" style="display:none">◆ CORP</span></h1>
+      <p id="subtituloMarca" class="dim">— finanças pessoais</p>
     </div>
   </header>
   <div id="aviso"></div>
@@ -442,10 +455,16 @@
     let telas = [], atual = -1, params = [], selecionado = [], formCampos = [];
     let prefixoNum = "", prefixoTimer = null; // atalho numérico de dois dígitos (10..14)
 
-    /* banner de versão nova, no mesmo espírito da TUI e do oh-my-zsh */
+    /* banner de versão nova, no mesmo espírito da TUI e do oh-my-zsh; e o
+       selo CORP quando o servidor está em `prisma --empresa --web`. */
     async function mostraAviso() {
       try {
         const v = await (await fetch("api/versao")).json();
+        if (v.modoEmpresa) {
+          document.title = "Prisma CORP — finanças empresariais";
+          $("#seloCorp").style.display = "inline-block";
+          $("#subtituloMarca").textContent = "— finanças empresariais";
+        }
         if (!v.aviso) return;
         let html = esc(v.aviso).replace("prisma atualizar", "<code>prisma atualizar</code>");
         if (v.url) html += ` · <a href="${escAttr(v.url)}" target="_blank" rel="noopener">ver release</a>`;

@@ -87,6 +87,29 @@ func opcoesGrupos(conn *sql.DB, extras ...opcao) func() []opcao {
 	}
 }
 
+// opcoesSocios lista os sócios da empresa como opções de seletor, com a
+// participação, precedidos das opções extras.
+func opcoesSocios(conn *sql.DB, extras ...opcao) func() []opcao {
+	return func() []opcao {
+		ops := append([]opcao{}, extras...)
+		rows, err := conn.Query(`SELECT id, nome, participacao FROM socios ORDER BY id`)
+		if err != nil {
+			return ops
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			var nome string
+			var participacao float64
+			if err := rows.Scan(&id, &nome, &participacao); err != nil {
+				continue
+			}
+			ops = append(ops, opcao{fmt.Sprint(id), fmt.Sprintf("%d — %s (%.0f%%)", id, nome, participacao)})
+		}
+		return ops
+	}
+}
+
 // opcoesCartoes lista os cartões como opções de seletor, precedidos das
 // opções extras (ex.: "nenhum").
 func opcoesCartoes(conn *sql.DB, extras ...opcao) func() []opcao {
@@ -138,13 +161,13 @@ func opcoesLocais(conn *sql.DB) func() []opcao {
 
 // novasTelas define o menu: cada tela reaproveita os comandos da CLI,
 // capturando a saída deles para exibir na interface.
-func novasTelas(conn *sql.DB) []tela {
+func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 	exec := func(f func() error) (string, error) { return captura(f) }
 	nenhuma := opcao{"", "nenhuma"}
 	manter := opcao{"", "manter"}
 	desvincular := opcao{"0", "desvincular"}
 
-	return []tela{
+	telas := []tela{
 		{
 			titulo:   "Saldo",
 			resumo:   "posição geral consolidada",
@@ -1134,10 +1157,211 @@ func novasTelas(conn *sql.DB) []tela {
 				},
 			},
 		},
+	}
+
+	if modoEmpresa {
+		telas = append(telas, telasEmpresa(conn, exec, nenhuma)...)
+	}
+	// "Como usar" fica sempre por último, em qualquer modo.
+	telas = append(telas, tela{
+		titulo:   "Como usar",
+		resumo:   "documentação do sistema",
+		conteudo: func(_ []string) (string, error) { return textoComoUsar, nil },
+	})
+	return telas
+}
+
+// telasEmpresa monta as telas extras de `prisma --empresa`: sócios, capital,
+// imposto, investimento e lucro. Só aparecem em modoEmpresa, pra não poluir
+// o menu de quem usa o Prisma só pra finanças pessoais.
+func telasEmpresa(conn *sql.DB, exec func(func() error) (string, error), nenhuma opcao) []tela {
+	return []tela{
 		{
-			titulo:   "Como usar",
-			resumo:   "documentação do sistema",
-			conteudo: func(_ []string) (string, error) { return textoComoUsar, nil },
+			titulo: "Sócios",
+			resumo: "sócios da empresa e participação",
+			conteudo: func(_ []string) (string, error) {
+				return captura(func() error { return app.Socio(conn, []string{"listar"}) })
+			},
+			acoes: []acao{
+				{
+					tecla: "a", rotulo: "adicionar",
+					campos: []campo{
+						{rotulo: "nome", dica: "ex.: Você", obrigatorio: true},
+						{rotulo: "participação", dica: "% do lucro/capital, ex.: 60", obrigatorio: true},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"add"}
+						args = append(args, par("--nome", v[0])...)
+						args = append(args, par("--participacao", v[1])...)
+						return exec(func() error { return app.Socio(conn, args) })
+					},
+				},
+				{
+					tecla: "e", rotulo: "editar",
+					campos: []campo{
+						{rotulo: "id", dica: "número do sócio", obrigatorio: true},
+						{rotulo: "nome", dica: "vazio mantém"},
+						{rotulo: "participação", dica: "vazio mantém"},
+					},
+					carregar: func(id string) ([]string, error) {
+						var nome string
+						var participacao float64
+						if err := conn.QueryRow(`SELECT nome, participacao FROM socios WHERE id = ?`, id).
+							Scan(&nome, &participacao); err != nil {
+							return nil, err
+						}
+						return []string{nome, fmt.Sprintf("%.1f", participacao)}, nil
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"editar", v[0]}
+						args = append(args, par("--nome", v[1])...)
+						args = append(args, par("--participacao", v[2])...)
+						return exec(func() error { return app.Socio(conn, args) })
+					},
+				},
+				{
+					tecla: "x", rotulo: "remover", confirma: true,
+					campos: []campo{{rotulo: "id", dica: "número do sócio", obrigatorio: true}},
+					executar: func(v []string) (string, error) {
+						return exec(func() error { return app.Socio(conn, []string{"remover", v[0]}) })
+					},
+				},
+			},
+		},
+		{
+			titulo: "Capital",
+			resumo: "aportes de capital social",
+			conteudo: func(_ []string) (string, error) {
+				return captura(func() error { return app.Capital(conn, []string{"listar"}) })
+			},
+			acoes: []acao{
+				{
+					tecla: "a", rotulo: "aportar",
+					campos: []campo{
+						{rotulo: "sócio", obrigatorio: true, opcoes: opcoesSocios(conn)},
+						{rotulo: "valor", dica: "ex.: 5.000,00", obrigatorio: true},
+						{rotulo: "conta", dica: "onde entrou o dinheiro", opcoes: opcoesVinculo(conn, "contas", nenhuma)},
+						{rotulo: "data", dica: "opcional (padrão: hoje)"},
+						{rotulo: "observação", dica: "opcional"},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"aportar"}
+						args = append(args, par("--socio", v[0])...)
+						args = append(args, par("--valor", v[1])...)
+						args = append(args, par("--conta", v[2])...)
+						args = append(args, par("--data", v[3])...)
+						args = append(args, par("--obs", v[4])...)
+						return exec(func() error { return app.Capital(conn, args) })
+					},
+				},
+			},
+		},
+		{
+			titulo: "Imposto",
+			resumo: "impostos pagos pela empresa",
+			conteudo: func(_ []string) (string, error) {
+				return captura(func() error { return app.Imposto(conn, []string{"listar"}) })
+			},
+			acoes: []acao{
+				{
+					tecla: "a", rotulo: "lançar",
+					campos: []campo{
+						{rotulo: "descrição", dica: "ex.: DAS", obrigatorio: true},
+						{rotulo: "valor", dica: "ex.: 250,00", obrigatorio: true},
+						{rotulo: "vencimento", dica: "DD/MM/AAAA (padrão: hoje)"},
+						{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", nenhuma)},
+						{rotulo: "parcelas", dica: "divide o total em N parcelas (não use com \"todo mês\")"},
+						{rotulo: "observação", dica: "opcional"},
+						{rotulo: "todo mês?", dica: "vira uma regra de recorrência", opcoes: simNao()},
+						{rotulo: "dia do mês", dica: "obrigatório se \"todo mês\" for sim"},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"add"}
+						args = append(args, par("--desc", v[0])...)
+						args = append(args, par("--valor", v[1])...)
+						args = append(args, par("--venc", v[2])...)
+						args = append(args, par("--conta", v[3])...)
+						args = append(args, par("--parcelas", v[4])...)
+						args = append(args, par("--obs", v[5])...)
+						if sim(v[6]) {
+							args = append(args, "--recorrente")
+							args = append(args, par("--dia", v[7])...)
+						}
+						return exec(func() error { return app.Imposto(conn, args) })
+					},
+				},
+			},
+		},
+		{
+			titulo: "Investimento",
+			resumo: "investimentos da empresa",
+			conteudo: func(_ []string) (string, error) {
+				return captura(func() error { return app.Investimento(conn, []string{"listar"}) })
+			},
+			acoes: []acao{
+				{
+					tecla: "a", rotulo: "lançar",
+					campos: []campo{
+						{rotulo: "descrição", dica: "ex.: Notebook", obrigatorio: true},
+						{rotulo: "valor", dica: "ex.: 4.500,00", obrigatorio: true},
+						{rotulo: "vencimento", dica: "DD/MM/AAAA (padrão: hoje)"},
+						{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", nenhuma)},
+						{rotulo: "parcelas", dica: "ex.: 12 (financiamento, vazio = à vista)"},
+						{rotulo: "observação", dica: "opcional"},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"add"}
+						args = append(args, par("--desc", v[0])...)
+						args = append(args, par("--valor", v[1])...)
+						args = append(args, par("--venc", v[2])...)
+						args = append(args, par("--conta", v[3])...)
+						args = append(args, par("--parcelas", v[4])...)
+						args = append(args, par("--obs", v[5])...)
+						return exec(func() error { return app.Investimento(conn, args) })
+					},
+				},
+			},
+		},
+		{
+			titulo: "Lucro",
+			resumo: "cálculo e distribuição de lucro entre sócios",
+			conteudo: func(_ []string) (string, error) {
+				return captura(func() error { return app.Lucro(conn, []string{"listar"}) })
+			},
+			acoes: []acao{
+				{
+					tecla: "c", rotulo: "calcular",
+					campos: []campo{
+						{rotulo: "de", dica: "opcional (padrão: 1º dia do mês)"},
+						{rotulo: "até", dica: "opcional (padrão: hoje)"},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"calcular"}
+						args = append(args, par("--de", v[0])...)
+						args = append(args, par("--ate", v[1])...)
+						return exec(func() error { return app.Lucro(conn, args) })
+					},
+				},
+				{
+					tecla: "d", rotulo: "distribuir", confirma: true,
+					campos: []campo{
+						{rotulo: "valor", dica: "valor total a distribuir, ex.: 2.000,00", obrigatorio: true},
+						{rotulo: "data", dica: "opcional (padrão: hoje)"},
+						{rotulo: "observação", dica: "opcional"},
+						{rotulo: "já pago?", opcoes: simNao()},
+					},
+					executar: func(v []string) (string, error) {
+						args := []string{"distribuir"}
+						args = append(args, par("--valor", v[0])...)
+						args = append(args, par("--data", v[1])...)
+						args = append(args, par("--obs", v[2])...)
+						if sim(v[3]) {
+							args = append(args, "--quitado")
+						}
+						return exec(func() error { return app.Lucro(conn, args) })
+					},
+				},
+			},
 		},
 	}
 }

@@ -79,12 +79,13 @@ type selecionavel struct {
 }
 
 type model struct {
-	conn   *sql.DB
-	telas  []tela
-	modo   modo
-	cursor int // item do menu selecionado
-	atual  int // tela aberta
-	params [][]string
+	conn        *sql.DB
+	telas       []tela
+	modoEmpresa bool // true em `prisma --empresa`: banner CORP e telas extras
+	modo        modo
+	cursor      int // item do menu selecionado
+	atual       int // tela aberta
+	params      [][]string
 
 	prefixo    string // primeiro dígito de um atalho de dois dígitos (ex.: "1" de "12")
 	prefixoGen int    // invalida ticks de prefixo antigos
@@ -114,16 +115,19 @@ type model struct {
 	largura, altura int
 }
 
-// Run abre a interface em tela cheia.
-func Run(conn *sql.DB) error {
-	telas := novasTelas(conn)
+// Run abre a interface em tela cheia. modoEmpresa (true em `prisma --empresa`)
+// troca o banner pro selo CORP e acrescenta as telas de sócios/capital/
+// imposto/investimento/lucro.
+func Run(conn *sql.DB, modoEmpresa bool) error {
+	telas := novasTelas(conn, modoEmpresa)
 	aviso, _ := update.Aviso()
 	m := model{
-		conn:   conn,
-		telas:  telas,
-		params: make([][]string, len(telas)),
-		selPos: -1,
-		aviso:  aviso,
+		conn:        conn,
+		telas:       telas,
+		modoEmpresa: modoEmpresa,
+		params:      make([][]string, len(telas)),
+		selPos:      -1,
+		aviso:       aviso,
 	}
 	for i := range telas {
 		m.params[i] = telas[i].padrao
@@ -193,7 +197,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) ajustaViewport() {
-	altoCab := lipgloss.Height(cabecalho(m.largura))
+	altoCab := lipgloss.Height(cabecalho(m.largura, m.modoEmpresa))
 	alto := m.altura - altoCab - 5 // título, mensagem e rodapé
 	if alto < 3 {
 		alto = 3
@@ -663,7 +667,7 @@ func (m model) focaCampo() (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	var b strings.Builder
-	b.WriteString(cabecalho(m.largura))
+	b.WriteString(cabecalho(m.largura, m.modoEmpresa))
 	b.WriteString("\n")
 	if m.aviso != "" {
 		b.WriteString(corAmar.Render(" ↑ "+m.aviso) + "\n")

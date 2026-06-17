@@ -21,7 +21,7 @@ func servidorTeste(t *testing.T) *httptest.Server {
 		t.Fatalf("abrindo banco: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	srv := httptest.NewServer((&servidorWeb{telas: novasTelas(conn)}).rotas())
+	srv := httptest.NewServer((&servidorWeb{telas: novasTelas(conn, false)}).rotas())
 	t.Cleanup(srv.Close)
 	return srv
 }

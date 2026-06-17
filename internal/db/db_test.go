@@ -91,3 +91,42 @@ func TestBackupDiario(t *testing.T) {
 		t.Error("a cópia de hoje (mais nova) devia sobreviver ao expurgo")
 	}
 }
+
+// TestOpenEmpresaIndependenteDoPessoal garante que `prisma --empresa` usa um
+// arquivo totalmente separado do banco pessoal, configurável por
+// PRISMA_EMPRESA_DB do mesmo jeito que PRISMA_DB configura o pessoal.
+func TestOpenEmpresaIndependenteDoPessoal(t *testing.T) {
+	dir := t.TempDir()
+	pessoal := filepath.Join(dir, "pessoal.db")
+	empresa := filepath.Join(dir, "empresa.db")
+	t.Setenv("PRISMA_DB", pessoal)
+	t.Setenv("PRISMA_EMPRESA_DB", empresa)
+
+	connP, err := Open()
+	if err != nil {
+		t.Fatalf("abrindo banco pessoal: %v", err)
+	}
+	defer connP.Close()
+	connE, err := OpenEmpresa()
+	if err != nil {
+		t.Fatalf("abrindo banco da empresa: %v", err)
+	}
+	defer connE.Close()
+
+	if _, err := connP.Exec(`INSERT INTO contas (nome, saldo_inicial) VALUES ('Pessoal', 100)`); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := connE.QueryRow(`SELECT COUNT(*) FROM contas`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("banco da empresa viu %d conta(s) do pessoal, queria 0 (arquivos deveriam ser independentes)", n)
+	}
+	if _, err := os.Stat(pessoal); err != nil {
+		t.Errorf("arquivo do banco pessoal não foi criado em %s: %v", pessoal, err)
+	}
+	if _, err := os.Stat(empresa); err != nil {
+		t.Errorf("arquivo do banco da empresa não foi criado em %s: %v", empresa, err)
+	}
+}

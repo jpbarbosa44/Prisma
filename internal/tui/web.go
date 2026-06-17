@@ -28,15 +28,18 @@ var paginaWeb []byte
 // captura() troca o os.Stdout do processo inteiro, então dois comandos não
 // podem rodar ao mesmo tempo.
 type servidorWeb struct {
-	conn  *sql.DB
-	telas []tela
-	mu    sync.Mutex
+	conn        *sql.DB
+	telas       []tela
+	modoEmpresa bool // true em `prisma --empresa --web`: a página mostra o selo CORP
+	mu          sync.Mutex
 }
 
 // RunWeb sobe um servidor local e abre a interface no navegador. Escuta só
 // em 127.0.0.1 — as finanças não ficam expostas na rede. Opções: --porta N
-// e --sem-abrir (não chama o navegador).
-func RunWeb(conn *sql.DB, args []string) error {
+// e --sem-abrir (não chama o navegador). modoEmpresa (true em
+// `prisma --empresa --web`) acrescenta as telas de sócios/capital/imposto/
+// investimento/lucro, igual na TUI de terminal.
+func RunWeb(conn *sql.DB, args []string, modoEmpresa bool) error {
 	porta := 7747 // P-R-I-S num teclado de telefone
 	abrir := true
 	for i := 0; i < len(args); i++ {
@@ -58,7 +61,7 @@ func RunWeb(conn *sql.DB, args []string) error {
 		}
 	}
 
-	s := &servidorWeb{conn: conn, telas: novasTelas(conn)}
+	s := &servidorWeb{conn: conn, telas: novasTelas(conn, modoEmpresa), modoEmpresa: modoEmpresa}
 	endereco := fmt.Sprintf("127.0.0.1:%d", porta)
 	ouvinte, err := net.Listen("tcp", endereco)
 	if err != nil {
@@ -104,11 +107,12 @@ func respondeErro(w http.ResponseWriter, status int, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"erro": err.Error()})
 }
 
-// apiVersao informa, para o banner da página, se há uma versão mais nova
-// (do cache; não toca na rede). aviso vazio = nada a mostrar.
+// apiVersao informa, para o banner da página, se há uma versão mais nova (do
+// cache; não toca na rede) e se este servidor está em modoEmpresa (pro selo
+// CORP no cabeçalho). aviso vazio = nada a mostrar.
 func (s *servidorWeb) apiVersao(w http.ResponseWriter, r *http.Request) {
 	aviso, url := update.Aviso()
-	responde(w, map[string]string{"aviso": aviso, "url": url})
+	responde(w, map[string]any{"aviso": aviso, "url": url, "modoEmpresa": s.modoEmpresa})
 }
 
 // apiTelas devolve o menu: telas, parâmetros iniciais e ações (sem os

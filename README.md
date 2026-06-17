@@ -294,6 +294,23 @@ prisma bot --token X --instalar-servico   # roda em segundo plano (systemd)
 
 Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita; `300 #mercado feira grupo:1` divide a despesa com o grupo (só a sua parte conta). Dá para quitar (`quitar 142`), corrigir o último lançamento (`corrigir 27,90`), transferir entre conta e carteira, e guardar comprovante mandando a foto. Também responde consultas (`/saldo`, `/pendentes`, `/relatorio`, `/previsao`, `/grupos`, `#categoria maio`...) e avisa sozinho: vencimentos às 9h (com botão de quitar) e resumo do dia às 20h. Só o chat autorizado tem acesso. Detalhes no [MANUAL.md](MANUAL.md#bot-telegram).
 
+## Empresa (`prisma --empresa`)
+
+Pra controlar o financeiro de uma empresa (sócios, capital social, imposto, investimento, lucro) sem misturar com as suas finanças pessoais, use `prisma --empresa` antes de qualquer comando — troca pra um banco totalmente separado (`empresa.db`, ou `PRISMA_EMPRESA_DB`) e, na TUI, mostra o selo **CORP** ao lado do logo. Todo o resto do Prisma (contas, cartões, relatório, gráficos...) funciona normalmente dentro desse banco.
+
+```sh
+prisma --empresa                                              # TUI no banco da empresa
+prisma socio add --nome "Você" --participacao 60               # participação por sócio (não precisa ser 50/50)
+prisma socio add --nome "Sócio" --participacao 40
+prisma capital aportar --socio 1 --valor 6.000,00 --conta 1    # aporte de capital social
+prisma imposto add --desc "DAS" --valor 250 --recorrente --dia 20
+prisma investimento add --desc "Notebook" --valor 4.500,00 --parcelas 12
+prisma lucro calcular                                          # receitas - despesas (exclui capital/distribuição)
+prisma lucro distribuir --valor 2.000,00                       # divide pela participação de cada sócio
+```
+
+Detalhes (incluindo os avisos de participação/lucro acumulado) no [MANUAL.md](MANUAL.md#empresa-prisma---empresa).
+
 ## Compartilhamento (vários dispositivos)
 
 Um casal ou família pode usar o **mesmo banco** a partir de máquinas diferentes na rede de casa. Uma máquina vira **servidor** (dona do arquivo) e disponibiliza o banco na rede local; as outras conectam como **cliente** e operam sem perceber que o banco está em outro lugar — TUI, CLI e bot funcionam igual.

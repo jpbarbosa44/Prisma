@@ -2,6 +2,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 
@@ -18,6 +19,7 @@ const ajuda = `prisma — gerenciador de finanças pessoais
 USO
   prisma                                  abre a interface no terminal
   prisma --web [--porta N]                abre a interface no navegador
+  prisma --empresa [...]                  mesmos comandos, banco separado da empresa
   prisma <comando> [subcomando] [opções]  modo linha de comando
 
 COMANDOS
@@ -27,6 +29,11 @@ COMANDOS
   categoria    Catálogo de categorias      add | listar | editar | remover
   cartao       Cartões de crédito          add | listar | editar | remover
   fatura       Fatura do cartão            --cartao N [--ref AAAA-MM] | pagar --cartao N
+  socio        Sócios da empresa           add | listar | editar | remover  (com --empresa)
+  capital      Capital social              aportar --socio N --valor V --conta N | listar
+  imposto      Impostos da empresa         add [--recorrente --dia N] | listar
+  investimento Investimentos da empresa    add | listar
+  lucro        Lucro da empresa            calcular | distribuir --valor V | listar
   pagar        Contas a pagar              add | listar
   receber      Valores a receber           add | listar
   lancamentos  Lista tudo                  [--pendentes] [--tipo] [--mes] [--de] [--ate] [--cat] | editar | remover
@@ -73,11 +80,21 @@ EXEMPLOS
   prisma previsao --meses 6
   prisma simular --desc "Videogame" --valor 4.000,00 --parcelas 12
 
+EMPRESA (prisma --empresa ...)
+  prisma --empresa socio add --nome "Você" --participacao 60
+  prisma --empresa socio add --nome "Sócio" --participacao 40
+  prisma --empresa capital aportar --socio 1 --valor 5.000,00 --conta 1
+  prisma --empresa imposto add --desc "DAS" --valor 250 --recorrente --dia 20
+  prisma --empresa investimento add --desc "Notebook" --valor 4.500,00
+  prisma --empresa lucro calcular
+  prisma --empresa lucro distribuir --valor 2.000,00
+
 DOCUMENTAÇÃO
   Manual completo de uso: MANUAL.md (no repositório do projeto).
 
 DADOS
   Banco SQLite local (Linux: ~/.local/share/prisma/prisma.db; mude com PRISMA_DB).
+  Empresa (--empresa): banco separado (Linux: ~/.local/share/prisma/empresa.db; mude com PRISMA_EMPRESA_DB).
 
 COMPARTILHAMENTO (casal/família na mesma rede)
   Numa máquina:   prisma servidor --token SEGREDO   (mantém o banco e fica no ar)
@@ -104,12 +121,30 @@ func main() {
 		}
 	}
 
+	// `prisma --empresa ...` troca pro banco separado da empresa (outro
+	// arquivo, $PRISMA_EMPRESA_DB ou empresa.db) e ignora o modo
+	// cliente/servidor da config pessoal — a empresa é sempre local. O resto
+	// do fluxo (TUI sem args, --web, switch de comandos) roda igual, só com
+	// os.Args já sem a flag.
+	modoEmpresa := false
+	if len(os.Args) >= 2 && os.Args[1] == "--empresa" {
+		modoEmpresa = true
+		os.Args = append(os.Args[:1], os.Args[2:]...)
+	}
+
 	// descobre o papel desta instância: banco local (padrão), servidor ou
 	// cliente de outro Prisma na rede.
 	cfg, err := remote.Carrega()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "erro de configuração: %v\n", err)
 		os.Exit(1)
+	}
+
+	// compartilhamento na rede (servidor/cliente) é só do banco pessoal por
+	// enquanto; a empresa não tem esse modo ainda.
+	if modoEmpresa && len(os.Args) >= 2 && (os.Args[1] == "servidor" || os.Args[1] == "config" || os.Args[1] == "configurar") {
+		fmt.Fprintf(os.Stderr, "erro: %q não tem suporte em --empresa ainda (só o banco pessoal pode ser compartilhado na rede)\n", os.Args[1])
+		os.Exit(2)
 	}
 
 	// `prisma servidor` libera o banco local na rede e fica em primeiro plano.
@@ -135,7 +170,12 @@ func main() {
 	// checa por uma versão nova em segundo plano (no máximo 1x/dia, em silêncio)
 	go update.AtualizaCache()
 
-	conn, err := db.Abrir(cfg)
+	var conn *sql.DB
+	if modoEmpresa {
+		conn, err = db.OpenEmpresa()
+	} else {
+		conn, err = db.Abrir(cfg)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
 		os.Exit(1)
@@ -143,8 +183,8 @@ func main() {
 	defer conn.Close()
 
 	// materializa as recorrências só quando somos donos do banco; no modo
-	// cliente quem faz isso é o servidor.
-	if cfg.Modo != remote.ModoCliente {
+	// cliente quem faz isso é o servidor (a empresa é sempre dona do seu banco).
+	if modoEmpresa || cfg.Modo != remote.ModoCliente {
 		if _, err := app.GerarRecorrencias(conn); err != nil {
 			fmt.Fprintf(os.Stderr, "erro nas recorrências: %v\n", err)
 			os.Exit(1)
@@ -158,7 +198,7 @@ func main() {
 
 	// sem argumentos: abre a interface de terminal (TUI)
 	if len(os.Args) < 2 {
-		if err := tui.Run(conn); err != nil {
+		if err := tui.Run(conn, modoEmpresa); err != nil {
 			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
 			os.Exit(1)
 		}
@@ -168,7 +208,7 @@ func main() {
 	cmd, args := os.Args[1], os.Args[2:]
 	switch cmd {
 	case "--web", "web":
-		err = tui.RunWeb(conn, args)
+		err = tui.RunWeb(conn, args, modoEmpresa)
 	case "conta":
 		err = app.Conta(conn, args)
 	case "carteira":
@@ -177,6 +217,16 @@ func main() {
 		err = app.Grupo(conn, args)
 	case "categoria", "categorias":
 		err = app.Categoria(conn, args)
+	case "socio", "socios":
+		err = app.Socio(conn, args)
+	case "capital":
+		err = app.Capital(conn, args)
+	case "imposto", "impostos":
+		err = app.Imposto(conn, args)
+	case "investimento", "investimentos":
+		err = app.Investimento(conn, args)
+	case "lucro":
+		err = app.Lucro(conn, args)
 	case "cartao", "cartoes", "cartão", "cartões":
 		err = app.Cartao(conn, args)
 	case "fatura", "faturas":

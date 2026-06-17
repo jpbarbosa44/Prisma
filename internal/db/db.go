@@ -16,25 +16,48 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Path retorna o caminho do banco: $PRISMA_DB ou o diretório de dados
-// padrão de cada sistema (Linux: ~/.local/share; macOS: ~/Library/Application
-// Support; Windows: %AppData%).
-func Path() (string, error) {
-	if p := os.Getenv("PRISMA_DB"); p != "" {
-		return p, nil
-	}
+// dataDir devolve o diretório de dados padrão de cada sistema (Linux:
+// ~/.local/share/prisma; macOS/Windows: dir de config do usuário + prisma).
+func dataDir() (string, error) {
 	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 		dir, err := os.UserConfigDir()
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(dir, "prisma", "prisma.db"), nil
+		return filepath.Join(dir, "prisma"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "share", "prisma", "prisma.db"), nil
+	return filepath.Join(home, ".local", "share", "prisma"), nil
+}
+
+// Path retorna o caminho do banco pessoal: $PRISMA_DB ou prisma.db no
+// diretório de dados padrão.
+func Path() (string, error) {
+	if p := os.Getenv("PRISMA_DB"); p != "" {
+		return p, nil
+	}
+	dir, err := dataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "prisma.db"), nil
+}
+
+// PathEmpresa retorna o caminho do banco da empresa (modo `prisma --empresa`):
+// $PRISMA_EMPRESA_DB ou empresa.db no diretório de dados padrão — um arquivo
+// totalmente separado do banco pessoal.
+func PathEmpresa() (string, error) {
+	if p := os.Getenv("PRISMA_EMPRESA_DB"); p != "" {
+		return p, nil
+	}
+	dir, err := dataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "empresa.db"), nil
 }
 
 // Abrir escolhe o backend conforme a config: nos modos local e servidor abre o
@@ -62,13 +85,29 @@ func OpenCliente(cfg remote.Config) (*sql.DB, error) {
 	return conn, nil
 }
 
-// Open abre (criando se necessário) o banco e aplica o schema. Antes de
-// abrir, faz o backup diário — a cópia retrata o banco antes da sessão.
+// Open abre (criando se necessário) o banco pessoal e aplica o schema.
 func Open() (*sql.DB, error) {
 	p, err := Path()
 	if err != nil {
 		return nil, err
 	}
+	return abrirArquivo(p)
+}
+
+// OpenEmpresa abre (criando se necessário) o banco da empresa — um arquivo
+// totalmente separado do pessoal, usado em `prisma --empresa`.
+func OpenEmpresa() (*sql.DB, error) {
+	p, err := PathEmpresa()
+	if err != nil {
+		return nil, err
+	}
+	return abrirArquivo(p)
+}
+
+// abrirArquivo abre (criando se necessário) o banco SQLite em p e aplica o
+// schema. Antes de abrir, faz o backup diário — a cópia retrata o banco antes
+// da sessão.
+func abrirArquivo(p string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return nil, fmt.Errorf("criando diretório do banco: %w", err)
 	}
@@ -260,6 +299,40 @@ CREATE TABLE IF NOT EXISTS cartoes (
 
 CREATE INDEX IF NOT EXISTS idx_lanc_venc   ON lancamentos (vencimento);
 CREATE INDEX IF NOT EXISTS idx_lanc_status ON lancamentos (status);
+
+-- módulo empresa (prisma --empresa): sócios com participação própria (não dá
+-- pra reaproveitar "grupo", que só divide igualmente entre as pessoas).
+CREATE TABLE IF NOT EXISTS socios (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	nome         TEXT NOT NULL,
+	participacao REAL NOT NULL CHECK (participacao > 0 AND participacao <= 100),
+	criado_em    TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
+-- aporte de capital social: o valor/data ficam só no lançamento vinculado
+-- (mesmo padrão de lancamentos.reembolso_de) para não duplicar dado.
+CREATE TABLE IF NOT EXISTS aportes_capital (
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	socio_id      INTEGER NOT NULL REFERENCES socios(id),
+	lancamento_id INTEGER NOT NULL REFERENCES lancamentos(id) ON DELETE CASCADE,
+	criado_em     TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS distribuicoes_lucro (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	data        TEXT NOT NULL,
+	lucro_total INTEGER NOT NULL, -- centavos; o valor que foi distribuído
+	observacao  TEXT NOT NULL DEFAULT '',
+	criado_em   TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
+-- a parte de cada sócio numa distribuição; o valor fica no lançamento.
+CREATE TABLE IF NOT EXISTS distribuicao_socios (
+	id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	distribuicao_id INTEGER NOT NULL REFERENCES distribuicoes_lucro(id) ON DELETE CASCADE,
+	socio_id        INTEGER NOT NULL REFERENCES socios(id),
+	lancamento_id   INTEGER NOT NULL REFERENCES lancamentos(id) ON DELETE CASCADE
+);
 `
 
 func migrate(conn *sql.DB) error {
