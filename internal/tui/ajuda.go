@@ -261,3 +261,49 @@ SEUS DADOS E PRIVACIDADE
   em 127.0.0.1, então também não fica exposta na rede. O Prisma faz um backup
   automático por dia. Em Saldo, a ação "zerar banco" apaga tudo (com backup
   antes), caso você queira recomeçar do zero.`
+
+// textoComoUsarAnalytics é a tela "Como usar" do módulo Prisma Analytics.
+const textoComoUsarAnalytics = `COMO USAR O PRISMA ANALYTICS
+
+O Analytics é um painel de ANÁLISE sobre as suas finanças pessoais. Ele só
+LÊ os dados (modo somente-leitura): não dá para adicionar, editar nem apagar
+lançamentos por aqui. Use o Prisma normal para registrar; use o Analytics
+para entender o que os números dizem.
+
+NAVEGAÇÃO
+  Tecle o número da análise ou use ↑/↓ e enter. Dentro de uma tela, ↑/↓
+  rolam o conteúdo e esc volta ao menu. Duas telas pedem dados por formulário
+  (rodapé mostra a tecla): Metas (m) e Simulador (s).
+
+AS ANÁLISES
+
+  Health Score    Nota de 0 a 100 da sua saúde financeira, juntando taxa de
+                  poupança, fundo de emergência (saldo ÷ despesa média) e a
+                  constância do fluxo mês a mês.
+  Modo Economia   Categorias com gasto fora do padrão neste mês, comparando
+                  com a média e o desvio dos meses anteriores.
+  Sazonalidade    Meses do ano historicamente mais caros e aviso quando um
+                  deles está chegando (precisa de mais de um ano de histórico).
+  Runway          Projeção do saldo em 30/90/180 dias, o ritmo de queima e,
+                  se o fluxo é negativo, quantos meses até o saldo zerar.
+  Metas (m)       Informe um valor e um prazo: calcula a parcela mensal, vê se
+                  cabe no seu superávit e, se não couber, sugere onde cortar.
+  Assinaturas     Despesas de mesmo valor repetidas em vários meses que não
+   Ocultas        são recorrências cadastradas — prováveis assinaturas, com o
+                  impacto por ano.
+  Simulador (s)   E se você perder renda ou ganhar uma despesa fixa? Recalcula
+                  fluxo e runway na hora, só em memória (nada é gravado).
+  Inflação        Quanto o seu custo de vida básico (mercado, luz, água,
+   Pessoal        condomínio) subiu em relação ao mesmo trimestre do ano
+                  passado.
+  Regra 50/30/20  Quanto da renda vai para necessidades, desejos e poupança,
+                  frente ao padrão ideal de 50/30/20.
+  Patrimônio      Ativos (contas + carteiras) menos dívidas, e a evolução do
+   Líquido        patrimônio mês a mês.
+  Eficiência      Consumo das contas de utilidade da casa (luz, água, gás,
+                  internet), a fatia da renda e os picos.
+
+DICA
+  Os recortes (o que é "necessidade", "utilidade" ou "conta básica") saem do
+  NOME das categorias dos seus lançamentos. Quanto mais consistente você
+  nomeia as categorias, mais certeiras ficam as análises.`

@@ -104,6 +104,26 @@ func OpenEmpresa() (*sql.DB, error) {
 	return abrirArquivo(p)
 }
 
+// AbrirAnalytics abre o banco pessoal em modo SOMENTE LEITURA para o módulo
+// Prisma Analytics (`prisma --analytics`): a pragma query_only barra qualquer
+// INSERT/UPDATE/DELETE no nível da conexão (RNF01 — isolamento de dados). Não
+// roda migrações nem backup (não escreve); assume um banco já existente.
+func AbrirAnalytics() (*sql.DB, error) {
+	p, err := Path()
+	if err != nil {
+		return nil, err
+	}
+	conn, err := sql.Open("sqlite", p+"?_pragma=busy_timeout(5000)&_pragma=query_only(true)")
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.Ping(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("abrindo o banco para análise: %w", err)
+	}
+	return conn, nil
+}
+
 // abrirArquivo abre (criando se necessário) o banco SQLite em p e aplica o
 // schema. Antes de abrir, faz o backup diário — a cópia retrata o banco antes
 // da sessão.

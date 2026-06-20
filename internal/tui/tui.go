@@ -87,13 +87,16 @@ type selecionavel struct {
 }
 
 type model struct {
-	conn        *sql.DB
-	telas       []tela
-	modoEmpresa bool // true em `prisma --empresa`: banner CORP e telas extras
-	modo        modo
-	cursor      int // item do menu selecionado
-	atual       int // tela aberta
-	params      [][]string
+	conn  *sql.DB
+	telas []tela
+	// banner: selo ("CORP"/"ANALYTICS"/""), subtítulo e cor do selo no cabeçalho
+	selo    string
+	seloSub string
+	seloCor lipgloss.Style
+	modo    modo
+	cursor  int // item do menu selecionado
+	atual   int // tela aberta
+	params  [][]string
 
 	prefixo    string // primeiro dígito de um atalho de dois dígitos (ex.: "1" de "12")
 	prefixoGen int    // invalida ticks de prefixo antigos
@@ -128,14 +131,31 @@ type model struct {
 // imposto/investimento/lucro.
 func Run(conn *sql.DB, modoEmpresa bool) error {
 	telas := novasTelas(conn, modoEmpresa)
+	selo, sub := "", "— finanças pessoais"
+	if modoEmpresa {
+		selo, sub = "CORP", "— finanças empresariais"
+	}
+	return roda(conn, telas, selo, sub, corCorp)
+}
+
+// RunAnalytics abre o módulo Prisma Analytics (`prisma --analytics`): banner com
+// o selo ANALYTICS e telas exclusivas de análise (somente leitura, sem CRUD).
+func RunAnalytics(conn *sql.DB) error {
+	return roda(conn, novasTelasAnalytics(conn), "ANALYTICS", "— análise financeira (somente leitura)", corAnalytics)
+}
+
+// roda monta o modelo com o conjunto de telas e o banner informados e sobe a TUI.
+func roda(conn *sql.DB, telas []tela, selo, sub string, corSelo lipgloss.Style) error {
 	aviso, _ := update.Aviso()
 	m := model{
-		conn:        conn,
-		telas:       telas,
-		modoEmpresa: modoEmpresa,
-		params:      make([][]string, len(telas)),
-		selPos:      -1,
-		aviso:       aviso,
+		conn:    conn,
+		telas:   telas,
+		selo:    selo,
+		seloSub: sub,
+		seloCor: corSelo,
+		params:  make([][]string, len(telas)),
+		selPos:  -1,
+		aviso:   aviso,
 	}
 	for i := range telas {
 		m.params[i] = telas[i].padrao
@@ -205,7 +225,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) ajustaViewport() {
-	altoCab := lipgloss.Height(cabecalho(m.largura, m.modoEmpresa))
+	altoCab := lipgloss.Height(cabecalhoSelo(m.largura, m.selo, m.seloSub, m.seloCor))
 	alto := m.altura - altoCab - 5 // título, mensagem e rodapé
 	if alto < 3 {
 		alto = 3
@@ -760,7 +780,7 @@ func (m model) focaCampo() (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	var b strings.Builder
-	b.WriteString(cabecalho(m.largura, m.modoEmpresa))
+	b.WriteString(cabecalhoSelo(m.largura, m.selo, m.seloSub, m.seloCor))
 	b.WriteString("\n")
 	if m.aviso != "" {
 		b.WriteString(corAmar.Render(" ↑ "+m.aviso) + "\n")

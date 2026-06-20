@@ -10,9 +10,10 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 4. [A interface web (--web)](#a-interface-web---web)
 5. [Comandos](#comandos)
 6. [Empresa (`prisma --empresa`)](#empresa-prisma---empresa)
-7. [Receitas prontas](#receitas-prontas)
-8. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
-9. [Dados e backup](#dados-e-backup)
+7. [Analytics (`prisma --analytics`)](#analytics-prisma---analytics)
+8. [Receitas prontas](#receitas-prontas)
+9. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
+10. [Dados e backup](#dados-e-backup)
 
 ---
 
@@ -556,6 +557,32 @@ prisma lucro listar                            # histórico de distribuições p
 `lucro distribuir` cria uma saída de caixa (`pagar`, categoria `distribuicao`) por sócio, proporcional à participação — recusa se as participações não somarem 100%. Se o valor distribuído passar do lucro acumulado (receitas − despesas de sempre, menos o que já foi distribuído antes), avisa — mas não bloqueia, já que retirar mais do que o lucro do período pode ser uma decisão válida (ex.: usando capital de reserva). `lucro calcular` é só informativo: não grava nada, exclui aportes de capital (não são receita operacional) e distribuições já feitas (não são despesa do período).
 
 **Limitações desta primeira versão:** sem modo cliente/servidor (a empresa é sempre local) e sem suporte a recorrência/assinatura com `--recebe-pagamento` ou outras combinações mais avançadas — o módulo cobre o fluxo básico de capital → operação → imposto/investimento → lucro.
+
+## Analytics (`prisma --analytics`)
+
+`prisma --analytics` abre o **módulo de análise financeira**: uma TUI separada, focada em visualização (gráficos e barras em ASCII), que **só lê** os seus dados. A conexão com o banco é aberta em modo somente-leitura (`query_only`), então o módulo não consegue inserir, editar ou apagar nada — e não há formulários de lançamento. Ele atua como um motor de inteligência sobre o histórico que você já registrou no Prisma normal.
+
+```sh
+prisma --analytics        # abre o painel (selo ANALYTICS, somente leitura)
+```
+
+Não combina com `--empresa` (lê sempre o banco pessoal) nem com o modo cliente/servidor. Navegue com `↑/↓` e `enter`; volte com `esc`.
+
+### As análises
+
+- **Health Score** — índice 0–100 que combina a taxa de poupança média, o nível do fundo de emergência (saldo ÷ despesa média mensal) e a constância do fluxo de caixa livre (quanto menos o líquido mensal oscila, melhor).
+- **Modo Economia** — compara os gastos do mês corrente, por categoria, com a média e o desvio padrão dos meses anteriores, e alerta os comportamentos atípicos (ex.: "restaurante 275% acima do padrão").
+- **Sazonalidade** — mapeia os meses do calendário historicamente mais caros (precisa de histórico de mais de um ano para ficar útil) e avisa quando um deles está chegando.
+- **Runway** — projeta o saldo para 30/90/180 dias a partir das médias, mostra o *burn rate* (despesa média) e, se o fluxo é negativo, quantos meses faltam até o saldo zerar.
+- **Metas** (tecla `m`) — informe um valor e um prazo em meses; calcula a parcela mensal necessária, cruza com o superávit médio e diz se é viável. Se não for, sugere categorias variáveis a cortar e estima em quanto tempo a meta caberia no ritmo atual.
+- **Assinaturas Ocultas** — varre o histórico atrás de despesas de mesmo valor repetidas em 3+ meses que não vêm de uma recorrência cadastrada, com o impacto anual de cada uma ("você gasta R$ X/ano neste serviço").
+- **Simulador** (tecla `s`) — sandbox *what-if*: informe uma perda de renda e/ou uma nova despesa fixa mensal e veja o fluxo livre e o runway recalculados. Tudo em memória — nada é gravado no banco.
+- **Inflação Pessoal** — compara o gasto com contas básicas (mercado, luz, água, condomínio) no trimestre atual com o mesmo trimestre do ano anterior, para medir o quanto o *seu* custo de vida subiu.
+- **Regra 50/30/20** — classifica o orçamento em necessidades, desejos e poupança/investimentos (o que sobra da renda) e compara com o padrão ideal de 50/30/20.
+- **Patrimônio Líquido** — ativos (saldo de contas + carteiras) menos dívidas (emergências ativas), com a evolução mês a mês. O histórico de dívidas não é rastreado, então a evolução aplica a dívida atual como referência.
+- **Eficiência** — acompanha as contas de utilidade da casa (luz, água, gás, internet), a proporção sobre a renda e detecta picos de consumo.
+
+A classificação de categorias (o que conta como "necessidade", "utilidade" ou "conta básica") é por **palavra-chave no nome da categoria** — quanto mais consistente o nome dos seus lançamentos, melhores os recortes das análises.
 
 ## Receitas prontas
 

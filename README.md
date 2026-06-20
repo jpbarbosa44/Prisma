@@ -311,6 +311,32 @@ prisma lucro distribuir --valor 2.000,00                       # divide pela par
 
 Detalhes (incluindo os avisos de participação/lucro acumulado) no [MANUAL.md](MANUAL.md#empresa-prisma---empresa).
 
+## Analytics (`prisma --analytics`)
+
+Para uma camada de **análise financeira** sobre os seus dados pessoais — sem risco de mexer em nada — use `prisma --analytics`. Ele abre uma TUI exclusiva (com o selo **ANALYTICS** ao lado do logo) que **só lê** o banco: a conexão é aberta em modo somente-leitura, então nenhuma inserção, edição ou exclusão é possível, e não há formulários de lançamento. O módulo só interpreta o histórico que você já registrou no Prisma normal.
+
+```sh
+prisma --analytics                    # abre o painel de análise (somente leitura)
+```
+
+As telas (navegue com `↑/↓` e `enter`, volte com `esc`):
+
+| Tela | O que mostra |
+|---|---|
+| **Health Score** | índice 0–100 de saúde financeira (poupança + fundo de emergência + constância do fluxo) |
+| **Modo Economia** | categorias com gasto atípico no mês (desvio padrão e médias do histórico) |
+| **Sazonalidade** | meses do calendário historicamente mais caros e avisos dos próximos |
+| **Runway** | projeção de saldo em 30/90/180 dias, *burn rate* e meses até zerar |
+| **Metas** | viabilidade de uma meta (valor + prazo) frente ao superávit; sugere cortes |
+| **Assinaturas Ocultas** | despesas repetidas que parecem assinaturas, com impacto anual |
+| **Simulador** | *what-if*: perda de renda / nova despesa recalculando fluxo e runway (em memória) |
+| **Inflação Pessoal** | quanto o seu custo de vida básico subiu, ano a ano |
+| **Regra 50/30/20** | necessidades × desejos × poupança frente ao padrão ideal |
+| **Patrimônio Líquido** | ativos − dívidas e a evolução mês a mês |
+| **Eficiência** | consumo das contas de utilidade (luz, água...) e picos |
+
+Em **Metas** (tecla `m`) e **Simulador** (tecla `s`) você informa os parâmetros por um formulário — a análise roda só em memória, nada é gravado. O Analytics lê o **banco pessoal** (não combina com `--empresa`). Detalhes no [MANUAL.md](MANUAL.md#analytics-prisma---analytics).
+
 ## Compartilhamento (vários dispositivos)
 
 Um casal ou família pode usar o **mesmo banco** a partir de máquinas diferentes na rede de casa. Uma máquina vira **servidor** (dona do arquivo) e disponibiliza o banco na rede local; as outras conectam como **cliente** e operam sem perceber que o banco está em outro lugar — TUI, CLI e bot funcionam igual.

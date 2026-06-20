@@ -20,6 +20,7 @@ USO
   prisma                                  abre a interface no terminal
   prisma --web [--porta N]                abre a interface no navegador
   prisma --empresa [...]                  mesmos comandos, banco separado da empresa
+  prisma --analytics                      módulo de análise financeira (somente leitura)
   prisma <comando> [subcomando] [opções]  modo linha de comando
 
 COMANDOS
@@ -130,6 +131,27 @@ func main() {
 	if len(os.Args) >= 2 && os.Args[1] == "--empresa" {
 		modoEmpresa = true
 		os.Args = append(os.Args[:1], os.Args[2:]...)
+	}
+
+	// `prisma --analytics` abre o módulo de análise (somente leitura) sobre o
+	// banco pessoal e sobe direto a TUI exclusiva do Analytics — sem CRUD, sem
+	// modo cliente/servidor, sem materializar recorrências (nada escreve).
+	if len(os.Args) >= 2 && os.Args[1] == "--analytics" {
+		if modoEmpresa {
+			fmt.Fprintln(os.Stderr, "erro: --analytics não pode ser combinado com --empresa")
+			os.Exit(2)
+		}
+		conn, err := db.AbrirAnalytics()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+			os.Exit(1)
+		}
+		defer conn.Close()
+		if err := tui.RunAnalytics(conn); err != nil {
+			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// descobre o papel desta instância: banco local (padrão), servidor ou

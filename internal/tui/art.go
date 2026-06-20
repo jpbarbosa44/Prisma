@@ -42,49 +42,72 @@ const (
 // raios é o espectro que sai da face frontal: linha → cor.
 var raios = map[int]lipgloss.Style{4: corVerm, 5: corAmar, 6: corMagenta}
 
-// corCorp é o selo "CORP" que marca o modo empresa (`prisma --empresa`),
-// numa cor diferente do resto da arte pra ficar óbvio que é outro banco.
-var corCorp = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // âmbar
+// corCorp é o selo "CORP" que marca o modo empresa (`prisma --empresa`); corAnalytics
+// é o selo "ANALYTICS" (`prisma --analytics`), cada um numa cor distinta da arte
+// pra ficar óbvio em qual modo se está.
+var (
+	corCorp      = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // âmbar
+	corAnalytics = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true) // magenta
+)
 
-// badgeCorp é um selo emoldurado de 3 linhas — bem maior que um texto inline
-// solto, sem precisar desenhar "CORP" em letras de bloco caractere a
-// caractere (risco de desalinhar sem ver renderizado).
-var badgeCorp = []string{
-	"┌─────────────┐",
-	"│   C O R P   │",
-	"└─────────────┘",
+// espacar separa as letras com espaços ("CORP" → "C O R P"), no estilo do selo.
+func espacar(s string) string {
+	return strings.Join(strings.Split(s, ""), " ")
 }
 
-// badgeCorpAoLado devolve o badgeCorp colorido, alinhado verticalmente para
-// ficar ao lado de um bloco de altura linhas (ex.: as letras grandes do
-// PRISMA), com o badge centrado nessa altura.
-func badgeCorpAoLado(altura int) string {
-	topo := (altura - len(badgeCorp)) / 2
+// badge monta um selo emoldurado de 3 linhas com o texto espaçado e centrado —
+// bem mais visível que um texto inline e sem desenhar letras de bloco à mão
+// (risco de desalinhar sem ver renderizado). Dimensiona a moldura ao texto.
+func badge(texto string) []string {
+	inner := "   " + espacar(texto) + "   "
+	largura := len([]rune(inner))
+	return []string{
+		"┌" + strings.Repeat("─", largura) + "┐",
+		"│" + inner + "│",
+		"└" + strings.Repeat("─", largura) + "┘",
+	}
+}
+
+// badgeAoLado devolve o badge colorido, alinhado verticalmente para ficar ao
+// lado de um bloco de `altura` linhas (ex.: as letras grandes do PRISMA),
+// centrado nessa altura.
+func badgeAoLado(texto string, altura int, cor lipgloss.Style) string {
+	b := badge(texto)
+	topo := (altura - len(b)) / 2
+	if topo < 0 {
+		topo = 0
+	}
 	linhas := make([]string, altura)
 	for i := range linhas {
 		linhas[i] = ""
 	}
-	for i, l := range badgeCorp {
-		linhas[topo+i] = corCorp.Render(l)
+	for i, l := range b {
+		if topo+i < altura {
+			linhas[topo+i] = cor.Render(l)
+		}
 	}
 	return strings.Join(linhas, "\n")
 }
 
-// cabecalho monta o prisma 3D (com feixe de luz entrando e o espectro saindo)
-// ao lado da palavra PRISMA em letras grandes; em telas estreitas, versões
-// mais compactas. Em modoEmpresa, troca o subtítulo e acrescenta o
-// badgeCorp — não redesenha PRISMA em letras de bloco com sufixo CORP porque
-// dá pra errar o alinhamento sem ver renderizado; se quiser isso depois, ajusta.
+// cabecalho é o atalho para os dois modos com banco próprio: pessoal e empresa.
 func cabecalho(largura int, modoEmpresa bool) string {
-	subtitulo := "— finanças pessoais"
 	if modoEmpresa {
-		subtitulo = "— finanças empresariais"
+		return cabecalhoSelo(largura, "CORP", "— finanças empresariais", corCorp)
 	}
+	return cabecalhoSelo(largura, "", "— finanças pessoais", corCorp)
+}
 
+// cabecalhoSelo monta o prisma 3D (com feixe de luz entrando e o espectro
+// saindo) ao lado da palavra PRISMA em letras grandes; em telas estreitas,
+// versões mais compactas. Com `selo` não-vazio (ex.: "CORP", "ANALYTICS"),
+// troca o subtítulo e acrescenta o badge correspondente na cor `corSelo` — não
+// redesenha PRISMA em letras de bloco com sufixo porque dá pra errar o
+// alinhamento sem ver renderizado.
+func cabecalhoSelo(largura int, selo, subtitulo string, corSelo lipgloss.Style) string {
 	if largura < 60 {
 		s := corTitulo.Render(" ◆ P R I S M A ") + corApagada.Render(subtitulo)
-		if modoEmpresa {
-			s += " " + corCorp.Render("[CORP]")
+		if selo != "" {
+			s += " " + corSelo.Render("["+selo+"]")
 		}
 		return s
 	}
@@ -111,8 +134,8 @@ func cabecalho(largura int, modoEmpresa bool) string {
 	// sem espaço para as letras grandes: título sob o prisma
 	if largura < 110 {
 		linha := strings.Repeat(" ", margem) + corTitulo.Render("P R I S M A ") + corApagada.Render(subtitulo)
-		if modoEmpresa {
-			linha += "  " + corCorp.Render("◆ C O R P ◆")
+		if selo != "" {
+			linha += "  " + corSelo.Render("◆ "+espacar(selo)+" ◆")
 		}
 		return prisma + "\n\n" + linha
 	}
@@ -128,8 +151,8 @@ func cabecalho(largura int, modoEmpresa bool) string {
 	for i := range letras {
 		letras[i] = corTitulo.Render(letras[i])
 	}
-	if modoEmpresa {
-		return lipgloss.JoinHorizontal(lipgloss.Center, prisma, "   ", strings.Join(letras, "\n"), "  ", badgeCorpAoLado(len(letras)))
+	if selo != "" {
+		return lipgloss.JoinHorizontal(lipgloss.Center, prisma, "   ", strings.Join(letras, "\n"), "  ", badgeAoLado(selo, len(letras), corSelo))
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Center, prisma, "   ", strings.Join(letras, "\n"))
 }
