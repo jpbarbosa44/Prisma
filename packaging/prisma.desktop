@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Prisma
+GenericName=Gerenciador de finanças
+GenericName[en]=Personal finance manager
+Comment=Controle suas finanças pessoais no terminal
+Comment[en]=Manage your personal finances in the terminal
+Exec=prisma
+Icon=prisma
+Terminal=true
+Categories=Office;Finance;ConsoleOnly;
+Keywords=financas;dinheiro;contas;orcamento;finance;money;budget;

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10243a"/>
+      <stop offset="1" stop-color="#0a1622"/>
+    </linearGradient>
+  </defs>
+
+  <!-- fundo arredondado, no clima escuro do terminal -->
+  <rect x="0" y="0" width="256" height="256" rx="52" fill="url(#bg)"/>
+
+  <!-- feixe de luz branca entrando pela esquerda -->
+  <line x1="20" y1="120" x2="106" y2="112" stroke="#f2f5f8" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- arco-íris saindo pela direita (luz decomposta) -->
+  <g stroke-width="6" stroke-linecap="round" fill="none">
+    <line x1="150" y1="110" x2="238" y2="92"  stroke="#ff4d4d"/>
+    <line x1="150" y1="111" x2="238" y2="106" stroke="#ff9f1c"/>
+    <line x1="150" y1="112" x2="238" y2="120" stroke="#ffe14d"/>
+    <line x1="150" y1="113" x2="238" y2="134" stroke="#3ddc84"/>
+    <line x1="150" y1="114" x2="238" y2="148" stroke="#4d9bff"/>
+    <line x1="150" y1="115" x2="238" y2="162" stroke="#b06bff"/>
+  </g>
+
+  <!-- o prisma (triângulo) -->
+  <polygon points="128,58 180,168 76,168"
+           fill="none" stroke="#36d6c3" stroke-width="8" stroke-linejoin="round"/>
+</svg>
