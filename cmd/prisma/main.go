@@ -58,6 +58,8 @@ COMANDOS
   config       Modo de operação             cliente --host X --token Y | local | (sem args mostra o atual)
   atualizar    Baixa e instala a versão nova (do GitHub, com conferência de SHA256)
   versao       Mostra a versão instalada
+  verificar    Integridade do banco         confere o banco em uso e os backups
+  restaurar    Volta a um backup            lista as cópias e restaura (guarda o estado atual antes)
   resetar      Apaga TODOS os dados        pede confirmação e faz backup antes
   ajuda        Mostra esta mensagem
 
@@ -189,6 +191,16 @@ func main() {
 		return
 	}
 
+	// `prisma restaurar` troca o banco por uma cópia de backup — roda antes de
+	// abrir qualquer conexão, para não substituir o arquivo com o banco em uso.
+	if len(os.Args) >= 2 && (os.Args[1] == "restaurar" || os.Args[1] == "restore") {
+		if err := app.Restaurar(os.Args[2:], modoEmpresa); err != nil {
+			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// checa por uma versão nova em segundo plano (no máximo 1x/dia, em silêncio)
 	go update.AtualizaCache()
 
@@ -293,6 +305,8 @@ func main() {
 		err = bot.Run(conn, args)
 	case "resetar":
 		err = app.Resetar(conn, args)
+	case "verificar", "verify":
+		err = app.Verificar(conn, modoEmpresa)
 	default:
 		fmt.Fprintf(os.Stderr, "comando desconhecido: %q\n\n", cmd)
 		fmt.Print(ajuda)

@@ -148,6 +148,20 @@ func abrirArquivo(p string) (*sql.DB, error) {
 	return conn, nil
 }
 
+// Snapshot grava uma cópia consistente e compactada do banco `origem` em
+// `destino` (VACUUM INTO), abrindo o arquivo só para isso. Diferente de copiar
+// o arquivo cru, sai um snapshot sob lock de leitura, sem corromper se o banco
+// estiver sendo escrito. `destino` não pode existir ainda.
+func Snapshot(origem, destino string) error {
+	src, err := sql.Open("sqlite", origem+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	_, err = src.Exec("VACUUM INTO ?", destino)
+	return err
+}
+
 // maxBackups é quantas cópias diárias ficam guardadas.
 const maxBackups = 7
 
