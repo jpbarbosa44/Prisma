@@ -257,6 +257,7 @@ CREATE TABLE IF NOT EXISTS recorrencias (
 	ultima_ref  TEXT NOT NULL DEFAULT '',           -- último AAAA-MM materializado
 	cartao_id   INTEGER REFERENCES cartoes(id) ON DELETE SET NULL, -- gera os lançamentos na fatura
 	assinatura  INTEGER NOT NULL DEFAULT 0,         -- 1 = é uma assinatura (Netflix, Spotify...)
+	intervalo   TEXT NOT NULL DEFAULT 'mensal',     -- 'mensal' ou 'anual' (uma vez por ano, no mês do início)
 	criada_em   TEXT NOT NULL DEFAULT (date('now','localtime'))
 );
 
@@ -406,6 +407,7 @@ func migrate(conn *sql.DB) error {
 		{"lancamentos", "observacao", `ALTER TABLE lancamentos ADD COLUMN observacao TEXT NOT NULL DEFAULT ''`},
 		{"recorrencias", "grupo_id", `ALTER TABLE recorrencias ADD COLUMN grupo_id INTEGER REFERENCES grupos(id) ON DELETE SET NULL`},
 		{"recorrencias", "auto_quitar", `ALTER TABLE recorrencias ADD COLUMN auto_quitar INTEGER NOT NULL DEFAULT 0`},
+		{"recorrencias", "intervalo", `ALTER TABLE recorrencias ADD COLUMN intervalo TEXT NOT NULL DEFAULT 'mensal'`},
 		{"lancamentos", "recebe_pagamento", `ALTER TABLE lancamentos ADD COLUMN recebe_pagamento INTEGER NOT NULL DEFAULT 0`},
 		{"lancamentos", "reembolso_de", `ALTER TABLE lancamentos ADD COLUMN reembolso_de INTEGER REFERENCES lancamentos(id) ON DELETE CASCADE`},
 	}

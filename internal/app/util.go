@@ -30,6 +30,17 @@ func parseData(s string) (string, error) {
 	return "", fmt.Errorf("data inválida: %q (use AAAA-MM-DD, DD/MM/AAAA ou DD/MM)", s)
 }
 
+// mesPorExtenso devolve o nome do mês (em português) de uma data AAAA-MM-DD.
+func mesPorExtenso(s string) string {
+	meses := []string{"janeiro", "fevereiro", "março", "abril", "maio", "junho",
+		"julho", "agosto", "setembro", "outubro", "novembro", "dezembro"}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return ""
+	}
+	return meses[int(t.Month())-1]
+}
+
 // dataBR converte AAAA-MM-DD para DD/MM/AAAA para exibição.
 func dataBR(s string) string {
 	t, err := time.Parse("2006-01-02", s)

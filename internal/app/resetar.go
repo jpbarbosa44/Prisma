@@ -23,9 +23,16 @@ func Resetar(conn *sql.DB, args []string) error {
 		return err
 	}
 
+	// Ordem importa: as tabelas-filhas (que referenciam outras com RESTRICT, como
+	// as de sócios) vêm antes das pais, senão a FK barra o DELETE. As contagens só
+	// mostram o que tiver linhas; as tabelas de empresa ficam zeradas no uso comum.
 	tabelas := []struct{ nome, rotulo string }{
-		{"contas", "conta(s)"},
-		{"carteiras", "carteira(s)"},
+		{"distribuicao_socios", "rateio(s) de lucro"},
+		{"distribuicoes_lucro", "distribuição(ões) de lucro"},
+		{"aportes_capital", "aporte(s) de capital"},
+		{"socios", "sócio(s)"},
+		{"comprovantes", "comprovante(s)"},
+		{"grupo_pessoas", "pessoa(s) de grupo"},
 		{"lancamentos", "lançamento(s)"},
 		{"transferencias", "transferência(s)"},
 		{"recorrencias", "recorrência(s)"},
@@ -33,6 +40,9 @@ func Resetar(conn *sql.DB, args []string) error {
 		{"planejamentos", "plano(s)"},
 		{"grupos", "grupo(s)"},
 		{"cartoes", "cartão(ões)"},
+		{"categorias", "categoria(s)"},
+		{"carteiras", "carteira(s)"},
+		{"contas", "conta(s)"},
 	}
 	total := 0
 	resumo := make([]string, 0, len(tabelas))

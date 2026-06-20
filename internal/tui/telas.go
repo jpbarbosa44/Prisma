@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"prisma/internal/app"
 	"prisma/internal/money"
@@ -12,6 +13,18 @@ import (
 // sugestoesCategorias alimenta o campo-combo de categoria com o catálogo.
 func sugestoesCategorias(conn *sql.DB) func() []string {
 	return func() []string { return app.ListaCategorias(conn) }
+}
+
+// opcoesCategorias lista as categorias do catálogo como opções de seletor,
+// precedidas das opções extras (ex.: "todas").
+func opcoesCategorias(conn *sql.DB, extras ...opcao) func() []opcao {
+	return func() []opcao {
+		ops := append([]opcao{}, extras...)
+		for _, c := range app.ListaCategorias(conn) {
+			ops = append(ops, opcao{c, c})
+		}
+		return ops
+	}
 }
 
 // valorForm formata centavos como "1.200,00" (sem "R$"), pronto para reedição.
@@ -568,8 +581,11 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 			},
 		},
 		{
-			titulo: "Pagar/Receber",
-			resumo: "lançamentos e quitação",
+			titulo:      "Pagar/Receber",
+			resumo:      "lançamentos e quitação",
+			listaMensal: true,
+			// ao abrir, mostra o mês atual (←/→ muda o mês, t alterna o tipo)
+			padrao: []string{"--mes", time.Now().Format("2006-01")},
 			conteudo: func(p []string) (string, error) {
 				return captura(func() error { return app.Lancamentos(conn, p) })
 			},
@@ -666,7 +682,7 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 						{rotulo: "mês", dica: "AAAA-MM, opcional"},
 						{rotulo: "de", dica: "data inicial, opcional"},
 						{rotulo: "até", dica: "data final, opcional"},
-						{rotulo: "categoria", dica: "opcional"},
+						{rotulo: "categoria", opcoes: opcoesCategorias(conn, opcao{"", "todas"})},
 						{rotulo: "pendentes", opcoes: simNao()},
 					},
 					params: func(v []string) []string {
@@ -706,6 +722,7 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 						{rotulo: "cartão", dica: "gera os lançamentos na fatura", opcoes: opcoesCartoes(conn, nenhuma)},
 						{rotulo: "início", dica: "opcional (padrão: hoje)"},
 						{rotulo: "fim", dica: "opcional (vazio = sem fim)"},
+						{rotulo: "intervalo", dica: "com que frequência se repete", opcoes: opcoesFixas("mensal", "mensal", "anual", "anual")},
 						{rotulo: "quitar no vencimento?", dica: "quita sozinho ao vencer", opcoes: simNao()},
 						{rotulo: "quitar anteriores?", dica: "se o início for no passado", opcoes: simNao()},
 					},
@@ -722,11 +739,12 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 						args = append(args, par("--cartao", v[8])...)
 						args = append(args, par("--inicio", v[9])...)
 						args = append(args, par("--fim", v[10])...)
-						if sim(v[11]) {
+						args = append(args, par("--intervalo", v[11])...)
+						if sim(v[12]) {
 							args = append(args, "--auto-quitar")
 						}
 						// a TUI sempre decide (nunca cai na pergunta interativa)
-						if sim(v[12]) {
+						if sim(v[13]) {
 							args = append(args, "--passados", "quitar")
 						} else {
 							args = append(args, "--passados", "manter")
@@ -1371,15 +1389,27 @@ func telasEmpresa(conn *sql.DB, exec func(func() error) (string, error), nenhuma
 // reembolso (recebe-pagamento) só aparece para despesas (tipo "pagar"), já
 // que receitas não podem ser divididas por grupo.
 func camposLancamento(conn *sql.DB, nenhuma opcao, tipo string) []campo {
+	// índice do campo "cartão" (8º), usado para ocultar o vencimento quando há cartão
+	const idxCartao = 7
 	campos := []campo{
 		{rotulo: "descrição", dica: "ex.: Aluguel", obrigatorio: true},
 		{rotulo: "valor", dica: "ex.: 1.200,00 (total, se parcelado)", obrigatorio: true},
-		{rotulo: "vencimento", dica: "DD/MM/AAAA ou DD/MM (padrão: hoje)"},
+		// no cartão o vencimento é o da fatura: sugere a data (campo travado)
+		{rotulo: "vencimento", dica: "DD/MM/AAAA ou DD/MM (padrão: hoje)",
+			auto: func(vals []string) string {
+				if len(vals) <= idxCartao || vals[idxCartao] == "" {
+					return "" // sem cartão: data normal (a data da compra)
+				}
+				if d := app.VencimentoFatura(conn, vals[idxCartao]); d != "" {
+					return "fatura vence em " + d
+				}
+				return ""
+			}},
 		{rotulo: "categoria", dica: "ex.: moradia (padrão: geral)", sugestoes: sugestoesCategorias(conn)},
 		{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", nenhuma)},
 		{rotulo: "carteira", opcoes: opcoesVinculo(conn, "carteiras", nenhuma)},
 		{rotulo: "grupo", dica: "divide a despesa entre as pessoas", opcoes: opcoesGrupos(conn, nenhuma)},
-		{rotulo: "cartão", dica: "se escolher, a data acima é a da compra", opcoes: opcoesCartoes(conn, nenhuma)},
+		{rotulo: "cartão", dica: "vai pra fatura (compra entra como hoje)", opcoes: opcoesCartoes(conn, nenhuma)},
 		{rotulo: "repetir", dica: "repete o valor por N meses (não use com parcelas)"},
 		{rotulo: "parcelas", dica: "divide o total em N parcelas (não use com repetir)"},
 		{rotulo: "observação", dica: "opcional"},

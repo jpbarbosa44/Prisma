@@ -399,6 +399,36 @@ func Lancamentos(conn *sql.DB, args []string) error {
 	}
 	query += ` ORDER BY l.vencimento, l.id`
 
+	// mostra os filtros ativos, para o usuário saber o recorte que está vendo
+	var filtros []string
+	switch *tipo {
+	case "pagar":
+		filtros = append(filtros, "tipo: a pagar")
+	case "receber":
+		filtros = append(filtros, "tipo: a receber")
+	}
+	if *mes != "" {
+		filtros = append(filtros, "mês: "+*mes)
+	}
+	if *de != "" {
+		filtros = append(filtros, "de: "+*de)
+	}
+	if *ate != "" {
+		filtros = append(filtros, "até: "+*ate)
+	}
+	if *cat != "" {
+		filtros = append(filtros, "categoria: "+strings.ToLower(*cat))
+	}
+	if *grupo != "" {
+		filtros = append(filtros, "grupo: #"+*grupo)
+	}
+	if *pendentes {
+		filtros = append(filtros, "só pendentes")
+	}
+	if len(filtros) > 0 {
+		fmt.Printf("Filtros: %s\n\n", strings.Join(filtros, " · "))
+	}
+
 	rows, err := conn.Query(query, params...)
 	if err != nil {
 		return err
@@ -410,6 +440,7 @@ func Lancamentos(conn *sql.DB, args []string) error {
 	achou := false
 	hoje, _ := parseData("hoje")
 	var totPagar, totReceber int64
+	var somaPagar, somaReceber int64 // total de tudo que está listado (parcelas inclusas)
 	for rows.Next() {
 		achou = true
 		var id, valor int64
@@ -436,6 +467,11 @@ func Lancamentos(conn *sql.DB, args []string) error {
 				totReceber += valor
 			}
 		}
+		if t == "pagar" {
+			somaPagar += valor
+		} else {
+			somaReceber += valor
+		}
 		// valor já vem como a parte efetiva (dividida pelo grupo, se houver);
 		// a coluna grupo mostra qual grupo divide e por quanto ("-" se nenhum)
 		grp := "-"
@@ -460,7 +496,9 @@ func Lancamentos(conn *sql.DB, args []string) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf("\nPendente a pagar: %s | Pendente a receber: %s\n",
+	fmt.Printf("\nValor total a pagar: %s | Valor total a receber: %s\n",
+		money.Format(somaPagar), money.Format(somaReceber))
+	fmt.Printf("Pendente a pagar: %s | Pendente a receber: %s\n",
 		money.Format(totPagar), money.Format(totReceber))
 	return nil
 }

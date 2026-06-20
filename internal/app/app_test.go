@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"prisma/internal/db"
 )
@@ -111,6 +112,32 @@ func TestRecorrenciaEditarPropagaPendentes(t *testing.T) {
 	}
 	if n == 0 {
 		t.Fatal("nenhum pendente gerado para verificar")
+	}
+}
+
+func TestRecorrenciaAnual(t *testing.T) {
+	conn := abreDB(t)
+	inicio := time.Now().Format("2006-01") + "-01" // 1º dia do mês atual
+	silencia(t, func() error {
+		return Recorrencia(conn, []string{
+			"add", "--tipo", "pagar", "--desc", "IPVA", "--valor", "1200",
+			"--dia", "1", "--inicio", inicio, "--intervalo", "anual",
+		})
+	})
+	// no horizonte de 3 meses, a anual só materializa o mês de aniversário (o atual)
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM lancamentos WHERE recorrencia_id = 1`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("recorrência anual gerou %d lançamento(s), quer 1 (uma vez por ano)", n)
+	}
+	var venc string
+	if err := conn.QueryRow(`SELECT vencimento FROM lancamentos WHERE recorrencia_id = 1`).Scan(&venc); err != nil {
+		t.Fatal(err)
+	}
+	if venc[5:7] != inicio[5:7] {
+		t.Errorf("ocorrência anual em %s, fora do mês de início %s", venc, inicio)
 	}
 }
 
@@ -415,13 +442,16 @@ func TestResetar(t *testing.T) {
 	if _, err := conn.Exec(`INSERT INTO contas (nome, saldo_inicial) VALUES ('Banco', 1000)`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := conn.Exec(`INSERT INTO categorias (nome) VALUES ('lazer')`); err != nil {
+		t.Fatal(err)
+	}
 	silencia(t, func() error {
 		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "Conta", "--valor", "10"})
 	})
 	silencia(t, func() error {
 		return Resetar(conn, []string{"--sim"})
 	})
-	for _, tabela := range []string{"contas", "lancamentos", "transferencias", "recorrencias", "emergencias", "planejamentos", "carteiras"} {
+	for _, tabela := range []string{"contas", "lancamentos", "transferencias", "recorrencias", "emergencias", "planejamentos", "carteiras", "categorias"} {
 		var n int
 		if err := conn.QueryRow(`SELECT COUNT(*) FROM ` + tabela).Scan(&n); err != nil {
 			t.Fatal(err)

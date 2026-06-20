@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,23 @@ func faturaDe(fech, venc int, compra time.Time) (ref, vencimento string) {
 	}
 	d := clampDia(vAno, vMes, venc)
 	return d.Format("2006-01"), d.Format("2006-01-02")
+}
+
+// VencimentoFatura devolve, para uma compra HOJE no cartão informado, a data de
+// vencimento da fatura em que ela cairia, em DD/MM/AAAA (vazio se o cartão não
+// existe). Serve para o formulário sugerir o vencimento ao escolher um cartão.
+func VencimentoFatura(conn *sql.DB, cartaoID string) string {
+	id, err := strconv.ParseInt(strings.TrimSpace(cartaoID), 10, 64)
+	if err != nil || id == 0 {
+		return ""
+	}
+	var fech, venc int
+	if err := conn.QueryRow(`SELECT dia_fechamento, dia_vencimento FROM cartoes WHERE id = ?`, id).
+		Scan(&fech, &venc); err != nil {
+		return ""
+	}
+	_, vencFat := faturaDe(fech, venc, time.Now())
+	return dataBR(vencFat)
 }
 
 // clampDia monta uma data prendendo o dia ao último do mês (ex.: dia 31 em

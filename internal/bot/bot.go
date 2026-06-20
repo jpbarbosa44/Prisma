@@ -65,11 +65,12 @@ Para consultar:
 #mercado — a categoria no mês atual
 #mercado maio · 3m · 2026-05 · tudo — outros períodos
 
-Aviso de vencimentos às 9h e resumo do dia às 20h, automáticos.`
+Aviso de vencimentos e cobranças a fazer às 9h, resumo do dia às 20h, automáticos.`
 
 const (
 	horaLembrete = 9  // a partir desta hora, avisa os vencimentos do dia
 	horaResumo   = 20 // a partir desta hora, manda o resumo do dia
+	diasCobranca = 3  // lembra de cobrar receitas que vencem nos próximos N dias
 )
 
 // config guarda o token do bot e o chat autorizado, num JSON ao lado do banco.
@@ -666,6 +667,7 @@ func (s *sessao) verificaAgenda(agora time.Time) {
 			fmt.Fprintf(os.Stderr, "aviso: backup diário falhou: %v\n", err)
 		}
 		s.enviaLembretes(hoje)
+		s.enviaCobrancas(hoje)
 		s.cfg.UltimoLembrete = hoje
 		if err := salvaConfig(*s.cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "aviso: salvando config: %v\n", err)
@@ -734,6 +736,58 @@ func (s *sessao) enviaLembretes(hoje string) {
 	if err := s.cli.enviar(s.cfg.ChatID, b.String(), &teclado); err != nil {
 		fmt.Fprintf(os.Stderr, "aviso: enviando lembretes: %v\n", err)
 	}
+}
+
+// enviaCobrancas lembra de cobrar as receitas pendentes que vencem nos próximos
+// dias (a partir de depois de amanhã, para não repetir o aviso de vencimentos do
+// dia/amanhã). Cada item leva um botão para marcar como recebido quando pago.
+func (s *sessao) enviaCobrancas(hoje string) {
+	amanha := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	limite := time.Now().AddDate(0, 0, diasCobranca).Format("2006-01-02")
+	rows, err := s.conn.Query(`
+		SELECT id, descricao, valor, vencimento FROM lancamentos
+		WHERE status = 'pendente' AND tipo = 'receber' AND vencimento > ? AND vencimento <= ?
+		ORDER BY vencimento, id LIMIT 15`, amanha, limite)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aviso: cobranças: %v\n", err)
+		return
+	}
+	defer rows.Close()
+
+	var b strings.Builder
+	b.WriteString("💰 Cobranças a fazer")
+	var teclado tecladoInline
+	n := 0
+	for rows.Next() {
+		var id, valor int64
+		var desc, venc string
+		if err := rows.Scan(&id, &desc, &valor, &venc); err != nil {
+			fmt.Fprintf(os.Stderr, "aviso: cobranças: %v\n", err)
+			return
+		}
+		dias := diasEntre(hoje, venc)
+		fmt.Fprintf(&b, "\n💰 Cobrar #%d %s — %s — vence em %d dias", id, desc, money.Format(valor), dias)
+		teclado.Linhas = append(teclado.Linhas, []botaoInline{
+			{Texto: fmt.Sprintf("✅ Recebido #%d", id), Dados: fmt.Sprintf("quitar:%d", id)},
+		})
+		n++
+	}
+	if n == 0 {
+		return // nada a cobrar nos próximos dias
+	}
+	if err := s.cli.enviar(s.cfg.ChatID, b.String(), &teclado); err != nil {
+		fmt.Fprintf(os.Stderr, "aviso: enviando cobranças: %v\n", err)
+	}
+}
+
+// diasEntre devolve quantos dias separam duas datas AAAA-MM-DD (ate - de).
+func diasEntre(de, ate string) int {
+	d1, err1 := time.Parse("2006-01-02", de)
+	d2, err2 := time.Parse("2006-01-02", ate)
+	if err1 != nil || err2 != nil {
+		return 0
+	}
+	return int(d2.Sub(d1).Hours() / 24)
 }
 
 // enviaResumo fecha o dia: o que foi registrado e quitado, e o status dos

@@ -32,6 +32,9 @@ func colorir(l string) string {
 		return corAmar.Render(l)
 	case strings.HasPrefix(t, "erro"):
 		return corErro.Render(l)
+	case strings.HasPrefix(t, "Total mensal em assinaturas"):
+		// total de saídas recorrentes: destaca o valor em vermelho (despesa)
+		return reValor.ReplaceAllStringFunc(l, pinta(corErro))
 	}
 
 	pagar, receber := rePagar.MatchString(l), reReceber.MatchString(l)

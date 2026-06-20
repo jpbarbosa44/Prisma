@@ -44,6 +44,11 @@ type campo struct {
 	obrigatorio bool
 	opcoes      func() []opcao  // nil = texto livre
 	sugestoes   func() []string // texto livre com sugestões navegáveis por ←/→ (ex.: categorias)
+	// auto, quando devolve um texto não-vazio (em função dos valores atuais do
+	// formulário), trava o campo como somente-leitura exibindo esse texto — útil
+	// para sugerir um valor calculado (ex.: o vencimento da fatura ao escolher um
+	// cartão). Campo travado não recebe foco nem vira argumento do comando.
+	auto func(vals []string) string
 }
 
 // acao é um atalho de teclado dentro de uma tela. Pode executar um comando
@@ -70,6 +75,9 @@ type tela struct {
 	padrao   []string // parâmetros iniciais do conteúdo
 	conteudo func(params []string) (string, error)
 	acoes    []acao
+	// listaMensal liga a navegação rápida por mês (←/→) e o atalho de tipo
+	// (t alterna pagar/receber/todos) sobre uma listagem com filtro --mes/--tipo.
+	listaMensal bool
 }
 
 // selecionavel é uma linha de tabela cujo primeiro campo é um ID numérico.
@@ -275,8 +283,24 @@ func (m *model) abreTela(i int) {
 	m.atual = i
 	m.modo = modoTela
 	m.msg = ""
+	// abre sempre na visão padrão da tela (ex.: a lista de cartões, não uma
+	// fatura aberta numa visita anterior, cujos params teriam ficado guardados)
+	m.params[i] = m.telas[i].padrao
 	m.ajustaViewport()
 	m.recarrega()
+}
+
+// mesmosParams diz se dois conjuntos de parâmetros de tela são iguais.
+func mesmosParams(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *model) recarrega() {
@@ -356,6 +380,12 @@ func (m *model) moveSelecao(delta int) {
 		m.vp.GotoTop()
 		return
 	}
+	// na última, vai até o fim para revelar o que vem depois da tabela
+	// (totais, "pendente a pagar/receber" etc.), que de outro modo ficaria oculto
+	if m.selPos == len(m.seleta)-1 {
+		m.vp.GotoBottom()
+		return
+	}
 	// mantém a linha selecionada visível
 	alvo := m.seleta[m.selPos].linha
 	if alvo < m.vp.YOffset {
@@ -370,6 +400,14 @@ func (m model) teclaTela(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	tecla := msg.String()
 	switch tecla {
 	case "esc", "q":
+		// numa visão "aprofundada" (ex.: a fatura de um cartão), o primeiro esc
+		// volta para a visão padrão da tela (a lista); só então sai para o menu
+		if !mesmosParams(m.params[m.atual], m.telas[m.atual].padrao) {
+			m.params[m.atual] = m.telas[m.atual].padrao
+			m.msg = ""
+			m.recarrega()
+			return m, nil
+		}
 		m.modo = modoMenu
 		m.msg = ""
 		return m, nil
@@ -391,6 +429,20 @@ func (m model) teclaTela(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
 		return m, cmd
+	}
+	// listagens mensais: ←/→ muda o mês, t alterna pagar/receber/todos
+	if m.telas[m.atual].listaMensal {
+		switch tecla {
+		case "left":
+			m.ajustaMes(-1)
+			return m, nil
+		case "right":
+			m.ajustaMes(1)
+			return m, nil
+		case "t":
+			m.cicleTipo()
+			return m, nil
+		}
 	}
 	for i := range m.telas[m.atual].acoes {
 		a := &m.telas[m.atual].acoes[i]
@@ -492,15 +544,53 @@ func (m *model) navegaSugestao(i, delta int) {
 // seletor diz se o campo i é um seletor de opções (e não texto livre).
 func (m model) seletor(i int) bool { return len(m.formOpcoes[i]) > 0 }
 
-// valoresForm coleta o valor de cada campo: a opção escolhida nos seletores,
-// o texto digitado nos demais.
-func (m model) valoresForm() []string {
+// rawValores coleta o valor cru de cada campo (sem aplicar visibilidade): a
+// opção escolhida nos seletores, o texto digitado nos demais.
+func (m model) rawValores() []string {
 	vals := make([]string, len(m.inputs))
 	for i := range m.inputs {
 		if m.seletor(i) {
 			vals[i] = m.formOpcoes[i][m.selIdx[i]].valor
 		} else {
 			vals[i] = strings.TrimSpace(m.inputs[i].Value())
+		}
+	}
+	return vals
+}
+
+// autoTexto devolve o texto do campo travado i (vazio = campo normal/editável).
+func (m model) autoTexto(i int) string {
+	c := m.formAcao.campos[i]
+	if c.auto == nil {
+		return ""
+	}
+	return c.auto(m.rawValores())
+}
+
+// travado diz se o campo i está em modo somente-leitura (tem texto automático).
+func (m model) travado(i int) bool { return m.autoTexto(i) != "" }
+
+// proxVisivel devolve o índice do próximo campo editável a partir de `de` na
+// direção `dir` (+1/-1), pulando os travados; volta `de` se não houver outro.
+func (m model) proxVisivel(de, dir int) int {
+	n := len(m.inputs)
+	i := de
+	for k := 0; k < n; k++ {
+		i = (i + dir + n) % n
+		if !m.travado(i) {
+			return i
+		}
+	}
+	return de
+}
+
+// valoresForm coleta os valores do formulário, zerando os campos travados (o
+// valor exibido é só sugestão e não deve virar argumento do comando).
+func (m model) valoresForm() []string {
+	vals := m.rawValores()
+	for i := range vals {
+		if m.travado(i) {
+			vals[i] = ""
 		}
 	}
 	return vals
@@ -576,19 +666,22 @@ func (m model) teclaForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "tab", "down":
-		m.foco = (m.foco + 1) % len(m.inputs)
+		m.foco = m.proxVisivel(m.foco, 1)
 		return m.focaCampo()
 	case "shift+tab", "up":
-		m.foco = (m.foco - 1 + len(m.inputs)) % len(m.inputs)
+		m.foco = m.proxVisivel(m.foco, -1)
 		return m.focaCampo()
 	case "enter":
-		if m.foco < len(m.inputs)-1 {
-			m.foco++
+		if prox := m.proxVisivel(m.foco, 1); prox > m.foco {
+			m.foco = prox
 			return m.focaCampo()
 		}
 		vals := m.valoresForm()
-		// valida os obrigatórios antes de confirmar
+		// valida os obrigatórios antes de confirmar (campos travados não contam)
 		for i, c := range m.formAcao.campos {
+			if m.travado(i) {
+				continue
+			}
 			if c.obrigatorio && strings.TrimSpace(vals[i]) == "" {
 				m.foco = i
 				msgCmd := m.defineMsg(fmt.Sprintf("o campo %q é obrigatório", c.rotulo), true)
@@ -725,9 +818,12 @@ func (m model) viewTela() string {
 	}
 	b.WriteString("\n")
 
-	teclas := make([]string, 0, len(t.acoes)+2)
+	teclas := make([]string, 0, len(t.acoes)+3)
 	for _, a := range t.acoes {
 		teclas = append(teclas, a.tecla+" "+a.rotulo)
+	}
+	if t.listaMensal {
+		teclas = append(teclas, "←/→ mês", "t pagar/receber")
 	}
 	if m.selPos >= 0 {
 		teclas = append(teclas, "↑/↓ selecionar")
@@ -746,6 +842,12 @@ func (m model) viewForm() string {
 	b.WriteString("\n\n")
 	temSeletor := false
 	for i, c := range a.campos {
+		// campo travado: mostra o rótulo e o valor sugerido (somente leitura)
+		if texto := m.autoTexto(i); texto != "" {
+			rotulo := fmt.Sprintf("%-13s", c.rotulo)
+			b.WriteString(fmt.Sprintf("   %s %s\n", rotulo, corApagada.Render("→ "+texto)))
+			continue
+		}
 		marca := "  "
 		if i == m.foco {
 			marca = corPrisma.Render("▸ ")
@@ -799,6 +901,60 @@ func captura(f func() error) (string, error) {
 	io.Copy(&b, r)
 	r.Close()
 	return b.String(), errF
+}
+
+// getArg devolve o valor da flag `nome` em params (ex.: "--mes"), ou "" se ausente.
+func getArg(params []string, nome string) string {
+	for i := 0; i+1 < len(params); i++ {
+		if params[i] == nome {
+			return params[i+1]
+		}
+	}
+	return ""
+}
+
+// setArg devolve params com a flag `nome` valendo `valor`; valor vazio a remove.
+func setArg(params []string, nome, valor string) []string {
+	out := make([]string, 0, len(params)+2)
+	for i := 0; i < len(params); i++ {
+		if params[i] == nome && i+1 < len(params) {
+			i++ // pula o valor antigo
+			continue
+		}
+		out = append(out, params[i])
+	}
+	if valor != "" {
+		out = append(out, nome, valor)
+	}
+	return out
+}
+
+// ajustaMes avança/volta o filtro --mes da tela atual em `delta` meses e recarrega.
+func (m *model) ajustaMes(delta int) {
+	base, err := time.Parse("2006-01", getArg(m.params[m.atual], "--mes"))
+	if err != nil {
+		base = time.Now() // sem mês no filtro: parte do atual
+	}
+	novo := base.AddDate(0, delta, 0).Format("2006-01")
+	m.params[m.atual] = setArg(m.params[m.atual], "--mes", novo)
+	m.msg = ""
+	m.recarrega()
+}
+
+// cicleTipo alterna o filtro --tipo entre todos → pagar → receber e recarrega.
+func (m *model) cicleTipo() {
+	ordem := []string{"", "pagar", "receber"}
+	atual := getArg(m.params[m.atual], "--tipo")
+	prox := ""
+	for i, t := range ordem {
+		if t == atual {
+			prox = ordem[(i+1)%len(ordem)]
+			break
+		}
+	}
+	m.params[m.atual] = setArg(m.params[m.atual], "--tipo", prox)
+	m.msg = ""
+	m.recarrega()
 }
 
 // par devolve ["--flag", valor] ou nada, se o valor estiver vazio.
