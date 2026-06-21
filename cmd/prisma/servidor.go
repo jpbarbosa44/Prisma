@@ -55,7 +55,10 @@ func rodarServidor(cfg remote.Config, args []string) error {
 			return fmt.Errorf("certificado TLS: %w", err)
 		}
 		fingerprint = fp
-		ln = tls.NewListener(ln, &tls.Config{Certificates: []tls.Certificate{cert}})
+		ln = tls.NewListener(ln, &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		})
 	}
 
 	srv := remote.NovoServidor(conn, *token)

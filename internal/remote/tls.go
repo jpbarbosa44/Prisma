@@ -113,6 +113,7 @@ func normalizaFP(s string) string {
 func tlsConfigCliente(fingerprint string) *tls.Config {
 	alvo := normalizaFP(fingerprint)
 	return &tls.Config{
+		MinVersion: tls.VersionTLS12,
 		// Verificação padrão (CA + host) é substituída pela checagem manual
 		// abaixo; sem InsecureSkipVerify o handshake falharia antes dela.
 		InsecureSkipVerify: true,

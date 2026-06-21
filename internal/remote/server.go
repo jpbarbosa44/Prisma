@@ -18,6 +18,11 @@ import (
 // fechá-la sozinho — protege contra clientes que caem sem fechar a conexão.
 const idleSessao = 10 * time.Minute
 
+// maxCorpo limita o tamanho do corpo de cada requisição. Os comandos do Prisma
+// são pequenos; o teto generoso (8 MiB) ainda cobre uma importação grande, mas
+// barra um corpo absurdo que esgotaria a memória do servidor.
+const maxCorpo = 8 << 20
+
 // Servidor expõe um *sql.DB local para clientes Prisma na rede. Cada sessão
 // segura uma *sql.Conn dedicada, preservando a semântica de transação por
 // conexão.
@@ -72,7 +77,15 @@ func (s *Servidor) Serve(ctx context.Context, ln net.Listener) error {
 	go s.reaper()
 	defer close(s.encerrar)
 
-	srv := &http.Server{Handler: s.Handler()}
+	srv := &http.Server{
+		Handler: s.Handler(),
+		// ReadHeaderTimeout corta o slowloris (cliente que envia cabeçalhos
+		// byte a byte para segurar a conexão); IdleTimeout recolhe conexões
+		// keep-alive paradas. Read/Write ficam sem teto de propósito: uma query
+		// legítima grande na LAN não pode ser cortada no meio.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -118,7 +131,15 @@ func (s *Servidor) handlePing(w http.ResponseWriter, r *http.Request) {
 		s.erro(w, http.StatusNotFound, "sessão desconhecida")
 		return
 	}
+	// sob o lock da sessão: `conn` pode ser zerado por fecha()/reaper, e `ultimo`
+	// (escrito aqui) é lido pelo reaper — sem o lock seria corrida de dados.
+	ses.mu.Lock()
+	defer ses.mu.Unlock()
 	ses.toca()
+	if ses.conn == nil {
+		s.erro(w, http.StatusNotFound, "sessão encerrada")
+		return
+	}
 	if err := ses.conn.PingContext(r.Context()); err != nil {
 		s.erro(w, http.StatusInternalServerError, err.Error())
 		return
@@ -363,7 +384,11 @@ func (s *Servidor) reaper() {
 			limite := time.Now().Add(-idleSessao)
 			s.mu.Lock()
 			for id, ses := range s.sessoes {
-				if ses.ultimo.Before(limite) {
+				// `ultimo` é escrito sob ses.mu pelos handlers; lê-se igual.
+				ses.mu.Lock()
+				ocioso := ses.ultimo.Before(limite)
+				ses.mu.Unlock()
+				if ocioso {
 					delete(s.sessoes, id)
 					go ses.fecha()
 				}
@@ -386,6 +411,7 @@ func (s *Servidor) fechaTudo() {
 // --- helpers HTTP ---
 
 func (s *Servidor) decode(w http.ResponseWriter, r *http.Request, dst any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCorpo)
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
 		s.erro(w, http.StatusBadRequest, "corpo inválido: "+err.Error())
 		return false
