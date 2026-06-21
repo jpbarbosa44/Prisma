@@ -9,6 +9,7 @@ package update
 import (
 	"archive/tar"
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -83,6 +84,54 @@ func Aviso() (texto, url string) {
 	}
 	return fmt.Sprintf("Nova versão %s disponível (você está na %s). Rode: prisma atualizar",
 		c.Versao, Versao), c.URL
+}
+
+// NovaDisponivel diz, a partir do cache da checagem diária, se há uma versão
+// mais nova que a instalada e qual é. ok=false quando não há novidade (ou o
+// build é "dev", que nunca recebe aviso). Não toca na rede.
+func NovaDisponivel() (nova, atual string, ok bool) {
+	c := carrega()
+	if c.Versao == "" || !maisNova(c.Versao, Versao) {
+		return "", Versao, false
+	}
+	return c.Versao, Versao, true
+}
+
+// OfereceAtualizar é o gancho de abertura: se a checagem diária já viu uma
+// versão nova, PERGUNTA ao usuário (lendo de r, escrevendo em w) se quer
+// atualizar agora e, com um "sim", baixa e instala (com conferência de SHA256).
+// Devolve true se atualizou. É silenciosa quando não há novidade — pode ser
+// chamada sempre na abertura, inclusive quando r/w não são um terminal.
+func OfereceAtualizar(r io.Reader, w io.Writer) (bool, error) {
+	nova, atual, ok := NovaDisponivel()
+	if !ok {
+		return false, nil
+	}
+	return oferece(r, w, nova, atual, Atualizar)
+}
+
+// oferece é o núcleo testável de OfereceAtualizar: faz a pergunta e só chama
+// `atualizar` diante de um "sim" explícito (qualquer outra coisa, inclusive
+// Enter vazio ou EOF, recusa — atualizar é uma ação que troca o binário).
+func oferece(r io.Reader, w io.Writer, nova, atual string, atualizar func() error) (bool, error) {
+	fmt.Fprintf(w, "Nova versão do Prisma disponível: %s (você está na %s).\n", nova, atual)
+	fmt.Fprint(w, "Deseja atualizar agora? [s/N] ")
+	resp := ""
+	sc := bufio.NewScanner(r)
+	if sc.Scan() {
+		resp = strings.ToLower(strings.TrimSpace(sc.Text()))
+	}
+	switch resp {
+	case "s", "sim", "y", "yes":
+	default:
+		fmt.Fprintln(w, "Sem problema — atualize quando quiser com: prisma atualizar")
+		return false, nil
+	}
+	if err := atualizar(); err != nil {
+		fmt.Fprintf(w, "erro ao atualizar: %v\n", err)
+		return false, err
+	}
+	return true, nil
 }
 
 // AtualizaCache refaz a checagem na rede no máximo uma vez por dia e guarda o

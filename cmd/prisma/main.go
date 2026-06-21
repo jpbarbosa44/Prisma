@@ -143,6 +143,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, "erro: --analytics não pode ser combinado com --empresa")
 			os.Exit(2)
 		}
+		// ao abrir, oferece atualizar se há versão nova (pergunta antes)
+		if atualizou, _ := update.OfereceAtualizar(os.Stdin, os.Stdout); atualizou {
+			return
+		}
 		conn, err := db.AbrirAnalytics()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
@@ -232,6 +236,10 @@ func main() {
 
 	// sem argumentos: abre a interface de terminal (TUI)
 	if len(os.Args) < 2 {
+		// ao abrir, oferece atualizar se há versão nova (pergunta antes de baixar)
+		if atualizou, _ := update.OfereceAtualizar(os.Stdin, os.Stdout); atualizou {
+			return
+		}
 		if err := tui.Run(conn, modoEmpresa); err != nil {
 			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
 			os.Exit(1)
