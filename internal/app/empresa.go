@@ -475,8 +475,8 @@ func lucroCalcular(conn *sql.DB, args []string) error {
 func lucroAcumulado(conn *sql.DB) (int64, error) {
 	var rec, desp, distribuido int64
 	err := conn.QueryRow(`
-		SELECT COALESCE(SUM(CASE tipo WHEN 'receber' THEN ` + valEf("lancamentos") + ` ELSE 0 END), 0),
-		       COALESCE(SUM(CASE tipo WHEN 'pagar' THEN ` + valEf("lancamentos") + ` ELSE 0 END), 0)
+		SELECT COALESCE(SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END), 0),
+		       COALESCE(SUM(CASE tipo WHEN 'pagar' THEN `+valEf("lancamentos")+` ELSE 0 END), 0)
 		FROM lancamentos WHERE status = 'quitado' AND categoria NOT IN ('capital', 'distribuicao')`,
 	).Scan(&rec, &desp)
 	if err != nil {
