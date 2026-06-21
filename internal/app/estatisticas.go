@@ -58,6 +58,62 @@ func Estatisticas(conn *sql.DB, args []string) error {
 	return imprimeSaude(conn, receitas, despesas, *meses)
 }
 
+// As funções EstatX abaixo expõem cada seção isoladamente, para a TUI alternar
+// entre elas com ←/→ (abas). Recalculam a janela e os dados que precisam — barato
+// e mantém cada aba independente. O dump completo continua em Estatisticas.
+
+func estatCabecalho(meses int) (inicio, hoje string, refs []string) {
+	inicio, hoje, refs = janelaMeses(meses)
+	fmt.Printf("ESTATÍSTICAS — %s a %s (%d meses)\n", dataBR(inicio), dataBR(hoje), meses)
+	return
+}
+
+// EstatResumo: resumo por categoria (total, média, mediana, extremos, %).
+func EstatResumo(conn *sql.DB, meses int) error {
+	inicio, hoje, refs := estatCabecalho(meses)
+	cats, err := estatPorCategoria(conn, inicio, hoje, refs)
+	if err != nil {
+		return err
+	}
+	if len(cats) == 0 {
+		fmt.Println("\nNenhuma despesa quitada no período.")
+		return nil
+	}
+	imprimeResumoCategoria(cats)
+	return nil
+}
+
+// EstatTendencia: variação do mês, média móvel e categorias acima da média.
+func EstatTendencia(conn *sql.DB, meses int) error {
+	inicio, hoje, refs := estatCabecalho(meses)
+	cats, err := estatPorCategoria(conn, inicio, hoje, refs)
+	if err != nil {
+		return err
+	}
+	_, despesas, err := estatMensal(conn, inicio, hoje, refs)
+	if err != nil {
+		return err
+	}
+	imprimeTendencia(cats, despesas, refs)
+	return nil
+}
+
+// EstatTopGastos: maiores lançamentos e gastos recorrentes do período.
+func EstatTopGastos(conn *sql.DB, meses int) error {
+	inicio, hoje, _ := estatCabecalho(meses)
+	return imprimeTopERecorrentes(conn, inicio, hoje)
+}
+
+// EstatSaude: projeção do saldo e indicadores de saúde financeira.
+func EstatSaude(conn *sql.DB, meses int) error {
+	inicio, hoje, refs := estatCabecalho(meses)
+	receitas, despesas, err := estatMensal(conn, inicio, hoje, refs)
+	if err != nil {
+		return err
+	}
+	return imprimeSaude(conn, receitas, despesas, meses)
+}
+
 // estatCategoria guarda a série mensal de uma categoria e suas estatísticas.
 type estatCategoria struct {
 	cat                   string

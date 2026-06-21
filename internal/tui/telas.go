@@ -1103,8 +1103,24 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 			titulo: "Estatísticas",
 			resumo: "tendência, top gastos, saúde financeira",
 			padrao: []string{"--meses", "6"},
+			// dump completo (usado pela interface web); a TUI usa as abas abaixo
 			conteudo: func(p []string) (string, error) {
 				return captura(func() error { return app.Estatisticas(conn, p) })
+			},
+			// ←/→ alterna entre as seções da análise
+			abas: []aba{
+				{"Categorias", func(p []string) (string, error) {
+					return captura(func() error { return app.EstatResumo(conn, mesesParam(p)) })
+				}},
+				{"Tendência", func(p []string) (string, error) {
+					return captura(func() error { return app.EstatTendencia(conn, mesesParam(p)) })
+				}},
+				{"Top gastos", func(p []string) (string, error) {
+					return captura(func() error { return app.EstatTopGastos(conn, mesesParam(p)) })
+				}},
+				{"Saúde", func(p []string) (string, error) {
+					return captura(func() error { return app.EstatSaude(conn, mesesParam(p)) })
+				}},
 			},
 			acoes: []acao{
 				{
@@ -1118,8 +1134,25 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 			titulo: "Gráficos",
 			resumo: "categorias, saldo, receitas × despesas",
 			padrao: []string{"--meses", "6"},
+			semSel: true, // rótulos numéricos de eixo não são IDs selecionáveis
+			// dump completo (usado pela interface web); a TUI usa as abas abaixo
 			conteudo: func(p []string) (string, error) {
 				return captura(func() error { return app.Graficos(conn, p) })
+			},
+			// ←/→ alterna entre os tipos de gráfico
+			abas: []aba{
+				{"Categorias", func(p []string) (string, error) {
+					return captura(func() error { return app.GraficoCategorias(conn, mesesParam(p)) })
+				}},
+				{"Receitas×Despesas", func(p []string) (string, error) {
+					return captura(func() error { return app.GraficoRecDesp(conn, mesesParam(p)) })
+				}},
+				{"Saldo", func(p []string) (string, error) {
+					return captura(func() error { return app.GraficoSaldo(conn, mesesParam(p)) })
+				}},
+				{"Grupos", func(p []string) (string, error) {
+					return captura(func() error { return app.GraficoGrupos(conn, mesesParam(p)) })
+				}},
 			},
 			acoes: []acao{
 				{

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guptarohit/asciigraph"
+
 	"prisma/internal/money"
 )
 
@@ -71,12 +73,21 @@ func AnalyticsHealthScore(conn *sql.DB) error {
 
 	fmt.Println("HEALTH SCORE — Saúde Financeira")
 	fmt.Printf("(janela: últimos %d meses)\n\n", len(refs))
-	fmt.Printf("  %d/100  %s  %s\n\n", score, gaugeBar(score, 24), rotuloSaude(score))
+	barra, regua := medidor(score, 40)
+	fmt.Printf("  %s\n", barra)
+	fmt.Printf("  %s %d/100 · %s\n", regua, score, rotuloSaude(score))
+	fmt.Printf("   %s\n\n", reguaZonas(40))
 
 	fmt.Println("Componentes:")
 	linhaComp("Taxa de poupança", nPoup, fmt.Sprintf("%.0f%% da renda sobra", poup*100))
 	linhaComp("Fundo de emergência", nFundo, fmt.Sprintf("%.1f meses de despesa no saldo", cobertura))
 	linhaComp("Constância do fluxo", nConst, descConstancia(nConst))
+	// líquido mês a mês resume a tendência por trás do score
+	liq := make([]int64, len(recs))
+	for i := range recs {
+		liq[i] = recs[i] - desps[i]
+	}
+	fmt.Printf("\nLíquido mês a mês: %s\n", pintar(cCiano, sparkline(liq)))
 	return nil
 }
 
@@ -110,6 +121,19 @@ func AnalyticsRunway(conn *sql.DB) error {
 		proj := saldo + int64(float64(liquido)*h.meses)
 		fmt.Printf("  em %3d dias: %s\n", h.dias, money.Format(proj))
 	}
+	fmt.Println()
+
+	// projeção mês a mês (0..6) como gráfico de linha
+	proj := make([]int64, 7)
+	for i := range proj {
+		proj[i] = saldo + int64(float64(liquido)*float64(i))
+	}
+	cor := asciigraph.Blue
+	if liquido < 0 {
+		cor = asciigraph.Red
+	}
+	fmt.Println(graficoLinha([][]float64{reaisSerie(proj)}, 8,
+		[]asciigraph.AnsiColor{cor}, nil, "saldo projetado — mês 0 (hoje) a mês 6"))
 	fmt.Println()
 
 	if liquido >= 0 {
@@ -187,16 +211,23 @@ func clamp01(x float64) float64 {
 	}
 }
 
-// gaugeBar desenha um medidor [████░░░░] proporcional a score (0–100).
-func gaugeBar(score, largura int) string {
-	if score < 0 {
-		score = 0
+// reguaZonas desenha a régua 0–25–50–75–100 alinhada à barra do medidor, para
+// situar o score nas faixas Crítica/Atenção/Boa/Excelente.
+func reguaZonas(largura int) string {
+	r := []byte(strings.Repeat(" ", largura+3))
+	for _, m := range []struct {
+		pct int
+		s   string
+	}{{0, "0"}, {25, "25"}, {50, "50"}, {75, "75"}, {100, "100"}} {
+		ini := m.pct * (largura - 1) / 100
+		if ini+len(m.s) > len(r) { // encosta o último rótulo na borda direita
+			ini = len(r) - len(m.s)
+		}
+		for i := 0; i < len(m.s); i++ {
+			r[ini+i] = m.s[i]
+		}
 	}
-	if score > 100 {
-		score = 100
-	}
-	cheio := score * largura / 100
-	return "[" + strings.Repeat("█", cheio) + strings.Repeat("░", largura-cheio) + "]"
+	return string(r)
 }
 
 // rotuloSaude traduz um score 0–100 num rótulo qualitativo.
@@ -215,7 +246,7 @@ func rotuloSaude(score int) string {
 
 // linhaComp imprime um componente do score: nome, medidor, nota e um detalhe.
 func linhaComp(nome string, nota float64, detalhe string) {
-	fmt.Printf("  %-22s %s %3.0f/100  %s\n", nome, gaugeBar(int(nota), 12), nota, detalhe)
+	fmt.Printf("  %-22s %s %3.0f/100  %s\n", nome, barraFinaCor(int64(nota), 100, 16, corZona(int(nota))), nota, detalhe)
 }
 
 // constanciaScore mede a previsibilidade do fluxo livre mensal (receita -
@@ -303,13 +334,6 @@ func pct(parte, total int64) float64 {
 	return float64(parte) / float64(total) * 100
 }
 
-func absInt(v int64) int64 {
-	if v < 0 {
-		return -v
-	}
-	return v
-}
-
 // AnalyticsRegra502030 (RF09) classifica o orçamento em Necessidades, Desejos e
 // Poupança/Investimentos (o que sobra da renda) e compara com o padrão 50/30/20.
 func AnalyticsRegra502030(conn *sql.DB) error {
@@ -340,9 +364,9 @@ func AnalyticsRegra502030(conn *sql.DB) error {
 		fmt.Println("Sem receitas no período para calcular as proporções.")
 		return nil
 	}
-	linhaPilar("Necessidades", necess, renda, 50)
-	linhaPilar("Desejos", desejo, renda, 30)
-	linhaPilar("Poupança/Invest.", poup, renda, 20)
+	linhaPilar("Necessidades", necess, renda, 50, cCiano)
+	linhaPilar("Desejos", desejo, renda, 30, cMagen)
+	linhaPilar("Poupança/Invest.", poup, renda, 20, cVerde)
 	fmt.Println()
 
 	pN, pP := pct(necess, renda), pct(poup, renda)
@@ -359,19 +383,29 @@ func AnalyticsRegra502030(conn *sql.DB) error {
 	return nil
 }
 
-// linhaPilar imprime "Nome [barra] X%  (ideal Y%, R$ ...)".
-func linhaPilar(nome string, parte, total int64, ideal int) {
+// linhaPilar imprime "Nome [barra] X%  (ideal Y%, R$ ...)", com um marcador ┊ na
+// posição do percentual ideal para se ver de relance se a fatia passou da meta.
+// A parte cheia sai em `cor`, o trilho em cinza e o marcador em amarelo.
+func linhaPilar(nome string, parte, total int64, ideal int, cor string) {
 	p := pct(parte, total)
-	larg := 20
-	cheio := int(p) * larg / 100
-	if cheio < 0 {
-		cheio = 0
+	larg := 24
+	v := int64(p)
+	if v < 0 {
+		v = 0
 	}
-	if cheio > larg {
-		cheio = larg
+	pos := ideal * (larg - 1) / 100
+	var b strings.Builder
+	for i, r := range []rune(barraFina(v, 100, larg)) {
+		switch {
+		case i == pos && (r == '░' || r == ' '):
+			b.WriteString(pintar(cAmar, "┊"))
+		case r == '░' || r == ' ':
+			b.WriteString(pintar(cCinza, string(r)))
+		default:
+			b.WriteString(pintar(cor, string(r)))
+		}
 	}
-	barra := strings.Repeat("█", cheio) + strings.Repeat("░", larg-cheio)
-	fmt.Printf("  %-18s %s %5.1f%%  (ideal %d%%, %s)\n", nome, barra, p, ideal, money.Format(parte))
+	fmt.Printf("  %-18s %s %5.1f%%  (ideal %d%%, %s)\n", nome, b.String(), p, ideal, money.Format(parte))
 }
 
 // AnalyticsPatrimonio (RF10) mostra o patrimônio líquido (ativos − dívidas) e
@@ -399,16 +433,17 @@ func AnalyticsPatrimonio(conn *sql.DB) error {
 		return err
 	}
 	fmt.Println("Evolução (patrimônio líquido ao fim de cada mês):")
-	var maior int64
-	for _, s := range saldos {
-		if v := absInt(s.Valor - dividas); v > maior {
-			maior = v
-		}
+	serie := make([]int64, len(saldos))
+	for i, s := range saldos {
+		serie[i] = s.Valor - dividas
 	}
-	for _, s := range saldos {
-		v := s.Valor - dividas
-		fmt.Printf("  %s %s %s\n", mesBR(s.Rotulo), barraCh(absInt(v), maior, 22, "█"), money.Format(v))
+	var capP string
+	if n := len(serie); n > 0 {
+		capP = fmt.Sprintf("%s → %s  (variação %s)",
+			money.Format(serie[0]), money.Format(serie[n-1]), money.Format(serie[n-1]-serie[0]))
 	}
+	fmt.Println(graficoLinha([][]float64{reaisSerie(serie)}, 9,
+		[]asciigraph.AnsiColor{asciigraph.Green}, nil, capP))
 	fmt.Println("\n(o histórico de dívidas não é rastreado; aplica-se a dívida atual como referência)")
 	return nil
 }
@@ -503,6 +538,9 @@ func AnalyticsUtilidades(conn *sql.DB) error {
 	}
 	if err := w.Flush(); err != nil {
 		return err
+	}
+	if len(serie) >= 2 {
+		fmt.Printf("\nTendência (%s a %s): %s\n", mesBR(refs[0]), mesBR(refs[len(refs)-1]), pintar(cCiano, sparkline(serie)))
 	}
 	// detecção de pico: mês corrente x média dos anteriores
 	if len(serie) >= 2 {
@@ -639,16 +677,32 @@ func AnalyticsSazonalidade(conn *sql.DB) error {
 	}
 	geral := somaMedias / n
 	nomes := []string{"jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"}
+
+	// mapa de calor: os 12 meses do calendário, intensidade ∝ gasto médio
+	var calor, iniciais strings.Builder
+	for m := 1; m <= 12; m++ {
+		frac := 0.0
+		if maior > 0 {
+			frac = float64(medias[m]) / float64(maior)
+		}
+		calor.WriteString(pintar(corCalor(frac), shade(frac)+shade(frac)) + " ")
+		iniciais.WriteString(nomes[m-1][:2] + " ")
+	}
+	fmt.Println("Mapa de calor (gasto médio por mês do calendário):")
+	fmt.Println("  " + calor.String())
+	fmt.Println("  " + iniciais.String())
+	fmt.Println()
+
 	for m := 1; m <= 12; m++ {
 		med, ok := medias[m]
 		if !ok {
 			continue
 		}
-		marca := "  "
+		marca, cor := "  ", cCiano
 		if med > geral*115/100 {
-			marca = "⚠ " // pico sazonal: 15%+ acima da média geral
+			marca, cor = "⚠ ", cVermel // pico sazonal: 15%+ acima da média geral
 		}
-		fmt.Printf("%s%-4s %s %s\n", marca, nomes[m-1], barraCh(med, maior, 22, "█"), money.Format(med))
+		fmt.Printf("%s%-4s %s %s\n", marca, nomes[m-1], barraFinaCor(med, maior, 22, cor), money.Format(med))
 	}
 	fmt.Printf("\nMédia geral mensal: %s\n", money.Format(geral))
 

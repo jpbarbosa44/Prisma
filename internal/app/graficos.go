@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guptarohit/asciigraph"
+
 	"prisma/internal/money"
 )
 
@@ -216,8 +218,20 @@ func Graficos(conn *sql.DB, args []string) error {
 	inicio, hoje, _ := janelaMeses(*meses)
 
 	fmt.Printf("GRÁFICOS — %s a %s\n", dataBR(inicio), dataBR(hoje))
+	for _, f := range []func(*sql.DB, int) error{
+		GraficoCategorias, GraficoRecDesp, GraficoSaldo, GraficoGrupos,
+	} {
+		if err := f(conn, *meses); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	// 1) gastos por categoria
+// GraficoCategorias desenha a composição e o ranking de gastos por categoria.
+// É uma das "abas" navegáveis por ←/→ na TUI (e parte do dump de `Graficos`).
+func GraficoCategorias(conn *sql.DB, meses int) error {
+	inicio, hoje, _ := janelaMeses(meses)
 	cats, err := GastosPorCategoria(conn, inicio, hoje)
 	if err != nil {
 		return err
@@ -225,86 +239,128 @@ func Graficos(conn *sql.DB, args []string) error {
 	fmt.Println("\nGASTOS POR CATEGORIA")
 	if len(cats) == 0 {
 		fmt.Println("  (sem despesas quitadas no período)")
-	} else {
-		var maior int64
-		for _, c := range cats {
-			if c.Valor > maior {
-				maior = c.Valor
-			}
-		}
-		w := novaTabela()
-		for _, c := range cats {
-			fmt.Fprintf(w, "  %s\t%s\t%s\n", c.Rotulo, barraEscala(c.Valor, maior, 28), money.Format(c.Valor))
-		}
-		w.Flush()
+		return nil
 	}
-
-	// 2) receitas vs despesas por mês
-	rd, err := ReceitaDespesaMensal(conn, *meses)
-	if err != nil {
-		return err
-	}
-	fmt.Println("\nRECEITAS (█) vs DESPESAS (▒) POR MÊS")
-	var maiorRD int64
-	for _, m := range rd {
-		if m.Rec > maiorRD {
-			maiorRD = m.Rec
-		}
-		if m.Desp > maiorRD {
-			maiorRD = m.Desp
+	var maior, total int64
+	for _, c := range cats {
+		total += c.Valor
+		if c.Valor > maior {
+			maior = c.Valor
 		}
 	}
+	// composição: barra 100% empilhada + legenda com percentuais
+	if barra, leg := barra100(cats, 40); barra != "" {
+		fmt.Printf("  Composição  %s\n", barra)
+		for _, l := range leg {
+			fmt.Printf("              %s\n", l)
+		}
+		fmt.Println()
+	}
+	// barra colorida na última coluna: o ANSI tem largura zero na tela e,
+	// por vir por último, não desalinha as colunas medidas pelo tabwriter.
 	w := novaTabela()
-	for _, m := range rd {
-		rot := mesBR(m.Mes)
-		fmt.Fprintf(w, "  %s R\t%s\t%s\n", rot, barraCh(m.Rec, maiorRD, 24, "█"), money.Format(m.Rec))
-		fmt.Fprintf(w, "  %s D\t%s\t%s\n", rot, barraCh(m.Desp, maiorRD, 24, "▒"), money.Format(m.Desp))
+	for _, c := range cats {
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n",
+			c.Rotulo, money.Format(c.Valor), pctStr(c.Valor, total), barraFinaCor(c.Valor, maior, 24, cCiano))
 	}
-	w.Flush()
+	return w.Flush()
+}
 
-	// 3) evolução do saldo
-	saldos, err := SaldoMensal(conn, *meses)
+// GraficoRecDesp desenha receitas × despesas por mês como gráfico de linha, com
+// a sparkline do líquido mês a mês.
+func GraficoRecDesp(conn *sql.DB, meses int) error {
+	rd, err := ReceitaDespesaMensal(conn, meses)
 	if err != nil {
 		return err
 	}
-	fmt.Println("\nEVOLUÇÃO DO SALDO (█ positivo, ▒ negativo)")
-	var maiorS int64
-	for _, s := range saldos {
-		v := s.Valor
-		if v < 0 {
-			v = -v
-		}
-		if v > maiorS {
-			maiorS = v
-		}
+	fmt.Println("\nRECEITAS vs DESPESAS POR MÊS")
+	recs := make([]int64, len(rd))
+	desps := make([]int64, len(rd))
+	var totRec, totDesp int64
+	for i, m := range rd {
+		recs[i], desps[i] = m.Rec, m.Desp
+		totRec += m.Rec
+		totDesp += m.Desp
 	}
-	w = novaTabela()
-	for _, s := range saldos {
-		fmt.Fprintf(w, "  %s\t%s\t%s\n", mesBR(s.Rotulo), barraSaldo(s.Valor, maiorS), money.Format(s.Valor))
+	cap2 := fmt.Sprintf("%s  →  receitas %s · despesas %s · saldo do período %s",
+		periodoRot(rd), money.Format(totRec), money.Format(totDesp), money.Format(totRec-totDesp))
+	fmt.Println(graficoLinha(
+		[][]float64{reaisSerie(recs), reaisSerie(desps)}, 9,
+		[]asciigraph.AnsiColor{asciigraph.Green, asciigraph.Red},
+		[]string{"Receitas", "Despesas"}, cap2))
+	liq := make([]int64, len(rd))
+	for i := range rd {
+		liq[i] = rd[i].Rec - rd[i].Desp
 	}
-	w.Flush()
+	fmt.Printf("  Líquido mês a mês: %s\n", pintar(cCiano, sparkline(liq)))
+	return nil
+}
 
-	// 4) despesa por grupo
+// GraficoSaldo desenha a evolução do saldo acumulado como gráfico de linha.
+func GraficoSaldo(conn *sql.DB, meses int) error {
+	saldos, err := SaldoMensal(conn, meses)
+	if err != nil {
+		return err
+	}
+	fmt.Println("\nEVOLUÇÃO DO SALDO")
+	serieSaldo := make([]int64, len(saldos))
+	for i, s := range saldos {
+		serieSaldo[i] = s.Valor
+	}
+	var cap3 string
+	if n := len(saldos); n > 0 {
+		delta := saldos[n-1].Valor - saldos[0].Valor
+		cap3 = fmt.Sprintf("%s → %s  (variação %s)",
+			money.Format(saldos[0].Valor), money.Format(saldos[n-1].Valor), money.Format(delta))
+	}
+	fmt.Println(graficoLinha(
+		[][]float64{reaisSerie(serieSaldo)}, 9,
+		[]asciigraph.AnsiColor{asciigraph.Blue}, nil, cap3))
+	return nil
+}
+
+// GraficoGrupos desenha a despesa por grupo (sua parte sobre o total cheio).
+func GraficoGrupos(conn *sql.DB, meses int) error {
 	grupos, err := DespesaPorGrupo(conn)
 	if err != nil {
 		return err
 	}
-	if len(grupos) > 0 {
-		fmt.Println("\nDESPESA POR GRUPO (sua parte █ do total cheio)")
-		var maiorG int64
-		for _, g := range grupos {
-			if g.Total > maiorG {
-				maiorG = g.Total
-			}
-		}
-		w = novaTabela()
-		for _, g := range grupos {
-			fmt.Fprintf(w, "  %s\t%s\t%s de %s\n",
-				g.Nome, barraParcial(g.Minha, g.Total, maiorG, 28), money.Format(g.Minha), money.Format(g.Total))
-		}
-		w.Flush()
+	fmt.Println("\nDESPESA POR GRUPO (sua parte █ do total cheio ░)")
+	if len(grupos) == 0 {
+		fmt.Println("  (nenhum grupo com despesas vinculadas)")
+		return nil
 	}
-	return nil
+	var maiorG int64
+	for _, g := range grupos {
+		if g.Total > maiorG {
+			maiorG = g.Total
+		}
+	}
+	w := novaTabela()
+	for _, g := range grupos {
+		fmt.Fprintf(w, "  %s\t%s de %s\t%s\n",
+			g.Nome, money.Format(g.Minha), money.Format(g.Total), barraParcialCor(g.Minha, g.Total, maiorG, 28))
+	}
+	return w.Flush()
+}
+
+// barraParcialCor é barraParcial com a sua parte (█) em ciano e o restante (░)
+// em cinza; serve na última coluna do tabwriter (ANSI de largura zero na tela).
+func barraParcialCor(parte, total, maior int64, largura int) string {
+	runes := []rune(barraParcial(parte, total, maior, largura))
+	i := 0
+	for i < len(runes) && runes[i] != '░' {
+		i++
+	}
+	return pintar(cCiano, string(runes[:i])) + pintar(cCinza, string(runes[i:]))
+}
+
+// periodoRot resume o intervalo de uma série mensal como "06/2025–06/2026".
+func periodoRot(rd []TrioMes) string {
+	if len(rd) == 0 {
+		return ""
+	}
+	return mesBR(rd[0].Mes) + "–" + mesBR(rd[len(rd)-1].Mes)
 }
 
 // mesBR converte "2026-06" em "06/2026".
@@ -314,11 +370,6 @@ func mesBR(ref string) string {
 		return ref
 	}
 	return t.Format("01/2006")
-}
-
-// barraCh desenha uma barra proporcional usando o caractere informado.
-func barraCh(valor, maior int64, largura int, ch string) string {
-	return strings.Repeat(ch, escala(valor, maior, largura))
 }
 
 // barraParcial mostra a parte cheia (█) sobre o restante até o total (░),

@@ -67,6 +67,13 @@ type acao struct {
 	carregar func(id string) ([]string, error)
 }
 
+// aba é uma "visão" alternável de uma tela: ←/→ circula entre as abas, cada uma
+// com seu próprio conteúdo (ex.: tipos de gráfico, seções de estatística).
+type aba struct {
+	nome     string
+	conteudo func(params []string) (string, error)
+}
+
 // tela é uma funcionalidade do menu: conteúdo (gerado pelos comandos da CLI)
 // e ações disponíveis.
 type tela struct {
@@ -75,6 +82,11 @@ type tela struct {
 	padrao   []string // parâmetros iniciais do conteúdo
 	conteudo func(params []string) (string, error)
 	acoes    []acao
+	// abas, se preenchido, substitui `conteudo`: ←/→ alterna entre elas.
+	abas []aba
+	// semSel desliga a detecção de linhas selecionáveis (úteis em gráficos, onde
+	// rótulos numéricos de eixo não são IDs).
+	semSel bool
 	// listaMensal liga a navegação rápida por mês (←/→) e o atalho de tipo
 	// (t alterna pagar/receber/todos) sobre uma listagem com filtro --mes/--tipo.
 	listaMensal bool
@@ -97,6 +109,7 @@ type model struct {
 	cursor  int // item do menu selecionado
 	atual   int // tela aberta
 	params  [][]string
+	abaSel  []int // aba ativa em cada tela (telas sem abas ignoram)
 
 	prefixo    string // primeiro dígito de um atalho de dois dígitos (ex.: "1" de "12")
 	prefixoGen int    // invalida ticks de prefixo antigos
@@ -154,6 +167,7 @@ func roda(conn *sql.DB, telas []tela, selo, sub string, corSelo lipgloss.Style) 
 		seloSub: sub,
 		seloCor: corSelo,
 		params:  make([][]string, len(telas)),
+		abaSel:  make([]int, len(telas)),
 		selPos:  -1,
 		aviso:   aviso,
 	}
@@ -306,6 +320,7 @@ func (m *model) abreTela(i int) {
 	// abre sempre na visão padrão da tela (ex.: a lista de cartões, não uma
 	// fatura aberta numa visita anterior, cujos params teriam ficado guardados)
 	m.params[i] = m.telas[i].padrao
+	m.abaSel[i] = 0
 	m.ajustaViewport()
 	m.recarrega()
 }
@@ -325,15 +340,23 @@ func mesmosParams(a, b []string) bool {
 
 func (m *model) recarrega() {
 	t := m.telas[m.atual]
-	conteudo, err := t.conteudo(m.params[m.atual])
+	gera := t.conteudo
+	if len(t.abas) > 0 {
+		gera = t.abas[m.abaSel[m.atual]].conteudo
+	}
+	conteudo, err := gera(m.params[m.atual])
 	if err != nil {
 		conteudo = strings.TrimSpace(conteudo + "\nerro: " + err.Error())
 	}
 	m.linhas = strings.Split(strings.TrimRight(conteudo, "\n"), "\n")
 
-	// linhas que começam com um número são selecionáveis (o número é o ID)
+	// linhas que começam com um número são selecionáveis (o número é o ID);
+	// telas semSel (gráficos) não têm IDs — rótulos de eixo não são selecionáveis
 	m.seleta = nil
 	for i, l := range m.linhas {
+		if t.semSel {
+			break
+		}
 		campos := strings.Fields(l)
 		if len(campos) == 0 {
 			continue
@@ -450,6 +473,17 @@ func (m model) teclaTela(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vp, cmd = m.vp.Update(msg)
 		return m, cmd
 	}
+	// telas com abas: ←/→ alterna entre as visões (tipos de gráfico, seções)
+	if len(m.telas[m.atual].abas) > 1 {
+		switch tecla {
+		case "left":
+			m.cicleAba(-1)
+			return m, nil
+		case "right":
+			m.cicleAba(1)
+			return m, nil
+		}
+	}
 	// listagens mensais: ←/→ muda o mês, t alterna pagar/receber/todos
 	if m.telas[m.atual].listaMensal {
 		switch tecla {
@@ -477,6 +511,17 @@ func (m model) teclaTela(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	}
 	return m, nil
+}
+
+// cicleAba avança a aba ativa da tela (com wrap) e recarrega o conteúdo.
+func (m *model) cicleAba(delta int) {
+	n := len(m.telas[m.atual].abas)
+	if n == 0 {
+		return
+	}
+	m.abaSel[m.atual] = (m.abaSel[m.atual] + delta + n) % n
+	m.msg = ""
+	m.recarrega()
 }
 
 func (m *model) abreForm(a *acao) {
@@ -814,10 +859,26 @@ func (m model) viewMenu() string {
 	return b.String()
 }
 
+// barraAbas monta a régua de abas com a ativa destacada.
+func (m model) barraAbas(t tela) string {
+	partes := make([]string, len(t.abas))
+	for i, a := range t.abas {
+		if i == m.abaSel[m.atual] {
+			partes[i] = corSelec.Render(" " + a.nome + " ")
+		} else {
+			partes[i] = corApagada.Render(a.nome)
+		}
+	}
+	return strings.Join(partes, corApagada.Render(" · "))
+}
+
 func (m model) viewTela() string {
 	t := m.telas[m.atual]
 	var b strings.Builder
 	b.WriteString(corTitulo.Render(" " + t.titulo))
+	if len(t.abas) > 1 {
+		b.WriteString("   " + m.barraAbas(t))
+	}
 	b.WriteString("\n")
 	b.WriteString(m.vp.View())
 	b.WriteString("\n")
@@ -841,6 +902,9 @@ func (m model) viewTela() string {
 	teclas := make([]string, 0, len(t.acoes)+3)
 	for _, a := range t.acoes {
 		teclas = append(teclas, a.tecla+" "+a.rotulo)
+	}
+	if len(t.abas) > 1 {
+		teclas = append(teclas, "←/→ trocar visão")
 	}
 	if t.listaMensal {
 		teclas = append(teclas, "←/→ mês", "t pagar/receber")
@@ -921,6 +985,17 @@ func captura(f func() error) (string, error) {
 	io.Copy(&b, r)
 	r.Close()
 	return b.String(), errF
+}
+
+// mesesParam lê o --meses dos params (1 a 36), com 6 como padrão. Usado pelas
+// abas de Estatísticas e Gráficos, que recebem o período pela ação "m meses".
+func mesesParam(p []string) int {
+	if v := getArg(p, "--meses"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 36 {
+			return n
+		}
+	}
+	return 6
 }
 
 // getArg devolve o valor da flag `nome` em params (ex.: "--mes"), ou "" se ausente.
