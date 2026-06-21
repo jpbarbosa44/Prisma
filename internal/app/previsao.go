@@ -214,11 +214,21 @@ func Saldo(conn *sql.DB, args []string) error {
 	if err != nil {
 		return err
 	}
+	// pendências do mês atual — não de todo o futuro: as recorrências são
+	// materializadas com meses de antecedência, então somar todos os pendentes
+	// inflaria o total (pareceria a soma de vários meses). O recorte casa com a
+	// tela Pagar/Receber, que também abre no mês corrente.
+	mesAtual := time.Now().Format("2006-01")
+	p, err := periodoMes(mesAtual)
+	if err != nil {
+		return err
+	}
 	var pendPagar, pendReceber int64
 	err = conn.QueryRow(`
 		SELECT COALESCE(SUM(CASE tipo WHEN 'pagar' THEN `+valEf("lancamentos")+` ELSE 0 END), 0),
 		       COALESCE(SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END), 0)
-		FROM lancamentos WHERE status = 'pendente'`).Scan(&pendPagar, &pendReceber)
+		FROM lancamentos WHERE status = 'pendente' AND vencimento >= ? AND vencimento < ?`,
+		p.Inicio, p.Fim).Scan(&pendPagar, &pendReceber)
 	if err != nil {
 		return err
 	}
@@ -228,10 +238,11 @@ func Saldo(conn *sql.DB, args []string) error {
 		return err
 	}
 
+	mesBR := time.Now().Format("01/2006")
 	fmt.Println()
 	fmt.Printf("Saldo total:          %s\n", money.Format(total))
-	fmt.Printf("Pendente a pagar:     %s\n", money.Format(pendPagar))
-	fmt.Printf("Pendente a receber:   %s\n", money.Format(pendReceber))
+	fmt.Printf("Pendente a pagar:     %s   (mês %s)\n", money.Format(pendPagar), mesBR)
+	fmt.Printf("Pendente a receber:   %s   (mês %s)\n", money.Format(pendReceber), mesBR)
 	if dividas > 0 {
 		fmt.Printf("Dívidas em emergência: %s\n", money.Format(dividas))
 	}

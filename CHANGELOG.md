@@ -7,6 +7,23 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.10.1] - 2026-06-21
+
+### Adicionado
+- **Prisma Analytics no navegador**: `prisma --analytics --web` abre o módulo de
+  análise (somente leitura) na interface web, com o selo ANALYTICS, espelhando a
+  TUI exclusiva do Analytics.
+- **Paridade de atalhos na interface web**: as telas com abas (Estatísticas,
+  Gráficos) ganham a régua de visões alternáveis por ←/→ e as listagens mensais
+  (Pagar/Receber) passam a responder a ←/→ (mês) e `t` (pagar/receber/todos),
+  como na TUI de terminal.
+
+### Corrigido
+- **Saldo**: as linhas "Pendente a pagar/receber" passam a considerar só o mês
+  atual, não todos os pendentes futuros — as recorrências são materializadas com
+  meses de antecedência e inflavam o total (parecia a soma de vários meses). O
+  recorte casa com a tela Pagar/Receber, que também abre no mês corrente.
+
 ## [0.10.0] - 2026-06-21
 
 ### Adicionado
@@ -101,7 +118,8 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 - Bot de Telegram: registra e consulta lançamentos por mensagem.
 - Primeira versão do projeto (CLI de finanças em Go + SQLite).
 
-[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v0.10.0...HEAD
+[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/jpbarbosa44/Prisma/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/jpbarbosa44/Prisma/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/jpbarbosa44/Prisma/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/jpbarbosa44/Prisma/compare/v0.8.1...v0.9.0

@@ -105,6 +105,7 @@ A navegação espelha a TUI:
 - O menu lateral lista as mesmas telas (`1`-`9` trocam de tela pelo teclado; as demais por clique).
 - As teclas dos botões de ação funcionam como atalhos (`a` adiciona, `e` edita, `x` remove...).
 - `↑/↓` ou um clique selecionam a linha da tabela, e o id selecionado já vem preenchido nos formulários de quitar, editar e remover.
+- Nas telas com abas (Estatísticas, Gráficos), `←/→` ou um clique na régua trocam a visão. Em Pagar/Receber, `←/→` muda o mês e `t` alterna entre pagar, receber e todos.
 - Nos formulários, `enter` confirma e `esc` cancela; campos com `*` são obrigatórios; em edições, campos vazios mantêm o valor atual.
 - Remoções e o "zerar banco" pedem confirmação, como na TUI.
 
@@ -563,10 +564,11 @@ prisma lucro listar                            # histórico de distribuições p
 `prisma --analytics` abre o **módulo de análise financeira**: uma TUI separada, focada em visualização (gráficos e barras em ASCII), que **só lê** os seus dados. A conexão com o banco é aberta em modo somente-leitura (`query_only`), então o módulo não consegue inserir, editar ou apagar nada — e não há formulários de lançamento. Ele atua como um motor de inteligência sobre o histórico que você já registrou no Prisma normal.
 
 ```sh
-prisma --analytics        # abre o painel (selo ANALYTICS, somente leitura)
+prisma --analytics                    # abre o painel (selo ANALYTICS, somente leitura)
+prisma --analytics --web [--porta N]  # o mesmo painel no navegador
 ```
 
-Não combina com `--empresa` (lê sempre o banco pessoal) nem com o modo cliente/servidor. Navegue com `↑/↓` e `enter`; volte com `esc`.
+Não combina com `--empresa` (lê sempre o banco pessoal) nem com o modo cliente/servidor. Navegue com `↑/↓` e `enter`; volte com `esc`. Com `--web`, o painel abre no navegador (escutando só em `127.0.0.1`), com as mesmas telas e o mesmo selo ANALYTICS.
 
 ### As análises
 

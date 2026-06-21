@@ -317,6 +317,7 @@ Para uma camada de **análise financeira** sobre os seus dados pessoais — sem 
 
 ```sh
 prisma --analytics                    # abre o painel de análise (somente leitura)
+prisma --analytics --web [--porta N]  # mesmo painel, no navegador
 ```
 
 As telas (navegue com `↑/↓` e `enter`, volte com `esc`):
@@ -335,7 +336,7 @@ As telas (navegue com `↑/↓` e `enter`, volte com `esc`):
 | **Patrimônio Líquido** | ativos − dívidas e a evolução mês a mês |
 | **Eficiência** | consumo das contas de utilidade (luz, água...) e picos |
 
-Em **Metas** (tecla `m`) e **Simulador** (tecla `s`) você informa os parâmetros por um formulário — a análise roda só em memória, nada é gravado. O Analytics lê o **banco pessoal** (não combina com `--empresa`). Detalhes no [MANUAL.md](MANUAL.md#analytics-prisma---analytics).
+Em **Metas** (tecla `m`) e **Simulador** (tecla `s`) você informa os parâmetros por um formulário — a análise roda só em memória, nada é gravado. O Analytics lê o **banco pessoal** (não combina com `--empresa`). Com `--web`, o mesmo painel abre no navegador (selo ANALYTICS), também só leitura. Detalhes no [MANUAL.md](MANUAL.md#analytics-prisma---analytics).
 
 ## Compartilhamento (vários dispositivos)
 

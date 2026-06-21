@@ -20,7 +20,7 @@ USO
   prisma                                  abre a interface no terminal
   prisma --web [--porta N]                abre a interface no navegador
   prisma --empresa [...]                  mesmos comandos, banco separado da empresa
-  prisma --analytics                      módulo de análise financeira (somente leitura)
+  prisma --analytics [--web]              módulo de análise financeira (somente leitura)
   prisma <comando> [subcomando] [opções]  modo linha de comando
 
 COMANDOS
@@ -136,8 +136,9 @@ func main() {
 	}
 
 	// `prisma --analytics` abre o módulo de análise (somente leitura) sobre o
-	// banco pessoal e sobe direto a TUI exclusiva do Analytics — sem CRUD, sem
-	// modo cliente/servidor, sem materializar recorrências (nada escreve).
+	// banco pessoal e sobe a TUI exclusiva do Analytics (ou a interface web com
+	// --web) — sem CRUD, sem modo cliente/servidor, sem materializar
+	// recorrências (nada escreve).
 	if len(os.Args) >= 2 && os.Args[1] == "--analytics" {
 		if modoEmpresa {
 			fmt.Fprintln(os.Stderr, "erro: --analytics não pode ser combinado com --empresa")
@@ -153,6 +154,15 @@ func main() {
 			os.Exit(1)
 		}
 		defer conn.Close()
+		// `prisma --analytics --web [--porta N]` abre o Analytics no navegador.
+		restante := os.Args[2:]
+		if len(restante) >= 1 && (restante[0] == "--web" || restante[0] == "web") {
+			if err := tui.RunWebAnalytics(conn, restante[1:]); err != nil {
+				fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 		if err := tui.RunAnalytics(conn); err != nil {
 			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
 			os.Exit(1)

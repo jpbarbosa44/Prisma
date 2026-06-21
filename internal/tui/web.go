@@ -28,10 +28,11 @@ var paginaWeb []byte
 // captura() troca o os.Stdout do processo inteiro, então dois comandos não
 // podem rodar ao mesmo tempo.
 type servidorWeb struct {
-	conn        *sql.DB
-	telas       []tela
-	modoEmpresa bool // true em `prisma --empresa --web`: a página mostra o selo CORP
-	mu          sync.Mutex
+	conn          *sql.DB
+	telas         []tela
+	modoEmpresa   bool // true em `prisma --empresa --web`: a página mostra o selo CORP
+	modoAnalytics bool // true em `prisma --analytics --web`: a página mostra o selo ANALYTICS
+	mu            sync.Mutex
 }
 
 // RunWeb sobe um servidor local e abre a interface no navegador. Escuta só
@@ -40,6 +41,22 @@ type servidorWeb struct {
 // `prisma --empresa --web`) acrescenta as telas de sócios/capital/imposto/
 // investimento/lucro, igual na TUI de terminal.
 func RunWeb(conn *sql.DB, args []string, modoEmpresa bool) error {
+	s := &servidorWeb{conn: conn, telas: novasTelas(conn, modoEmpresa), modoEmpresa: modoEmpresa}
+	return rodaWeb(s, args)
+}
+
+// RunWebAnalytics sobe o módulo Prisma Analytics no navegador
+// (`prisma --analytics --web`): as mesmas telas de análise da TUI exclusiva,
+// só leitura, com o selo ANALYTICS na página. Mesmas opções de RunWeb.
+func RunWebAnalytics(conn *sql.DB, args []string) error {
+	s := &servidorWeb{conn: conn, telas: novasTelasAnalytics(conn), modoAnalytics: true}
+	return rodaWeb(s, args)
+}
+
+// rodaWeb interpreta --porta/--sem-abrir, escuta em 127.0.0.1 e serve a API.
+// Compartilhado por RunWeb e RunWebAnalytics — só o conjunto de telas e o selo
+// mudam entre os modos.
+func rodaWeb(s *servidorWeb, args []string) error {
 	porta := 7747 // P-R-I-S num teclado de telefone
 	abrir := true
 	for i := 0; i < len(args); i++ {
@@ -61,7 +78,6 @@ func RunWeb(conn *sql.DB, args []string, modoEmpresa bool) error {
 		}
 	}
 
-	s := &servidorWeb{conn: conn, telas: novasTelas(conn, modoEmpresa), modoEmpresa: modoEmpresa}
 	endereco := fmt.Sprintf("127.0.0.1:%d", porta)
 	ouvinte, err := net.Listen("tcp", endereco)
 	if err != nil {
@@ -112,7 +128,12 @@ func respondeErro(w http.ResponseWriter, status int, err error) {
 // CORP no cabeçalho). aviso vazio = nada a mostrar.
 func (s *servidorWeb) apiVersao(w http.ResponseWriter, r *http.Request) {
 	aviso, url := update.Aviso()
-	responde(w, map[string]any{"aviso": aviso, "url": url, "modoEmpresa": s.modoEmpresa})
+	responde(w, map[string]any{
+		"aviso":         aviso,
+		"url":           url,
+		"modoEmpresa":   s.modoEmpresa,
+		"modoAnalytics": s.modoAnalytics,
+	})
 }
 
 // apiTelas devolve o menu: telas, parâmetros iniciais e ações (sem os
@@ -125,14 +146,19 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 		TemForm  bool   `json:"temForm"`
 	}
 	type telaJSON struct {
-		Titulo string     `json:"titulo"`
-		Resumo string     `json:"resumo"`
-		Padrao []string   `json:"padrao"`
-		Acoes  []acaoJSON `json:"acoes"`
+		Titulo      string     `json:"titulo"`
+		Resumo      string     `json:"resumo"`
+		Padrao      []string   `json:"padrao"`
+		Abas        []string   `json:"abas,omitempty"` // visões alternáveis por ←/→ (vazio = sem abas)
+		ListaMensal bool       `json:"listaMensal"`    // ←/→ muda o mês, t alterna pagar/receber
+		Acoes       []acaoJSON `json:"acoes"`
 	}
 	saida := make([]telaJSON, len(s.telas))
 	for i, t := range s.telas {
-		tj := telaJSON{Titulo: t.titulo, Resumo: t.resumo, Padrao: t.padrao}
+		tj := telaJSON{Titulo: t.titulo, Resumo: t.resumo, Padrao: t.padrao, ListaMensal: t.listaMensal}
+		for _, ab := range t.abas {
+			tj.Abas = append(tj.Abas, ab.nome)
+		}
 		for _, a := range t.acoes {
 			tj.Acoes = append(tj.Acoes, acaoJSON{a.tecla, a.rotulo, a.confirma, len(a.campos) > 0})
 		}
@@ -143,15 +169,25 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 
 // apiConteudo gera o conteúdo de uma tela. A página guarda os parâmetros de
 // exibição de cada tela e os manda repetindo a query "p" — o servidor não
-// tem estado de navegação.
+// tem estado de navegação. Para telas com abas, "aba" escolhe a visão (igual
+// ao ←/→ da TUI); ausente ou inválida cai na primeira.
 func (s *servidorWeb) apiConteudo(w http.ResponseWriter, r *http.Request) {
 	i, err := strconv.Atoi(r.URL.Query().Get("tela"))
 	if err != nil || i < 0 || i >= len(s.telas) {
 		respondeErro(w, http.StatusBadRequest, fmt.Errorf("tela inválida"))
 		return
 	}
+	t := s.telas[i]
+	gera := t.conteudo
+	if len(t.abas) > 0 {
+		aba := 0
+		if a, err := strconv.Atoi(r.URL.Query().Get("aba")); err == nil && a >= 0 && a < len(t.abas) {
+			aba = a
+		}
+		gera = t.abas[aba].conteudo
+	}
 	s.mu.Lock()
-	texto, err := s.telas[i].conteudo(r.URL.Query()["p"])
+	texto, err := gera(r.URL.Query()["p"])
 	s.mu.Unlock()
 	if err != nil {
 		// como na TUI: o erro vira parte do conteúdo exibido
