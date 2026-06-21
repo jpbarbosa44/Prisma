@@ -35,9 +35,10 @@ go.work.sum
 bin/
 dist/
 
-# configuração local do Claude Code
-.claude/settings.local.json
+# configuração e worktrees locais do Claude Code
+.claude/
 
 # rascunhos locais (arte e prints de referência)
 /prisma.txt
 /Imagem colada.png
+/RF.pdf
