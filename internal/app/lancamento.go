@@ -179,6 +179,17 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []L
 	criados := make([]LancamentoCriado, 0, n)
 	var reembolsos []LancamentoCriado
 	var ids []int64
+
+	// tudo o que grava (parcelas, reembolsos e o vínculo parcela_grupo) vai numa
+	// única transação: ou entra inteiro, ou nada — sem deixar parcelas órfãs nem
+	// um reembolso sem a despesa que o gerou. Em erro, o rollback desfaz tudo, por
+	// isso devolvemos os resultados vazios (os ids deixariam de existir).
+	tx, err := conn.Begin()
+	if err != nil {
+		return nil, nil, categoriaNova, err
+	}
+	defer tx.Rollback()
+
 	for i := 0; i < n; i++ {
 		valorItem, descItem := p.Valor, p.Desc
 		if p.Parcelas > 1 {
@@ -202,13 +213,13 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []L
 			outrosDevem = valorItem - minhaParte
 			recebePagItem = 1
 		}
-		res, err := conn.Exec(`
+		res, err := tx.Exec(`
 			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id, cartao_id, data_compra, observacao, auto_quitar, recebe_pagamento)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			p.Tipo, descItem, minhaParte, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo, cartao, dataCompraItem, p.Obs, autoQuit, recebePagItem,
 		)
 		if err != nil {
-			return criados, reembolsos, categoriaNova, err
+			return nil, nil, categoriaNova, err
 		}
 		id, _ := res.LastInsertId()
 		ids = append(ids, id)
@@ -216,13 +227,13 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []L
 
 		if p.RecebePagamento && outrosDevem > 0 {
 			descReembolso := fmt.Sprintf("Reembolso: %s", descItem)
-			resR, err := conn.Exec(`
+			resR, err := tx.Exec(`
 				INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, conta_id, carteira_id, reembolso_de)
 				VALUES ('receber',?,?,'reembolso',?,'pendente',NULL,NULL,?)`,
 				descReembolso, outrosDevem, vencItem, id,
 			)
 			if err != nil {
-				return criados, reembolsos, categoriaNova, err
+				return nil, nil, categoriaNova, err
 			}
 			idR, _ := resR.LastInsertId()
 			reembolsos = append(reembolsos, LancamentoCriado{idR, descReembolso, outrosDevem, vencItem})
@@ -232,10 +243,13 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []L
 	if p.Parcelas > 1 && len(ids) > 0 {
 		raiz := ids[0]
 		for _, id := range ids {
-			if _, err := conn.Exec(`UPDATE lancamentos SET parcela_grupo = ? WHERE id = ?`, raiz, id); err != nil {
-				return criados, reembolsos, categoriaNova, err
+			if _, err := tx.Exec(`UPDATE lancamentos SET parcela_grupo = ? WHERE id = ?`, raiz, id); err != nil {
+				return nil, nil, categoriaNova, err
 			}
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, categoriaNova, err
 	}
 	return criados, reembolsos, categoriaNova, nil
 }

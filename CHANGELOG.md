@@ -7,6 +7,20 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Corrigido
+- **Integridade transacional nos caminhos de dinheiro.** Operações que gravam
+  mais de uma linha passam a ser atômicas (tudo ou nada), eliminando estados
+  parciais em caso de falha no meio:
+  - criação de lançamentos parcelados/com reembolso de grupo (`CriarLancamentos`)
+    — antes uma falha podia deixar parcelas órfãs ou um reembolso sem a despesa;
+  - materialização de recorrências (`GerarRecorrencias`) — os inserts do mês e a
+    marca `ultima_ref` agora são gravados juntos, fechando uma janela em que um
+    crash entre os dois duplicaria lançamentos na execução seguinte;
+  - importação de extrato OFX/CSV (`Importar`) — o extrato inteiro entra de uma
+    vez ou nenhum movimento entra.
+- Testes de regressão cobrindo a atomicidade do parcelado e a idempotência da
+  materialização de recorrências.
+
 ## [0.10.3] - 2026-06-22
 
 ### Alterado

@@ -144,6 +144,15 @@ func Importar(conn *sql.DB, args []string) error {
 		return fmt.Errorf("nenhum movimento reconhecido em %s", *arquivo)
 	}
 
+	// importação inteira numa transação: ou todos os movimentos entram, ou
+	// nenhum — um extrato não pode ficar pela metade se falhar no meio. O dedupe
+	// roda no mesmo tx para enxergar um estado consistente.
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	criados, duplicados := 0, 0
 	for _, m := range movs {
 		tipo, valor := "receber", m.valor
@@ -155,7 +164,7 @@ func Importar(conn *sql.DB, args []string) error {
 		}
 		// dedupe: mesmo dia, mesma descrição e mesmo valor já importados
 		var n int
-		if err := conn.QueryRow(`
+		if err := tx.QueryRow(`
 			SELECT COUNT(*) FROM lancamentos
 			WHERE tipo = ? AND descricao = ? AND valor = ? AND vencimento = ? AND status = 'quitado'`,
 			tipo, m.desc, valor, m.data).Scan(&n); err != nil {
@@ -165,7 +174,7 @@ func Importar(conn *sql.DB, args []string) error {
 			duplicados++
 			continue
 		}
-		_, err := conn.Exec(`
+		_, err := tx.Exec(`
 			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id)
 			VALUES (?,?,?,?,?,'quitado',?,?,?)`,
 			tipo, m.desc, valor, strings.ToLower(*cat), m.data, m.data, conta, carteira,
@@ -174,6 +183,9 @@ func Importar(conn *sql.DB, args []string) error {
 			return err
 		}
 		criados++
+	}
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 	fmt.Printf("%d movimento(s) importado(s)", criados)
 	if duplicados > 0 {

@@ -561,6 +561,15 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 		if r.refUl != "" && r.refUl >= ref {
 			ref = proximoMes(r.refUl)
 		}
+		// cada regra materializa seus meses e grava o ultima_ref na MESMA transação:
+		// ou os dois acontecem, ou nenhum. Sem isso, um crash entre os inserts e o
+		// update do ultima_ref faria a próxima execução recomeçar do mesmo mês e
+		// duplicar os lançamentos (não há constraint impedindo).
+		tx, err := conn.Begin()
+		if err != nil {
+			return total, err
+		}
+		feitos := 0
 		for ref <= horizonte {
 			// anual: só materializa no mês de aniversário (o mês do início)
 			if r.intervalo == "anual" && ref[5:7] != r.inicio[5:7] {
@@ -596,21 +605,27 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 						conta = nil
 					}
 				}
-				_, err := conn.Exec(`
+				_, err := tx.Exec(`
 					INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, conta_id, carteira_id, recorrencia_id, cartao_id, data_compra, grupo_id, auto_quitar)
 					VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 					r.tipo, r.desc, r.valor, r.cat, venc, conta, carteira, r.id, cartao, dataCompra, grupo, r.autoQuitar,
 				)
 				if err != nil {
+					tx.Rollback()
 					return total, err
 				}
-				total++
+				feitos++
 			}
 			ref = proximoMes(ref)
 		}
-		if _, err := conn.Exec(`UPDATE recorrencias SET ultima_ref = ? WHERE id = ?`, horizonte, r.id); err != nil {
+		if _, err := tx.Exec(`UPDATE recorrencias SET ultima_ref = ? WHERE id = ?`, horizonte, r.id); err != nil {
+			tx.Rollback()
 			return total, err
 		}
+		if err := tx.Commit(); err != nil {
+			return total, err
+		}
+		total += feitos
 	}
 	return total, nil
 }
