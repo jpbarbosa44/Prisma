@@ -409,7 +409,11 @@ Decisões:
 - **Cliente/servidor no nível do `database/sql`**: como tudo recebe um `*sql.DB`, o modo cliente apenas troca o driver por um que fala com o servidor pela rede — o `app/`, a TUI e o bot não mudam. Cada conexão do cliente segura uma `*sql.Conn` dedicada no servidor, preservando a semântica de transação.
 - **Somente biblioteca padrão** além do driver SQLite e do Bubble Tea (TUI).
 
-Testes: `go test ./...` cobre dinheiro (parse/format), períodos ISO, simulação de dívida, parcelas, transferências, recorrências, divisão por grupo, ciclo de fatura do cartão, edição e importação OFX/CSV.
+Testes: `go test ./...` cobre dinheiro (parse/format), períodos ISO, simulação de dívida, parcelas, transferências, recorrências, divisão por grupo, ciclo de fatura do cartão, edição e importação OFX/CSV. O CI ainda roda `staticcheck`, `govulncheck`, os testes com `-race` e o build nas cinco plataformas.
+
+## Contribuindo e segurança
+
+Quer contribuir? O [CONTRIBUTING.md](CONTRIBUTING.md) cobre build, testes e o padrão de commit. Encontrou uma falha de segurança? Veja a [política de segurança](SECURITY.md) — reporte em canal privado, não em issue pública.
 
 ## Licença
 

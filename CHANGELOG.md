@@ -17,6 +17,12 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
   `/previsao`, `/fatura`, comando desconhecido…), com um servidor de Telegram
   falso — pegam regressões de roteamento sem tocar na rede.
 
+- **Índices de banco** nas colunas mais filtradas dos lançamentos
+  (`recorrencia_id`, `cartao_id`, `parcela_grupo`, `grupo_id`, `conta_id`,
+  `carteira_id`, `reembolso_de`), com teste de migração de bancos antigos.
+- **Documentação de projeto:** `CONTRIBUTING.md` (build/testes/padrões) e
+  `SECURITY.md` (como reportar falhas), referenciados no README.
+
 ### Alterado
 - **Servidor web local endurecido:** `http.Server` com timeouts de leitura/escrita
   e teto de cabeçalho, mais limite de 1 MiB no corpo das requisições POST. Continua

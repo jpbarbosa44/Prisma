@@ -465,5 +465,22 @@ func migrate(conn *sql.DB) error {
 		UNION SELECT DISTINCT categoria FROM recorrencias WHERE categoria <> ''`); err != nil {
 		return err
 	}
+	// índices secundários nas colunas mais filtradas. Ficam aqui, depois das
+	// migrações, porque algumas dessas colunas são adicionadas acima por ALTER —
+	// criá-los no schema base falharia em bancos antigos. Aceleram fatura,
+	// materialização/edição de recorrências e exclusão de parcelas e de grupos.
+	for _, ddl := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_lanc_rec       ON lancamentos (recorrencia_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_lanc_cartao    ON lancamentos (cartao_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_lanc_parcela   ON lancamentos (parcela_grupo)`,
+		`CREATE INDEX IF NOT EXISTS idx_lanc_grupo     ON lancamentos (grupo_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_lanc_conta     ON lancamentos (conta_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_lanc_carteira  ON lancamentos (carteira_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_lanc_reembolso ON lancamentos (reembolso_de)`,
+	} {
+		if _, err := conn.Exec(ddl); err != nil {
+			return err
+		}
+	}
 	return nil
 }
