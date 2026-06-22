@@ -16,11 +16,16 @@ import (
 type cliente struct {
 	token string
 	http  *http.Client
+	base  string // base da API; configurável nos testes (default: api do Telegram)
 }
 
 func novoCliente(token string) *cliente {
 	// o timeout precisa ser maior que o long polling de getUpdates (50s)
-	return &cliente{token: token, http: &http.Client{Timeout: 70 * time.Second}}
+	return &cliente{
+		token: token,
+		http:  &http.Client{Timeout: 70 * time.Second},
+		base:  "https://api.telegram.org",
+	}
 }
 
 type usuario struct {
@@ -70,7 +75,7 @@ type tecladoInline struct {
 
 // chamar faz um POST em /bot<token>/<metodo> e decodifica `result` em out (se não nil).
 func (c *cliente) chamar(metodo string, params url.Values, out any) error {
-	resp, err := c.http.PostForm("https://api.telegram.org/bot"+c.token+"/"+metodo, params)
+	resp, err := c.http.PostForm(c.base+"/bot"+c.token+"/"+metodo, params)
 	if err != nil {
 		return err
 	}

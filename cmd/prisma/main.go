@@ -3,6 +3,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 
@@ -258,74 +259,8 @@ func main() {
 	}
 
 	cmd, args := os.Args[1], os.Args[2:]
-	switch cmd {
-	case "--web", "web":
-		err = tui.RunWeb(conn, args, modoEmpresa)
-	case "conta":
-		err = app.Conta(conn, args)
-	case "carteira":
-		err = app.Carteira(conn, args)
-	case "grupo", "grupos":
-		err = app.Grupo(conn, args)
-	case "categoria", "categorias":
-		err = app.Categoria(conn, args)
-	case "socio", "socios":
-		err = app.Socio(conn, args)
-	case "capital":
-		err = app.Capital(conn, args)
-	case "imposto", "impostos":
-		err = app.Imposto(conn, args)
-	case "investimento", "investimentos":
-		err = app.Investimento(conn, args)
-	case "lucro":
-		err = app.Lucro(conn, args)
-	case "cartao", "cartoes", "cartão", "cartões":
-		err = app.Cartao(conn, args)
-	case "fatura", "faturas":
-		err = app.Fatura(conn, args)
-	case "pagar":
-		err = app.NovoLancamento(conn, "pagar", args)
-	case "receber":
-		err = app.NovoLancamento(conn, "receber", args)
-	case "lancamentos", "lancamento":
-		err = app.Lancamentos(conn, args)
-	case "quitar":
-		err = app.Quitar(conn, args)
-	case "transferir":
-		err = app.Transferir(conn, args)
-	case "recorrencia", "recorrencias":
-		err = app.Recorrencia(conn, args)
-	case "assinatura", "assinaturas":
-		err = app.Assinaturas(conn, args)
-	case "emergencia":
-		err = app.Emergencia(conn, args)
-	case "plano", "planejamento":
-		err = app.Plano(conn, args)
-	case "relatorio":
-		err = app.Relatorio(conn, args)
-	case "estatisticas", "estatistica", "estatísticas":
-		err = app.Estatisticas(conn, args)
-	case "graficos", "grafico", "gráficos", "gráfico":
-		err = app.Graficos(conn, args)
-	case "extrato":
-		err = app.Extrato(conn, args)
-	case "previsao":
-		err = app.Previsao(conn, args)
-	case "simular", "simulacao", "simulação":
-		err = app.Simular(conn, args)
-	case "saldo":
-		err = app.Saldo(conn, args)
-	case "exportar":
-		err = app.Exportar(conn, args)
-	case "importar":
-		err = app.Importar(conn, args)
-	case "bot":
-		err = bot.Run(conn, args)
-	case "resetar":
-		err = app.Resetar(conn, args)
-	case "verificar", "verify":
-		err = app.Verificar(conn, modoEmpresa)
-	default:
+	err = despacha(conn, modoEmpresa, cmd, args)
+	if errors.Is(err, errComandoDesconhecido) {
 		fmt.Fprintf(os.Stderr, "comando desconhecido: %q\n\n", cmd)
 		fmt.Print(ajuda)
 		os.Exit(2)
@@ -337,5 +272,86 @@ func main() {
 	// aviso discreto de versão nova, no stderr para não sujar saída de scripts
 	if aviso, _ := update.Aviso(); aviso != "" {
 		fmt.Fprintf(os.Stderr, "\n↑ %s\n", aviso)
+	}
+}
+
+// errComandoDesconhecido sinaliza um comando não reconhecido — o main imprime a
+// ajuda e sai com código 2. É um sentinela para despacha ficar testável sem
+// chamar os.Exit nem depender do texto da mensagem.
+var errComandoDesconhecido = errors.New("comando desconhecido")
+
+// despacha roteia um comando de linha (já sem as flags globais como --empresa)
+// para a função correspondente do app/tui/bot, operando sobre conn. Devolve erro
+// em vez de chamar os.Exit, para ser exercível por testes.
+func despacha(conn *sql.DB, modoEmpresa bool, cmd string, args []string) error {
+	switch cmd {
+	case "--web", "web":
+		return tui.RunWeb(conn, args, modoEmpresa)
+	case "conta":
+		return app.Conta(conn, args)
+	case "carteira":
+		return app.Carteira(conn, args)
+	case "grupo", "grupos":
+		return app.Grupo(conn, args)
+	case "categoria", "categorias":
+		return app.Categoria(conn, args)
+	case "socio", "socios":
+		return app.Socio(conn, args)
+	case "capital":
+		return app.Capital(conn, args)
+	case "imposto", "impostos":
+		return app.Imposto(conn, args)
+	case "investimento", "investimentos":
+		return app.Investimento(conn, args)
+	case "lucro":
+		return app.Lucro(conn, args)
+	case "cartao", "cartoes", "cartão", "cartões":
+		return app.Cartao(conn, args)
+	case "fatura", "faturas":
+		return app.Fatura(conn, args)
+	case "pagar":
+		return app.NovoLancamento(conn, "pagar", args)
+	case "receber":
+		return app.NovoLancamento(conn, "receber", args)
+	case "lancamentos", "lancamento":
+		return app.Lancamentos(conn, args)
+	case "quitar":
+		return app.Quitar(conn, args)
+	case "transferir":
+		return app.Transferir(conn, args)
+	case "recorrencia", "recorrencias":
+		return app.Recorrencia(conn, args)
+	case "assinatura", "assinaturas":
+		return app.Assinaturas(conn, args)
+	case "emergencia":
+		return app.Emergencia(conn, args)
+	case "plano", "planejamento":
+		return app.Plano(conn, args)
+	case "relatorio":
+		return app.Relatorio(conn, args)
+	case "estatisticas", "estatistica", "estatísticas":
+		return app.Estatisticas(conn, args)
+	case "graficos", "grafico", "gráficos", "gráfico":
+		return app.Graficos(conn, args)
+	case "extrato":
+		return app.Extrato(conn, args)
+	case "previsao":
+		return app.Previsao(conn, args)
+	case "simular", "simulacao", "simulação":
+		return app.Simular(conn, args)
+	case "saldo":
+		return app.Saldo(conn, args)
+	case "exportar":
+		return app.Exportar(conn, args)
+	case "importar":
+		return app.Importar(conn, args)
+	case "bot":
+		return bot.Run(conn, args)
+	case "resetar":
+		return app.Resetar(conn, args)
+	case "verificar", "verify":
+		return app.Verificar(conn, modoEmpresa)
+	default:
+		return fmt.Errorf("%w: %q", errComandoDesconhecido, cmd)
 	}
 }

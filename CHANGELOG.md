@@ -13,6 +13,9 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
   valida o build nas cinco combinações de plataforma/arquitetura.
 - **Testes de regressão** das projeções cientes de recorrências (previsão além do
   horizonte de materialização) e do plano de quitação de emergências com juros.
+- **Testes do despacho de comandos** da CLI (`prisma <cmd>`) e do bot (`/saldo`,
+  `/previsao`, `/fatura`, comando desconhecido…), com um servidor de Telegram
+  falso — pegam regressões de roteamento sem tocar na rede.
 
 ### Alterado
 - **Servidor web local endurecido:** `http.Server` com timeouts de leitura/escrita
