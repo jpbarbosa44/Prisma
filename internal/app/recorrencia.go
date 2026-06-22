@@ -615,6 +615,44 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 	return total, nil
 }
 
+// recorrenciasNoMes soma o valor efetivo das recorrências de um tipo
+// (pagar/receber) que têm ocorrência no mês ref (AAAA-MM), respeitando o
+// intervalo (mensal/anual) e a vigência início/fim. O valor já vem dividido
+// pelo tamanho do grupo (a minha parte), igual ao que valEf faz nos
+// lançamentos. É a base das projeções de longo prazo, que não podem depender da
+// materialização (limitada a 3 meses à frente por GerarRecorrencias). Devolve
+// também quantas recorrências entraram na conta.
+func recorrenciasNoMes(conn *sql.DB, tipo, ref string) (int64, int, error) {
+	rows, err := conn.Query(`
+		SELECT r.valor, r.dia, r.inicio, COALESCE(r.fim, ''), r.intervalo,
+		       max(1, COALESCE((SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = r.grupo_id), 1))
+		FROM recorrencias r WHERE r.tipo = ?`, tipo)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	var soma int64
+	var qtd int
+	for rows.Next() {
+		var valor int64
+		var dia, pessoas int
+		var inicio, fim, intervalo string
+		if err := rows.Scan(&valor, &dia, &inicio, &fim, &intervalo, &pessoas); err != nil {
+			return 0, 0, err
+		}
+		// anual: só conta no mês de aniversário (o mês do início)
+		if intervalo == "anual" && ref[5:7] != inicio[5:7] {
+			continue
+		}
+		venc := diaNoMes(ref, dia)
+		if venc >= inicio && (fim == "" || venc <= fim) {
+			soma += valor / int64(pessoas)
+			qtd++
+		}
+	}
+	return soma, qtd, rows.Err()
+}
+
 // ocorrenciasRestantes conta quantas cobranças ainda faltam de uma recorrência
 // com término definido: as ocorrências (dia de cada mês, de início a fim) que
 // caem de hoje em diante. Retorna 0 quando já encerrou.

@@ -81,7 +81,7 @@ func Previsao(conn *sql.DB, args []string) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Println("\n(~ = média histórica; DÍVIDAS = aportes das emergências ativas)")
+	fmt.Println("\n(≈ = recorrência prevista, ainda não lançada; ~ = média histórica; DÍVIDAS = aportes das emergências ativas)")
 	if alertaMes != "" {
 		fmt.Printf("⚠ Atenção: o saldo projetado fica NEGATIVO a partir de %s.\n", alertaMes)
 	}
@@ -153,23 +153,52 @@ func aportesEmergencias(conn *sql.DB) (map[int]int64, error) {
 	return aportes, nil
 }
 
-// previstoMes retorna o total previsto de um tipo no período: a soma dos
-// pendentes agendados, ou a média histórica quando não há nada agendado.
+// previstoMes retorna o total previsto de um tipo no mês, em três camadas de
+// confiança (refletidas no "fonte" para a tabela):
+//
+//	""  lançamentos já agendados — avulsos mais as recorrências materializadas
+//	    (GerarRecorrencias só vai até 3 meses à frente);
+//	"≈" além desse horizonte, deriva das recorrências cadastradas (vigentes no
+//	    mês), somadas a eventuais avulsos lançados longe;
+//	"~" sem nada conhecido, cai para a média histórica.
+//
+// Avulsos e recorrências materializadas são separados de propósito: dentro do
+// horizonte as recorrências já estão nos lançamentos, então NÃO somamos as
+// regras de novo (evita contar em dobro); fora dele, sim.
 func previstoMes(conn *sql.DB, tipo string, p periodo, media int64) (int64, string, error) {
-	var soma int64
-	var qtd int
+	val := valEf("lancamentos")
+	var avulsos, materializadas int64
+	var qtdMat int
 	err := conn.QueryRow(`
-		SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0), COUNT(*) FROM lancamentos
+		SELECT COALESCE(SUM(CASE WHEN recorrencia_id IS NULL     THEN `+val+` ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN recorrencia_id IS NOT NULL THEN `+val+` ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN recorrencia_id IS NOT NULL THEN 1 ELSE 0 END), 0)
+		FROM lancamentos
 		WHERE tipo = ? AND status = 'pendente' AND vencimento >= ? AND vencimento < ?`,
 		tipo, p.Inicio, p.Fim,
-	).Scan(&soma, &qtd)
+	).Scan(&avulsos, &materializadas, &qtdMat)
 	if err != nil {
 		return 0, "", err
 	}
-	if qtd == 0 {
+
+	parteRec, fonte := materializadas, ""
+	if qtdMat == 0 {
+		// nenhuma recorrência materializada neste mês: ou não há regra, ou está
+		// além do horizonte de materialização — projeta pelas regras vigentes
+		regras, qtdReg, err := recorrenciasNoMes(conn, tipo, p.Rotulo)
+		if err != nil {
+			return 0, "", err
+		}
+		if qtdReg > 0 {
+			parteRec, fonte = regras, "≈"
+		}
+	}
+
+	total := avulsos + parteRec
+	if total == 0 {
 		return media, "~", nil
 	}
-	return soma, "", nil
+	return total, fonte, nil
 }
 
 // saldoTotal = saldos iniciais de contas e carteiras + todos os lançamentos quitados.
@@ -196,6 +225,35 @@ func mediasHistoricas(conn *sql.DB) (rec, desp int64, err error) {
 		inicio, hoje,
 	).Scan(&rec, &desp)
 	return rec, desp, err
+}
+
+// fluxoMensalEsperado devolve a receita e a despesa médias por mês previstas
+// para os próximos 12 meses, usando previstoMes (lançamentos agendados →
+// recorrências cadastradas → média histórica). Suaviza as recorrências anuais
+// (que aparecem num mês só) ao distribuí-las pela janela. As médias históricas
+// servem de fallback dentro de previstoMes quando um mês não tem nada conhecido.
+func fluxoMensalEsperado(conn *sql.DB, mediaRec, mediaDesp int64) (rec, desp int64, err error) {
+	const janela = 12
+	agora := time.Now()
+	var somaRec, somaDesp int64
+	for i := 1; i <= janela; i++ {
+		ref := agora.AddDate(0, i, 0).Format("2006-01")
+		p, err := periodoMes(ref)
+		if err != nil {
+			return 0, 0, err
+		}
+		r, _, err := previstoMes(conn, "receber", p, mediaRec)
+		if err != nil {
+			return 0, 0, err
+		}
+		d, _, err := previstoMes(conn, "pagar", p, mediaDesp)
+		if err != nil {
+			return 0, 0, err
+		}
+		somaRec += r
+		somaDesp += d
+	}
+	return somaRec / janela, somaDesp / janela, nil
 }
 
 // Saldo mostra a posição consolidada: contas, carteiras, pendências e total.

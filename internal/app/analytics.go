@@ -91,11 +91,17 @@ func AnalyticsHealthScore(conn *sql.DB) error {
 	return nil
 }
 
-// AnalyticsRunway (RF04) projeta o saldo para 30/90/180 dias a partir das médias
-// históricas, mostra o burn rate (despesa média) e, se o fluxo livre é negativo,
-// o runway: quantos meses o usuário tem até o saldo zerar.
+// AnalyticsRunway (RF04) projeta o saldo para 30/90/180 dias, mostra o burn rate
+// (despesa média) e, se o fluxo livre é negativo, o runway: quantos meses o
+// usuário tem até o saldo zerar.
+//
+// O fluxo mensal vem da média dos próximos 12 meses de previstoMes (a mesma
+// lógica da Previsão): lançamentos agendados, recorrências cadastradas e, só na
+// falta de ambos, a média histórica. Assim o salário e demais recorrências
+// entram na conta mesmo além do horizonte de materialização, em vez de o runway
+// olhar só o passado quitado e projetar negativo sem motivo.
 func AnalyticsRunway(conn *sql.DB) error {
-	recMedia, despMedia, err := mediasHistoricas(conn)
+	mediaRec, mediaDesp, err := mediasHistoricas(conn)
 	if err != nil {
 		return err
 	}
@@ -103,10 +109,14 @@ func AnalyticsRunway(conn *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	recMedia, despMedia, err := fluxoMensalEsperado(conn, mediaRec, mediaDesp)
+	if err != nil {
+		return err
+	}
 	liquido := recMedia - despMedia
 
 	fmt.Println("RUNWAY — Projeção de Fluxo de Caixa")
-	fmt.Println("(base: média dos últimos 3 meses)")
+	fmt.Println("(base: recorrências e contas agendadas; média histórica como complemento)")
 	fmt.Println()
 	fmt.Printf("  Saldo atual:        %s\n", money.Format(saldo))
 	fmt.Printf("  Receita média/mês:  %s\n", money.Format(recMedia))
@@ -741,7 +751,11 @@ func AnalyticsMetas(conn *sql.DB, args []string) error {
 		return fmt.Errorf("prazo inválido: informe o número de meses")
 	}
 	parcela := valor / int64(prazo)
-	recMedia, despMedia, err := mediasHistoricas(conn)
+	mediaRec, mediaDesp, err := mediasHistoricas(conn)
+	if err != nil {
+		return err
+	}
+	recMedia, despMedia, err := fluxoMensalEsperado(conn, mediaRec, mediaDesp)
 	if err != nil {
 		return err
 	}
@@ -749,7 +763,7 @@ func AnalyticsMetas(conn *sql.DB, args []string) error {
 
 	fmt.Printf("  Meta: %s em %d meses\n", money.Format(valor), prazo)
 	fmt.Printf("  Parcela mensal necessária: %s\n", money.Format(parcela))
-	fmt.Printf("  Superávit médio (3 meses): %s\n\n", money.Format(superavit))
+	fmt.Printf("  Superávit mensal previsto: %s\n\n", money.Format(superavit))
 
 	if superavit >= parcela {
 		fmt.Printf("✓ Viável: o superávit cobre a parcela, com folga de %s/mês.\n", money.Format(superavit-parcela))
@@ -805,7 +819,11 @@ func AnalyticsSimulador(conn *sql.DB, args []string) error {
 		}
 		extra = v
 	}
-	recMedia, despMedia, err := mediasHistoricas(conn)
+	mediaRec, mediaDesp, err := mediasHistoricas(conn)
+	if err != nil {
+		return err
+	}
+	recMedia, despMedia, err := fluxoMensalEsperado(conn, mediaRec, mediaDesp)
 	if err != nil {
 		return err
 	}

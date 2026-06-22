@@ -7,6 +7,21 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.10.2] - 2026-06-22
+
+### Corrigido
+- **Projeções passam a considerar as recorrências cadastradas.** As recorrências
+  só são materializadas em lançamentos até 3 meses à frente; além desse horizonte,
+  os relatórios prospectivos caíam para a média dos últimos 3 meses quitados e
+  ignoravam o salário e demais regras, projetando saldo negativo ou runway curto
+  sem motivo quando faltavam lançamentos (histórico curto, mês atípico). Agora
+  cada mês futuro é estimado nesta ordem: lançamentos agendados → recorrências
+  vigentes no mês (mensal/anual, respeitando início/fim) → média histórica como
+  último recurso. Afeta `prisma previsao` e `prisma simular`, e no Analytics o
+  Runway, as Metas e o Simulador de cenários, além da Saúde Financeira em
+  `prisma estatisticas`. Na tabela da previsão, `≈` marca o valor vindo da
+  recorrência ainda não lançada.
+
 ## [0.10.1] - 2026-06-21
 
 ### Adicionado

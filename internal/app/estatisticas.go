@@ -344,12 +344,25 @@ func imprimeSaude(conn *sql.DB, receitas, despesas []int64, meses int) error {
 	totRec, totDesp := somaInt(receitas), somaInt(despesas)
 	sobra := totRec - totDesp
 	mediaSobra := sobra / int64(meses)
-	mediaDesp := totDesp / int64(meses)
 
 	saldo, err := saldoTotal(conn)
 	if err != nil {
 		return err
 	}
+
+	// a projeção e o fôlego olham o FUTURO: usam o fluxo mensal esperado
+	// (recorrências cadastradas + lançamentos agendados, com a média histórica só
+	// de complemento), não a média da janela passada — senão um histórico curto
+	// ou um mês atípico distorce a projeção. As linhas acima seguem retrospectivas.
+	mediaRec, mediaDesp, err := mediasHistoricas(conn)
+	if err != nil {
+		return err
+	}
+	recPrev, despPrev, err := fluxoMensalEsperado(conn, mediaRec, mediaDesp)
+	if err != nil {
+		return err
+	}
+	sobraPrev := recPrev - despPrev
 
 	fmt.Println("\n4) PROJEÇÃO E SAÚDE FINANCEIRA")
 	fmt.Printf("  Receitas: %s | Despesas: %s | Sobra: %s\n",
@@ -359,12 +372,12 @@ func imprimeSaude(conn *sql.DB, receitas, despesas []int64, meses int) error {
 	}
 	fmt.Printf("  Sobra média por mês: %s\n", money.Format(mediaSobra))
 	fmt.Printf("  Saldo atual: %s\n", money.Format(saldo))
-	if mediaSobra != 0 {
-		fmt.Printf("  Projeção do saldo em 6 meses: %s\n", money.Format(saldo+mediaSobra*6))
+	if sobraPrev != 0 {
+		fmt.Printf("  Projeção do saldo em 6 meses: %s\n", money.Format(saldo+sobraPrev*6))
 	}
-	if mediaDesp > 0 {
-		folego := float64(saldo) / float64(mediaDesp)
-		fmt.Printf("  Meses de fôlego (saldo ÷ despesa média): %.1f meses\n", folego)
+	if despPrev > 0 {
+		folego := float64(saldo) / float64(despPrev)
+		fmt.Printf("  Meses de fôlego (saldo ÷ despesa prevista): %.1f meses\n", folego)
 	}
 	return nil
 }
