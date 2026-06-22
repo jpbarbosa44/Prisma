@@ -7,6 +7,12 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.0.0] - 2026-06-22
+
+Primeira versão estável. Consolida a base de integridade de dados, qualidade
+(CI, testes) e acabamento (documentação, índices) sobre o conjunto de funções já
+em uso desde a série 0.10.
+
 ### Adicionado
 - **CI mais rígido:** além de gofmt/vet/testes, agora roda `staticcheck`,
   `govulncheck` (vulnerabilidades), os testes com `-race` (detector de corrida) e
