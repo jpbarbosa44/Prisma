@@ -7,6 +7,18 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.10.3] - 2026-06-22
+
+### Alterado
+- **Visual da interface web (`prisma --web`) refinado**, mantendo a identidade da
+  TUI (monoespaçado e a mesma paleta). O layout passa a ocupar a largura toda da
+  tela (antes ficava num bloco central estreito), com margens laterais fluidas.
+  Painéis com profundidade sutil (borda em degradê, sombra), título de tela com
+  divisória, menu lateral fixo (sticky) com barra de acento no item ativo,
+  teclas dos atalhos como keycaps, abas em pílula, diálogos com animação suave e
+  campos com anel de foco. Gráficos SVG aproveitam melhor o painel largo. Tudo em
+  CSS puro no arquivo único embutido, sem dependências novas.
+
 ## [0.10.2] - 2026-06-22
 
 ### Corrigido

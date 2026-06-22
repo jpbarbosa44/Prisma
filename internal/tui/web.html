@@ -14,7 +14,9 @@
     :root {
       --bg: #0e1014;
       --painel: #12151b;
+      --painel2: #171b23;
       --borda: #232a35;
+      --borda-forte: #2f3847;
       --fg: #d8dee4;
       --dim: #6c7380;
       --sel: #1b2a38;
@@ -23,6 +25,11 @@
       --err: #ee6a6a;
       --amar: #e6c84d;
       --mag: #cf8fe0;
+      --gutter: clamp(20px, 2.6vw, 56px);
+      --r: 8px;
+      --r-sm: 6px;
+      --sombra: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 30px rgba(0, 0, 0, .22);
+      --tempo: .14s ease;
     }
 
     * {
@@ -31,9 +38,46 @@
 
     body {
       margin: 0;
-      background: var(--bg);
+      min-height: 100vh;
+      background:
+        radial-gradient(1100px 520px at 78% -8%, #131923 0%, transparent 60%),
+        var(--bg);
       color: var(--fg);
-      font: 14px/1.5 ui-monospace, "JetBrains Mono", "Fira Mono", Consolas, monospace;
+      font: 14px/1.55 ui-monospace, "JetBrains Mono", "Fira Mono", Consolas, monospace;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    ::selection {
+      background: var(--sel);
+    }
+
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--borda-forte) transparent;
+    }
+
+    *::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+      background: var(--borda-forte);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+      border-radius: 8px;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: #3a4658;
+      background-clip: padding-box;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--cy);
+      outline-offset: 2px;
+      border-radius: 3px;
     }
 
     .cy {
@@ -69,7 +113,7 @@
       display: flex;
       align-items: center;
       gap: 32px;
-      padding: 18px 24px 6px;
+      padding: 22px var(--gutter) 14px;
     }
 
     #arte {
@@ -84,10 +128,12 @@
       font-size: 26px;
       letter-spacing: 6px;
       font-weight: bold;
+      text-shadow: 0 0 18px rgba(77, 216, 230, .28);
     }
 
     #marca p {
-      margin: 4px 0 0;
+      margin: 5px 0 0;
+      letter-spacing: .5px;
     }
 
     .selo-corp,
@@ -111,11 +157,11 @@
 
     #aviso {
       display: none;
-      margin: 0 24px 4px;
-      padding: 7px 12px;
+      margin: 0 var(--gutter) 4px;
+      padding: 8px 14px;
       background: rgba(230, 200, 77, .1);
       border: 1px solid var(--amar);
-      border-radius: 6px;
+      border-radius: var(--r-sm);
       color: var(--amar);
     }
 
@@ -132,30 +178,36 @@
 
     main {
       display: flex;
-      gap: 16px;
-      padding: 12px 24px 24px;
+      gap: 24px;
+      padding: 14px var(--gutter) 36px;
       align-items: flex-start;
     }
 
     #menu {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 3px;
       min-width: 250px;
+      position: sticky;
+      top: 14px;
     }
 
     #menu .item {
+      position: relative;
       text-align: left;
       background: none;
       border: 1px solid transparent;
-      border-radius: 6px;
+      border-radius: var(--r-sm);
       color: var(--fg);
       font: inherit;
-      padding: 6px 10px;
+      line-height: 1.4;
+      padding: 7px 11px;
       cursor: pointer;
+      transition: background var(--tempo), border-color var(--tempo), color var(--tempo);
     }
 
     #menu .item:hover {
+      background: var(--painel);
       border-color: var(--borda);
     }
 
@@ -164,9 +216,30 @@
       border-color: var(--cy);
     }
 
+    /* barra de acento à esquerda do item ativo, reforçando a hierarquia */
+    #menu .item.ativo::before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: 6px;
+      bottom: 6px;
+      width: 3px;
+      border-radius: 3px;
+      background: var(--cy);
+    }
+
+    #menu .item .dim {
+      transition: color var(--tempo);
+    }
+
+    #menu .item.ativo .dim {
+      color: #93a1b3;
+    }
+
     #menu .num {
       color: var(--cy);
       margin-right: 6px;
+      font-variant-numeric: tabular-nums;
     }
 
     #painel {
@@ -175,9 +248,12 @@
     }
 
     #titulo {
-      margin: 0 0 8px;
+      margin: 0 0 12px;
       color: var(--cy);
-      font-size: 16px;
+      font-size: 17px;
+      letter-spacing: .4px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--borda);
     }
 
     /* abas: a mesma régua de visões alternáveis por ←/→ da TUI (Estatísticas, Gráficos) */
@@ -191,15 +267,17 @@
     #abas .aba {
       background: none;
       border: 1px solid transparent;
-      border-radius: 6px;
+      border-radius: 999px;
       color: var(--dim);
       font: inherit;
-      padding: 3px 11px;
+      padding: 3px 13px;
       cursor: pointer;
+      transition: background var(--tempo), border-color var(--tempo), color var(--tempo);
     }
 
     #abas .aba:hover {
       border-color: var(--borda);
+      color: var(--fg);
     }
 
     #abas .aba.ativo {
@@ -210,29 +288,35 @@
 
     #saida {
       margin: 0;
-      padding: 12px 14px;
+      padding: 16px 18px;
       min-height: 200px;
+      line-height: 1.6;
       overflow-x: auto;
-      background: var(--painel);
-      border: 1px solid var(--borda);
-      border-radius: 8px;
+      background:
+        linear-gradient(var(--painel), var(--painel)) padding-box,
+        linear-gradient(180deg, var(--borda-forte), var(--borda)) border-box;
+      border: 1px solid transparent;
+      border-radius: var(--r);
+      box-shadow: var(--sombra);
     }
 
     #saida .linha {
       white-space: pre;
+      border-radius: 4px;
     }
 
     #saida .clic {
       cursor: pointer;
+      transition: background var(--tempo);
     }
 
     #saida .clic:hover {
-      background: var(--sel);
+      background: var(--painel2);
     }
 
     #saida .clic.sel {
       background: var(--sel);
-      outline: 1px solid var(--cy);
+      box-shadow: inset 2px 0 0 var(--cy);
     }
 
     .grafico {
@@ -247,12 +331,14 @@
     }
 
     .grafico svg {
-      max-width: 720px;
+      width: 100%;
+      max-width: 1100px;
     }
 
     #msg {
       min-height: 1.5em;
-      margin: 8px 2px 4px;
+      margin: 10px 2px 6px;
+      transition: color var(--tempo);
     }
 
     #acoes {
@@ -262,44 +348,76 @@
     }
 
     #acoes .acao {
-      background: var(--painel);
+      display: inline-flex;
+      align-items: center;
+      background: var(--painel2);
       border: 1px solid var(--borda);
-      border-radius: 6px;
+      border-radius: var(--r-sm);
       color: var(--fg);
       font: inherit;
-      padding: 5px 12px;
+      padding: 6px 13px 6px 9px;
       cursor: pointer;
+      transition: background var(--tempo), border-color var(--tempo), transform var(--tempo);
     }
 
     #acoes .acao:hover {
       border-color: var(--cy);
+      background: var(--sel);
+    }
+
+    #acoes .acao:active {
+      transform: translateY(1px);
     }
 
     #acoes kbd {
+      display: inline-block;
+      min-width: 1.5em;
+      text-align: center;
       color: var(--cy);
-      border: 1px solid var(--borda);
-      border-radius: 4px;
-      padding: 0 5px;
-      margin-right: 8px;
+      background: var(--bg);
+      border: 1px solid var(--borda-forte);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      padding: 1px 5px;
+      margin-right: 9px;
       font: inherit;
+      line-height: 1.2;
     }
 
     #dicas {
-      margin-top: 12px;
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid var(--borda);
+      font-size: 13px;
     }
 
     dialog {
       background: var(--painel);
       color: var(--fg);
-      border: 1px solid var(--cy);
-      border-radius: 8px;
-      padding: 20px 24px;
-      min-width: 420px;
+      border: 1px solid var(--borda-forte);
+      border-top: 2px solid var(--cy);
+      border-radius: var(--r);
+      padding: 22px 26px;
+      min-width: 440px;
+      max-width: calc(100vw - 32px);
       font: inherit;
+      box-shadow: var(--sombra);
+    }
+
+    dialog[open] {
+      animation: surge var(--tempo);
+    }
+
+    @keyframes surge {
+      from {
+        opacity: 0;
+        transform: translateY(6px) scale(.99);
+      }
     }
 
     dialog::backdrop {
-      background: rgba(0, 0, 0, .6);
+      background: rgba(0, 0, 0, .55);
+      backdrop-filter: blur(2px);
     }
 
     #form-titulo {
@@ -327,14 +445,16 @@
       color: var(--fg);
       font: inherit;
       border: 1px solid var(--borda);
-      border-radius: 5px;
-      padding: 5px 8px;
+      border-radius: var(--r-sm);
+      padding: 6px 9px;
+      transition: border-color var(--tempo), box-shadow var(--tempo);
     }
 
     #campos input:focus,
     #campos select:focus {
       outline: none;
       border-color: var(--cy);
+      box-shadow: 0 0 0 3px rgba(77, 216, 230, .15);
     }
 
     #form-msg {
@@ -352,11 +472,12 @@
     .botoes button {
       background: var(--bg);
       border: 1px solid var(--borda);
-      border-radius: 6px;
+      border-radius: var(--r-sm);
       color: var(--fg);
       font: inherit;
-      padding: 5px 14px;
+      padding: 6px 16px;
       cursor: pointer;
+      transition: background var(--tempo), border-color var(--tempo);
     }
 
     .botoes .principal {
@@ -366,6 +487,13 @@
 
     .botoes button:hover {
       background: var(--sel);
+      border-color: var(--cy);
+    }
+
+    /* campos têm anel próprio (box-shadow); dispensa o outline global */
+    #campos input:focus-visible,
+    #campos select:focus-visible {
+      outline: none;
     }
 
     @media (max-width: 900px) {
