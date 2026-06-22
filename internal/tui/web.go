@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"prisma/internal/app"
 	"prisma/internal/update"
@@ -88,7 +89,17 @@ func rodaWeb(s *servidorWeb, args []string) error {
 	if abrir {
 		abreNavegador(url)
 	}
-	return http.Serve(ouvinte, s.rotas())
+	// mesmo escutando só em 127.0.0.1, timeouts e teto de cabeçalho evitam que um
+	// cliente local mal-comportado prenda uma conexão indefinidamente.
+	srv := &http.Server{
+		Handler:           s.rotas(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 16, // 64 KiB
+	}
+	return srv.Serve(ouvinte)
 }
 
 func (s *servidorWeb) rotas() *http.ServeMux {
@@ -252,6 +263,7 @@ func (s *servidorWeb) apiExecutar(w http.ResponseWriter, r *http.Request) {
 		respondeErro(w, http.StatusMethodNotAllowed, fmt.Errorf("use POST"))
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // teto de 1 MiB no corpo
 	var req struct {
 		Tela int      `json:"tela"`
 		Acao int      `json:"acao"`

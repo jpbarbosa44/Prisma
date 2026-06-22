@@ -7,6 +7,18 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+- **CI mais rígido:** além de gofmt/vet/testes, agora roda `staticcheck`,
+  `govulncheck` (vulnerabilidades), os testes com `-race` (detector de corrida) e
+  valida o build nas cinco combinações de plataforma/arquitetura.
+- **Testes de regressão** das projeções cientes de recorrências (previsão além do
+  horizonte de materialização) e do plano de quitação de emergências com juros.
+
+### Alterado
+- **Servidor web local endurecido:** `http.Server` com timeouts de leitura/escrita
+  e teto de cabeçalho, mais limite de 1 MiB no corpo das requisições POST. Continua
+  escutando só em `127.0.0.1`.
+
 ### Corrigido
 - **Integridade transacional nos caminhos de dinheiro.** Operações que gravam
   mais de uma linha passam a ser atômicas (tudo ou nada), eliminando estados

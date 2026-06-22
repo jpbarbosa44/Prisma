@@ -1,4 +1,5 @@
-# Roda os testes a cada push/PR — rede de segurança antes de taguear uma release.
+# Roda análise estática, varredura de vulnerabilidades, testes (com -race) e
+# valida o build nas três plataformas — rede de segurança antes de taguear.
 name: ci
 
 on:
@@ -28,5 +29,43 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: Testes
-        run: go test ./...
+      # staticcheck e govulncheck via go install; pode-se pinar a versão (@vX.Y.Z)
+      # se algum dia uma atualização introduzir um apontamento novo.
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Testes (com -race)
+        run: go test -race ./...
+
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath ./cmd/prisma
