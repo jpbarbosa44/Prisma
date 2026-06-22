@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -204,8 +205,16 @@ func (s *servidorWeb) apiConteudo(w http.ResponseWriter, r *http.Request) {
 		// como na TUI: o erro vira parte do conteúdo exibido
 		texto = strings.TrimSpace(texto + "\nerro: " + err.Error())
 	}
-	responde(w, map[string]string{"texto": texto})
+	responde(w, map[string]string{"texto": semANSI(texto)})
 }
+
+// reANSI casa as sequências de cor ANSI (\x1b[...m). O conteúdo capturado da CLI
+// pode trazê-las (asciigraph e os gráficos de viz.go colorem para o terminal); no
+// navegador elas apareceriam como lixo, e a página já recolore por conta própria,
+// então as removemos antes de servir.
+var reANSI = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+func semANSI(s string) string { return reANSI.ReplaceAllString(s, "") }
 
 // apiGraficos devolve as séries dos gráficos em JSON (valores em centavos),
 // para a página desenhá-los em SVG. Espelha a tela ASCII "Gráficos".
@@ -299,7 +308,7 @@ func (s *servidorWeb) apiExecutar(w http.ResponseWriter, r *http.Request) {
 		respondeErro(w, http.StatusUnprocessableEntity, err)
 		return
 	}
-	responde(w, map[string]any{"msg": strings.TrimSpace(saida)})
+	responde(w, map[string]any{"msg": semANSI(strings.TrimSpace(saida))})
 }
 
 // acaoDe localiza uma ação a partir dos índices (em texto) de tela e ação.

@@ -7,6 +7,15 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.0.1] - 2026-06-22
+
+### Corrigido
+- **Gráficos do Analytics no navegador (`prisma --analytics --web`)** apareciam
+  quebrados: a saída capturada da CLI trazia códigos de cor ANSI (do asciigraph e
+  dos gráficos de `viz.go`), que o navegador exibia como lixo dentro do `<pre>`.
+  O conteúdo servido à página agora tem os códigos ANSI removidos (a página já
+  recolore por conta própria); os caracteres de bloco/desenho são preservados.
+
 ## [1.0.0] - 2026-06-22
 
 Primeira versão estável. Consolida a base de integridade de dados, qualidade

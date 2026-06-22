@@ -252,3 +252,18 @@ func TestWebAnalytics(t *testing.T) {
 		}
 	})
 }
+
+// TestSemANSI garante que as cores ANSI da saída da CLI (asciigraph, gráficos de
+// viz.go) são removidas antes de servir ao navegador — senão apareceriam como
+// lixo no <pre>. Os caracteres de bloco/desenho são preservados.
+func TestSemANSI(t *testing.T) {
+	in := "  \x1b[33m███\x1b[0m 48/100 \x1b[90m▒▒▒\x1b[0m"
+	got := semANSI(in)
+	want := "  ███ 48/100 ▒▒▒"
+	if got != want {
+		t.Fatalf("semANSI = %q, queria %q", got, want)
+	}
+	if strings.ContainsRune(got, '\x1b') {
+		t.Fatalf("sobrou ESC em %q", got)
+	}
+}
