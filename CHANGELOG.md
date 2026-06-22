@@ -7,6 +7,15 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.0.2] - 2026-06-22
+
+### Corrigido
+- **Cor dos gráficos do Analytics no navegador.** O 1.0.1 consertou os gráficos
+  quebrados removendo os códigos ANSI, mas isso deixava as barras e linhas sem
+  cor. Agora a página **converte** as sequências ANSI nas mesmas classes de cor
+  do tema (verde/vermelho/amarelo/ciano/magenta/cinza), preservando a cor dos
+  gráficos. As mensagens curtas de resultado continuam sem ANSI (são texto puro).
+
 ## [1.0.1] - 2026-06-22
 
 ### Corrigido

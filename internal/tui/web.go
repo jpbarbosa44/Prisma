@@ -205,13 +205,14 @@ func (s *servidorWeb) apiConteudo(w http.ResponseWriter, r *http.Request) {
 		// como na TUI: o erro vira parte do conteúdo exibido
 		texto = strings.TrimSpace(texto + "\nerro: " + err.Error())
 	}
-	responde(w, map[string]string{"texto": semANSI(texto)})
+	// o conteúdo segue com os códigos de cor ANSI crus (asciigraph e os gráficos
+	// de viz.go colorem para o terminal): a página os converte em spans coloridos.
+	responde(w, map[string]string{"texto": texto})
 }
 
-// reANSI casa as sequências de cor ANSI (\x1b[...m). O conteúdo capturado da CLI
-// pode trazê-las (asciigraph e os gráficos de viz.go colorem para o terminal); no
-// navegador elas apareceriam como lixo, e a página já recolore por conta própria,
-// então as removemos antes de servir.
+// reANSI casa as sequências de cor ANSI (\x1b[...m). Usado só para limpar as
+// mensagens curtas de resultado (toast), que a página mostra como texto puro e
+// não saberia colorir. O conteúdo das telas vai com ANSI e é colorido no cliente.
 var reANSI = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 func semANSI(s string) string { return reANSI.ReplaceAllString(s, "") }

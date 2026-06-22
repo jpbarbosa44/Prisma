@@ -591,7 +591,32 @@
       if (t[0] >= "0" && t[0] <= "9") return false;
       return /\p{L}/u.test(t);
     }
+    /* ---- cores ANSI → spans (asciigraph e gráficos de viz.go) ----
+       a saída capturada da CLI traz códigos de cor ANSI; mapeamos cada um para
+       as mesmas classes de cor da página, preservando a cor dos gráficos. */
+    const ansiClasse = {
+      "31": "vm", "91": "vm", "32": "ok", "92": "ok", "33": "amar", "93": "amar",
+      "34": "cy", "94": "cy", "36": "cy", "96": "cy", "35": "mag", "95": "mag",
+      "90": "dim", "37": "dim",
+    };
+    const temANSI = l => l.includes("\x1b[");
+    function ansiParaHTML(l) {
+      const re = /\x1b\[([0-9;]*)m/g;
+      let out = "", classe = null, last = 0, m;
+      const trecho = (txt) => txt === "" ? "" : (classe ? span(classe, esc(txt)) : esc(txt));
+      while ((m = re.exec(l))) {
+        out += trecho(l.slice(last, m.index));
+        for (const c of m[1].split(";")) {        // o último código do grupo define a cor
+          if (c === "" || c === "0" || c === "39") classe = null;
+          else if (c in ansiClasse) classe = ansiClasse[c];
+        }
+        last = re.lastIndex;
+      }
+      return out + trecho(l.slice(last));
+    }
+
     function colorir(l) {
+      if (temANSI(l)) return ansiParaHTML(l); // gráficos coloridos: respeita o ANSI
       const t = l.trim();
       if (t === "") return esc(l);
       if (ehCabecalhoTabela(t)) return span("dim", esc(l));
