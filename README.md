@@ -2,7 +2,7 @@
 
 Gerenciador de finanças pessoais no terminal. Simples, rápido e offline: tudo fica em um único arquivo SQLite na sua máquina.
 
-Digite `prisma` e começe:
+Digite `prisma` e começe a usar:
 
 ```
                        /=\\
