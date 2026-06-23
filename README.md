@@ -2,7 +2,7 @@
 
 Gerenciador de finanças pessoais no terminal. Simples, rápido e offline: tudo fica em um único arquivo SQLite na sua máquina.
 
-Digite `prisma` e a interface abre em tela cheia (como o btop), com o prisma em ASCII art e os menus logo abaixo:
+Digite `prisma` e a começe:
 
 ```
                        /=\\
