@@ -542,6 +542,18 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 	informado := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { informado[f.Name] = true })
 
+	// despesas com recebe_pagamento guardam só a sua parte e têm um reembolso
+	// vinculado; mudar o valor ou o grupo precisa re-dividir e atualizar os dois.
+	var rp int
+	var grupoLanc sql.NullInt64
+	switch err := conn.QueryRow(`SELECT recebe_pagamento, grupo_id FROM lancamentos WHERE id = ?`, id).Scan(&rp, &grupoLanc); err {
+	case sql.ErrNoRows:
+		return fmt.Errorf("lançamento #%s não encontrado", id)
+	case nil:
+	default:
+		return err
+	}
+
 	var sets []string
 	var params []any
 	if informado["desc"] {
@@ -550,6 +562,7 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 		}
 		sets, params = append(sets, "descricao = ?"), append(params, *desc)
 	}
+	var cValor int64
 	if informado["valor"] {
 		c, err := money.Parse(*valor)
 		if err != nil {
@@ -558,7 +571,12 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 		if c <= 0 {
 			return fmt.Errorf("o valor deve ser positivo")
 		}
-		sets, params = append(sets, "valor = ?"), append(params, c)
+		cValor = c
+		if rp == 0 {
+			// recebe_pagamento é re-dividido mais abaixo, para manter a sua parte
+			// e o reembolso em sincronia; aqui grava direto só o caso comum
+			sets, params = append(sets, "valor = ?"), append(params, c)
+		}
 	}
 	if informado["venc"] {
 		d, err := parseData(*venc)
@@ -643,15 +661,22 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 			if err != nil {
 				return err
 			}
-			// o vencimento atual vira a data da compra; recalcula a fatura
+			// a data da compra recalcula a fatura. Se o lançamento já estava num
+			// cartão, data_compra guarda a compra real; senão, o vencimento atual
+			// faz as vezes da data da compra.
 			var vencAtual string
-			if err := conn.QueryRow(`SELECT vencimento FROM lancamentos WHERE id = ?`, id).Scan(&vencAtual); err != nil {
+			var compraAtual sql.NullString
+			if err := conn.QueryRow(`SELECT vencimento, data_compra FROM lancamentos WHERE id = ?`, id).Scan(&vencAtual, &compraAtual); err != nil {
 				return err
 			}
-			compraT, _ := parseDataT(vencAtual)
+			baseCompra := vencAtual
+			if compraAtual.Valid && compraAtual.String != "" {
+				baseCompra = compraAtual.String
+			}
+			compraT, _ := parseDataT(baseCompra)
 			_, novoVenc := faturaDe(fech, venc, compraT)
 			sets = append(sets, "cartao_id = ?", "data_compra = ?", "vencimento = ?", "carteira_id = NULL")
-			params = append(params, *cartaoID, vencAtual, novoVenc)
+			params = append(params, *cartaoID, baseCompra, novoVenc)
 			if contaCartao.Valid {
 				sets = append(sets, "conta_id = ?")
 				params = append(params, contaCartao.Int64)
@@ -662,20 +687,103 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 			sets = append(sets, "cartao_id = NULL", "data_compra = NULL")
 		}
 	}
+	// recebe_pagamento: o valor informado é o TOTAL da conta. Re-divide pela
+	// quantidade de pessoas do grupo (a nova, se o grupo mudou) e guarda só a
+	// sua parte; o restante vira/atualiza o reembolso vinculado.
+	var ressincronizaReemb bool
+	var reembolsoValor int64
+	if rp == 1 && (informado["valor"] || informado["grupo"]) {
+		grupoSplit := grupoLanc
+		if informado["grupo"] {
+			if *grupoID <= 0 {
+				return fmt.Errorf("não dá para tirar o grupo de uma despesa com reembolso; remova e recrie")
+			}
+			grupoSplit = sql.NullInt64{Int64: *grupoID, Valid: true}
+		}
+		total := cValor
+		if !informado["valor"] {
+			// só mudou o grupo: reconstrói o total a partir do estado atual
+			var parteAtual, reembAtual int64
+			conn.QueryRow(`SELECT valor FROM lancamentos WHERE id = ?`, id).Scan(&parteAtual)
+			conn.QueryRow(`SELECT COALESCE(SUM(valor),0) FROM lancamentos WHERE reembolso_de = ?`, id).Scan(&reembAtual)
+			total = parteAtual + reembAtual
+		}
+		pessoas := contaPessoasGrupo(conn, grupoSplit)
+		minhaParte := total / pessoas
+		reembolsoValor = total - minhaParte
+		ressincronizaReemb = true
+		sets, params = append(sets, "valor = ?"), append(params, minhaParte)
+	}
+
 	if len(sets) == 0 {
 		return fmt.Errorf("nada para alterar: informe ao menos um campo")
 	}
 
 	params = append(params, id)
-	res, err := conn.Exec(`UPDATE lancamentos SET `+strings.Join(sets, ", ")+` WHERE id = ?`, params...)
+	// a despesa e o seu reembolso mudam juntos: numa transação, ou os dois, ou nada
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE lancamentos SET `+strings.Join(sets, ", ")+` WHERE id = ?`, params...)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("lançamento #%s não encontrado", id)
 	}
+	if ressincronizaReemb {
+		var venc string
+		if err := tx.QueryRow(`SELECT vencimento FROM lancamentos WHERE id = ?`, id).Scan(&venc); err != nil {
+			return err
+		}
+		if err := sincronizaReembolso(tx, id, reembolsoValor, venc); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
 	fmt.Printf("Lançamento #%s atualizado.\n", id)
 	return nil
+}
+
+// contaPessoasGrupo devolve quantas pessoas há no grupo (mínimo 1; sem grupo = 1).
+func contaPessoasGrupo(conn *sql.DB, grupo sql.NullInt64) int64 {
+	if !grupo.Valid {
+		return 1
+	}
+	var n int64
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM grupo_pessoas WHERE grupo_id = ?`, grupo.Int64).Scan(&n); err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// sincronizaReembolso ajusta a receita de reembolso vinculada a uma despesa
+// recebe_pagamento: atualiza valor/vencimento, cria se ainda não existir ou
+// remove quando ninguém mais te deve (valor 0).
+func sincronizaReembolso(tx *sql.Tx, despesaID string, valor int64, venc string) error {
+	if valor <= 0 {
+		_, err := tx.Exec(`DELETE FROM lancamentos WHERE reembolso_de = ?`, despesaID)
+		return err
+	}
+	res, err := tx.Exec(`UPDATE lancamentos SET valor = ?, vencimento = ? WHERE reembolso_de = ?`, valor, venc, despesaID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	// antes ninguém te devia (sem reembolso): cria um novo vinculado à despesa
+	var desc string
+	if err := tx.QueryRow(`SELECT descricao FROM lancamentos WHERE id = ?`, despesaID).Scan(&desc); err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, reembolso_de)
+		VALUES ('receber',?,?,'reembolso',?,'pendente',?)`, "Reembolso: "+desc, valor, venc, despesaID)
+	return err
 }
 
 func lancamentoRemover(conn *sql.DB, args []string) error {
