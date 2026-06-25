@@ -7,6 +7,29 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.0.3] - 2026-06-25
+
+### Corrigido
+- **Editar uma despesa "outros te pagam" (recebe-pagamento) bagunçava a divisão.**
+  Mudar o valor (ou o grupo) gravava o total cheio na despesa e deixava a receita
+  de reembolso com o valor antigo. Agora o valor é re-dividido pelas pessoas do
+  grupo e o reembolso é atualizado junto, na mesma transação.
+- **Mover um lançamento entre cartões corrompia a competência.** A edição usava o
+  vencimento da fatura anterior como data da compra, jogando o gasto na fatura
+  errada. Agora preserva a data real da compra.
+- **Recorrências deixavam buracos ao reabrir o `--fim`.** Encurtar o término (que
+  apaga ocorrências) e depois reestender, ou reativar uma recorrência encerrada,
+  não regenerava os meses que faltavam. A geração agora é idempotente por mês e
+  preenche o período ao editar o `--fim`.
+- **Simulação não via a entrada estourar o saldo.** Uma entrada à vista maior que
+  o saldo atual passava como "🟢 pode comprar" exibindo um piso negativo. Agora é
+  classificada como inviável (🔴), com o conselho certo (reduzir a entrada).
+- **Média histórica subestimada para quem usa há pouco tempo.** As médias mensais
+  dividiam a soma por 3 fixo; agora dividem pelos meses de histórico que existem.
+- **Remover um cartão alterava o saldo retroativamente.** As faturas já pagas eram
+  apagadas junto (e elas já entraram no saldo). Agora só as faturas em aberto
+  somem; as pagas viram histórico, desvinculadas do cartão.
+
 ## [1.0.2] - 2026-06-22
 
 ### Corrigido
