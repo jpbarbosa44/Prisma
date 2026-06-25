@@ -273,8 +273,10 @@ func cartaoRemover(conn *sql.DB, args []string) error {
 		return err
 	}
 	defer tx.Rollback()
-	// as despesas do cartão (faturas) somem junto: não fazem sentido sem o cartão
-	resL, err := tx.Exec(`DELETE FROM lancamentos WHERE cartao_id = ?`, id)
+	// só as faturas em aberto (pendentes) somem com o cartão; as já pagas ficam
+	// como histórico — apagá-las reescreveria o saldo (saldoTotal soma os
+	// quitados). O FK ON DELETE SET NULL desvincula essas pagas do cartão.
+	resL, err := tx.Exec(`DELETE FROM lancamentos WHERE cartao_id = ? AND status = 'pendente'`, id)
 	if err != nil {
 		return err
 	}
@@ -290,7 +292,7 @@ func cartaoRemover(conn *sql.DB, args []string) error {
 	}
 	nl, _ := resL.RowsAffected()
 	if nl > 0 {
-		fmt.Printf("Cartão #%s removido com %d lançamento(s) de despesa vinculado(s).\n", id, nl)
+		fmt.Printf("Cartão #%s removido com %d lançamento(s) em aberto; as faturas já pagas viraram histórico.\n", id, nl)
 	} else {
 		fmt.Printf("Cartão #%s removido.\n", id)
 	}
