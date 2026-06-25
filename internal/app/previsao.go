@@ -212,19 +212,49 @@ func saldoTotal(conn *sql.DB) (int64, error) {
 	return s, err
 }
 
-// mediasHistoricas calcula a média mensal de receitas e despesas quitadas
-// nos últimos 3 meses completos.
+// mediasHistoricas calcula a média mensal de receitas e despesas quitadas nos
+// últimos 3 meses. Divide pelos meses de histórico realmente existentes (1 a 3),
+// não por 3 fixo — senão quem usa o Prisma há pouco tempo teria a média
+// subestimada (ex.: 1 mês de dados ÷ 3).
 func mediasHistoricas(conn *sql.DB) (rec, desp int64, err error) {
 	inicio := time.Now().AddDate(0, -3, 0).Format("2006-01-02")
 	hoje := time.Now().Format("2006-01-02")
+	var somaRec, somaDesp int64
+	var primeiro sql.NullString
 	err = conn.QueryRow(`
-		SELECT COALESCE(SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END) / 3, 0),
-		       COALESCE(SUM(CASE tipo WHEN 'pagar'   THEN `+valEf("lancamentos")+` ELSE 0 END) / 3, 0)
+		SELECT COALESCE(SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END), 0),
+		       COALESCE(SUM(CASE tipo WHEN 'pagar'   THEN `+valEf("lancamentos")+` ELSE 0 END), 0),
+		       MIN(quitado_em)
 		FROM lancamentos
 		WHERE status = 'quitado' AND quitado_em >= ? AND quitado_em <= ?`,
 		inicio, hoje,
-	).Scan(&rec, &desp)
-	return rec, desp, err
+	).Scan(&somaRec, &somaDesp, &primeiro)
+	if err != nil {
+		return 0, 0, err
+	}
+	meses := mesesDeHistorico(primeiro, hoje)
+	return somaRec / meses, somaDesp / meses, nil
+}
+
+// mesesDeHistorico conta os meses-calendário do registro quitado mais antigo até
+// hoje, limitado a [1, 3] (a janela das médias). É o divisor das médias mensais.
+func mesesDeHistorico(primeiro sql.NullString, ate string) int64 {
+	if !primeiro.Valid || primeiro.String == "" {
+		return 1 // sem histórico: soma é 0, divisor neutro
+	}
+	de, err1 := parseDataT(primeiro.String)
+	a, err2 := parseDataT(ate)
+	if err1 != nil || err2 != nil {
+		return 3
+	}
+	n := int64((a.Year()-de.Year())*12 + int(a.Month()) - int(de.Month()) + 1)
+	if n < 1 {
+		n = 1
+	}
+	if n > 3 {
+		n = 3
+	}
+	return n
 }
 
 // fluxoMensalEsperado devolve a receita e a despesa médias por mês previstas

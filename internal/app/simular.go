@@ -108,7 +108,8 @@ func Simular(conn *sql.DB, args []string) error {
 	// a entrada sai à vista, agora: se já estoura o saldo, a compra é inviável de
 	// cara (o mergulho inicial não aparece em nenhum mês da tabela, então precisa
 	// ser checado aqui, senão um saldo negativo passa como 🟢/⚠)
-	if projCompra < 0 {
+	estouraEntrada := projCompra < 0
+	if estouraEntrada {
 		mesNegativo = agora.Format("01/2006")
 		negativoCompra = projCompra
 	}
@@ -154,7 +155,11 @@ func Simular(conn *sql.DB, args []string) error {
 	case mesNegativo != "":
 		fmt.Printf("🔴 NÃO recomendado: com essa compra seu saldo fica NEGATIVO em %s (chega a %s).\n",
 			mesNegativo, money.Format(negativoCompra))
-		fmt.Println("Considere mais parcelas, dar uma entrada maior, ou adiar a compra.")
+		if estouraEntrada {
+			fmt.Println("A entrada à vista já supera seu saldo atual. Reduza a entrada ou adie a compra.")
+		} else {
+			fmt.Println("Considere mais parcelas, dar uma entrada maior, ou adiar a compra.")
+		}
 	case colchao > 0 && minCompra < colchao:
 		fmt.Printf("⚠ Arriscado: dá pra comprar, mas sua folga cai para %s — menos de um mês de despesas (%s).\n",
 			money.Format(minCompra), money.Format(colchao))
