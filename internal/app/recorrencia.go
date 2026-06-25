@@ -446,12 +446,31 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 		removidos, _ = res.RowsAffected()
 	}
 
+	// reabrir a janela (estender ou remover o fim) pode ter deixado meses sem
+	// materializar abaixo de ultima_ref, que só anda para frente. Zera a marca e
+	// regenera para preencher o buraco; o dedup em GerarRecorrencias evita duplicar
+	// as ocorrências que já existem.
+	gerados := int64(0)
+	if informado["fim"] {
+		if _, err := conn.Exec(`UPDATE recorrencias SET ultima_ref = '' WHERE id = ?`, id); err != nil {
+			return err
+		}
+		n, err := GerarRecorrencias(conn)
+		if err != nil {
+			return err
+		}
+		gerados = int64(n)
+	}
+
 	fmt.Printf("Recorrência #%s atualizada", id)
 	if atualizados > 0 {
 		fmt.Printf("; %d lançamento(s) pendente(s) ajustado(s)", atualizados)
 	}
 	if removidos > 0 {
 		fmt.Printf("; %d removido(s) por ficarem após o término", removidos)
+	}
+	if gerados > 0 {
+		fmt.Printf("; %d gerado(s) para preencher o período", gerados)
 	}
 	fmt.Println(".")
 	return nil
@@ -561,6 +580,25 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 		if r.refUl != "" && r.refUl >= ref {
 			ref = proximoMes(r.refUl)
 		}
+		// ocorrências que esta regra já tem, por mês de competência (a compra, ou o
+		// vencimento quando avulso). Serve de dedup quando reescaneamos desde o
+		// início — o que acontece após uma edição de --fim zerar o ultima_ref para
+		// preencher meses que faltavam dentro do horizonte já materializado.
+		existentes := map[string]bool{}
+		er, err := conn.Query(
+			`SELECT substr(COALESCE(data_compra, vencimento), 1, 7) FROM lancamentos WHERE recorrencia_id = ?`, r.id)
+		if err != nil {
+			return total, err
+		}
+		for er.Next() {
+			var m string
+			if err := er.Scan(&m); err != nil {
+				er.Close()
+				return total, err
+			}
+			existentes[m] = true
+		}
+		er.Close()
 		// cada regra materializa seus meses e grava o ultima_ref na MESMA transação:
 		// ou os dois acontecem, ou nenhum. Sem isso, um crash entre os inserts e o
 		// update do ultima_ref faria a próxima execução recomeçar do mesmo mês e
@@ -578,8 +616,9 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 			}
 			venc := diaNoMes(ref, r.dia)
 			// a vigência (início/fim) é medida pela data da ocorrência (a compra),
-			// mesmo quando o vencimento depois vira o da fatura do cartão
-			if venc >= r.inicio && (r.fim == "" || venc <= r.fim) {
+			// mesmo quando o vencimento depois vira o da fatura do cartão. Pula o mês
+			// se já houver ocorrência dele (não duplica ao reescanear).
+			if venc >= r.inicio && (r.fim == "" || venc <= r.fim) && !existentes[ref] {
 				var conta, carteira, cartao, dataCompra, grupo any
 				if r.conta.Valid {
 					conta = r.conta.Int64
