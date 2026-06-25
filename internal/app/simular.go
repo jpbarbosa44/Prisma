@@ -105,6 +105,13 @@ func Simular(conn *sql.DB, args []string) error {
 	minCompra := projCompra
 	var mesNegativo string
 	var negativoCompra int64
+	// a entrada sai à vista, agora: se já estoura o saldo, a compra é inviável de
+	// cara (o mergulho inicial não aparece em nenhum mês da tabela, então precisa
+	// ser checado aqui, senão um saldo negativo passa como 🟢/⚠)
+	if projCompra < 0 {
+		mesNegativo = agora.Format("01/2006")
+		negativoCompra = projCompra
+	}
 
 	w := novaTabela()
 	fmt.Fprintln(w, "MÊS\tPARCELA\tSEM A COMPRA\tCOM A COMPRA")
