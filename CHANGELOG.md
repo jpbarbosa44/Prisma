@@ -7,6 +7,16 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.0.4] - 2026-06-26
+
+### Corrigido
+- **Botões inline (Desfazer, Quitar, Recebido) não funcionavam em grupo.** A
+  autorização do clique comparava o id de quem tocou no botão com o chat pareado;
+  em grupo o chat tem id próprio e o clique vem com o id da pessoa, então os
+  botões eram ignorados para todo mundo. Agora a autorização é pelo chat onde a
+  mensagem está (a mesma regra das mensagens), liberando os botões em grupo sem
+  mudar nada na conversa privada.
+
 ## [1.0.3] - 2026-06-25
 
 ### Corrigido
