@@ -929,7 +929,10 @@ func tecladoDesfazer(criados []app.LancamentoCriado) *tecladoInline {
 
 func (s *sessao) trataCallback(cb *callback) {
 	defer s.cli.responderCallback(cb.ID, "")
-	if s.cfg.ChatID == 0 || cb.De.ID != s.cfg.ChatID || cb.Mensagem == nil {
+	// autoriza pelo chat onde o botão está (como trataMensagem), não pelo id de
+	// quem clicou: em grupo o chat tem id próprio e cb.De.ID é a pessoa, então
+	// comparar com De.ID barraria os botões de todo mundo no grupo.
+	if s.cfg.ChatID == 0 || cb.Mensagem == nil || cb.Mensagem.Chat.ID != s.cfg.ChatID {
 		return
 	}
 	if dados, ok := strings.CutPrefix(cb.Dados, "undo:"); ok {

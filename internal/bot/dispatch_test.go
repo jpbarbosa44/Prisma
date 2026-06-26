@@ -93,6 +93,53 @@ func TestTrataComandoRoteia(t *testing.T) {
 	}
 }
 
+// TestTrataCallbackAutorizaPeloChat confere que os botões inline (desfazer,
+// quitar) são autorizados pelo chat onde a mensagem está, e não pelo id de quem
+// clicou. Isso é o que faz os botões funcionarem em grupo, onde o chat tem id
+// próprio e cb.De.ID é a pessoa que tocou no botão.
+func TestTrataCallbackAutorizaPeloChat(t *testing.T) {
+	const grupo = -100 // id de grupo (negativo); diferente de qualquer usuário
+
+	casos := []struct {
+		nome   string
+		chatID int64     // chat pareado na config
+		cb     *callback // callback recebido
+		atende bool      // espera que o botão seja processado
+	}{
+		{
+			nome:   "grupo: clique de membro é atendido",
+			chatID: grupo,
+			cb:     &callback{De: usuario{ID: 777}, Mensagem: &mensagem{Chat: chat{ID: grupo}}, Dados: "undo:0"},
+			atende: true,
+		},
+		{
+			nome:   "privado: dono ainda é atendido",
+			chatID: 42,
+			cb:     &callback{De: usuario{ID: 42}, Mensagem: &mensagem{Chat: chat{ID: 42}}, Dados: "undo:0"},
+			atende: true,
+		},
+		{
+			nome:   "outro chat é ignorado",
+			chatID: grupo,
+			cb:     &callback{De: usuario{ID: 777}, Mensagem: &mensagem{Chat: chat{ID: 999}}, Dados: "undo:0"},
+			atende: false,
+		},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			s, fake := sessaoTeste(t)
+			s.cfg.ChatID = c.chatID
+			s.trataCallback(c.cb)
+			// "undo:0" não apaga nada, mas um callback atendido edita a mensagem
+			// acrescentando a nota com ↩️; um ignorado não manda texto nenhum.
+			editou := contemAlgum(fake.textos(), "↩️")
+			if editou != c.atende {
+				t.Fatalf("atendido=%v, esperado %v; respostas: %v", editou, c.atende, fake.textos())
+			}
+		})
+	}
+}
+
 // TestTrataComandoDesconhecidoMandaAjuda confere que um comando não reconhecido
 // cai no default e devolve exatamente a ajuda.
 func TestTrataComandoDesconhecidoMandaAjuda(t *testing.T) {
