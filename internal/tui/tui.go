@@ -62,6 +62,11 @@ type acao struct {
 	confirma bool
 	executar func(vals []string) (string, error)
 	params   func(vals []string) []string
+	// variante troca a ação inteira conforme a visão atual da tela (seus params):
+	// quando devolve uma ação não-nil, ela substitui esta (formulário, carregar e
+	// executar). Usada na tela de Cartões — na lista, "e"/"x" mexem no cartão;
+	// dentro de uma fatura, passam a editar/remover o GASTO selecionado.
+	variante func(params []string) *acao
 	// carregar devolve os valores atuais dos campos editáveis (campos[1:], na
 	// mesma ordem) de um registro, para o formulário de edição abrir preenchido.
 	carregar func(id string) ([]string, error)
@@ -502,6 +507,13 @@ func (m model) teclaTela(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a := &m.telas[m.atual].acoes[i]
 		if a.tecla != tecla {
 			continue
+		}
+		// a ação pode ter uma variante para a visão atual (ex.: editar/remover um
+		// gasto quando se está vendo uma fatura, em vez de mexer no cartão)
+		if a.variante != nil {
+			if v := a.variante(m.params[m.atual]); v != nil {
+				a = v
+			}
 		}
 		if len(a.campos) == 0 {
 			cmd := m.aplicaAcao(a, nil)

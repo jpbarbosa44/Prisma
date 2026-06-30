@@ -37,7 +37,7 @@ func Assinaturas(conn *sql.DB, args []string) error {
 func assinaturasListar(conn *sql.DB) error {
 	rows, err := conn.Query(`
 		SELECT r.id, r.descricao, r.valor, r.dia, COALESCE(c.nome, ''), r.inicio, COALESCE(r.fim, ''), COALESCE(g.nome, ''),
-		       (SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = r.grupo_id)
+		       (SELECT COUNT(*) FROM grupo_pessoas gp WHERE gp.grupo_id = r.grupo_id), r.intervalo
 		FROM recorrencias r
 		LEFT JOIN cartoes c ON c.id = r.cartao_id
 		LEFT JOIN grupos g ON g.id = r.grupo_id
@@ -48,40 +48,57 @@ func assinaturasListar(conn *sql.DB) error {
 	defer rows.Close()
 
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tNOME\tVALOR\tDIA\tCARTÃO\tGRUPO\tVIGÊNCIA\tRESTANTES")
+	fmt.Fprintln(w, "ID\tNOME\tVALOR\tCOBRANÇA\tCARTÃO\tGRUPO\tVIGÊNCIA\tRESTANTES")
 	achou := false
-	var totalMensal int64
+	var totalMensal, totalAnual int64
 	for rows.Next() {
 		achou = true
 		var id, valor int64
 		var dia, pessoas int
-		var desc, cartao, ini, fim, grupo string
-		if err := rows.Scan(&id, &desc, &valor, &dia, &cartao, &ini, &fim, &grupo, &pessoas); err != nil {
+		var desc, cartao, ini, fim, grupo, intervalo string
+		if err := rows.Scan(&id, &desc, &valor, &dia, &cartao, &ini, &fim, &grupo, &pessoas, &intervalo); err != nil {
 			return err
 		}
-		// com grupo, mostra a sua parte (valor ÷ pessoas), e o total mensal soma só ela
+		// com grupo, mostra a sua parte (valor ÷ pessoas), e os totais somam só ela
 		grupoCol := ouTraco(grupo)
 		if grupo != "" && pessoas > 0 {
 			valor /= int64(pessoas)
 			grupoCol = fmt.Sprintf("%s ÷%d", grupo, pessoas)
 		}
-		totalMensal += valor
+		anual := intervalo == "anual"
+		nome := desc
+		// cobrança: mensal mostra só o dia; anual, o dia e o mês do aniversário
+		cobranca := fmt.Sprintf("dia %d/mês", dia)
+		if anual {
+			nome += " (anual)"
+			cobranca = fmt.Sprintf("dia %d de %s/ano", dia, ini[5:7])
+			totalAnual += valor
+		} else {
+			totalMensal += valor
+		}
 		vig := "desde " + dataBR(ini)
 		rest := "-"
 		if fim != "" {
 			vig = dataBR(ini) + " a " + dataBR(fim)
-			rest = fmt.Sprintf("%d cobrança(s)", ocorrenciasRestantes(ini, fim, dia, "mensal"))
+			rest = fmt.Sprintf("%d cobrança(s)", ocorrenciasRestantes(ini, fim, dia, intervalo))
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\tdia %d\t%s\t%s\t%s\t%s\n",
-			id, desc, money.Format(valor), dia, ouTraco(cartao), grupoCol, vig, rest)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			id, nome, money.Format(valor), cobranca, ouTraco(cartao), grupoCol, vig, rest)
 	}
 	if !achou {
 		fmt.Println("Nenhuma assinatura. Use: prisma assinaturas add --desc \"Netflix\" --valor 39,90 --dia 20 --cartao 1")
+		fmt.Println("Para uma anuidade (1×/ano): prisma assinaturas add --desc \"Amazon Prime\" --valor 119,00 --dia 15 --intervalo anual")
 		return nil
 	}
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf("\nTotal mensal em assinaturas: %s\n", money.Format(totalMensal))
+	fmt.Println()
+	if totalAnual == 0 {
+		fmt.Printf("Total mensal em assinaturas: %s\n", money.Format(totalMensal))
+	} else {
+		fmt.Printf("Mensais: %s/mês  ·  Anuais: %s/ano\n", money.Format(totalMensal), money.Format(totalAnual))
+		fmt.Printf("Custo médio mensal: %s (anuais diluídas por 12)\n", money.Format(totalMensal+totalAnual/12))
+	}
 	return nil
 }

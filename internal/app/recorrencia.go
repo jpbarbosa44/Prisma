@@ -243,6 +243,7 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	assinatura := fs.String("assinatura", "", "marca como assinatura: sim | nao")
 	autoQuit := fs.String("auto-quitar", "", "quita os gerados no vencimento: sim | nao")
 	fim := fs.String("fim", "", "nova data de término (ou \"nunca\" para remover)")
+	intervalo := fs.String("intervalo", "", "nova frequência: mensal ou anual")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -261,11 +262,12 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 		fim                     sql.NullString
 		cartao, grupo           sql.NullInt64
 		assinatura, autoQuitar  bool
+		intervalo               string
 	}
 	err := conn.QueryRow(`
-		SELECT tipo, descricao, valor, categoria, dia, conta_id, carteira_id, inicio, fim, cartao_id, assinatura, grupo_id, auto_quitar
+		SELECT tipo, descricao, valor, categoria, dia, conta_id, carteira_id, inicio, fim, cartao_id, assinatura, grupo_id, auto_quitar, intervalo
 		FROM recorrencias WHERE id = ?`, id,
-	).Scan(&r.tipo, &r.desc, &r.valor, &r.cat, &r.dia, &r.conta, &r.carteira, &r.inicio, &r.fim, &r.cartao, &r.assinatura, &r.grupo, &r.autoQuitar)
+	).Scan(&r.tipo, &r.desc, &r.valor, &r.cat, &r.dia, &r.conta, &r.carteira, &r.inicio, &r.fim, &r.cartao, &r.assinatura, &r.grupo, &r.autoQuitar, &r.intervalo)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("recorrência #%s não encontrada", id)
 	}
@@ -389,6 +391,15 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 			r.fim = sql.NullString{String: d, Valid: true}
 		}
 	}
+	mudouIntervalo := false
+	if informado["intervalo"] {
+		v := strings.ToLower(strings.TrimSpace(*intervalo))
+		if v != "mensal" && v != "anual" {
+			return fmt.Errorf("--intervalo deve ser mensal ou anual")
+		}
+		mudouIntervalo = v != r.intervalo
+		r.intervalo = v
+	}
 
 	var conta, carteira, cartao, grupo, dFim any
 	if r.conta.Valid {
@@ -408,8 +419,8 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	}
 	_, err = conn.Exec(`
 		UPDATE recorrencias SET descricao = ?, valor = ?, categoria = ?, dia = ?,
-		       conta_id = ?, carteira_id = ?, fim = ?, cartao_id = ?, assinatura = ?, grupo_id = ?, auto_quitar = ? WHERE id = ?`,
-		r.desc, r.valor, r.cat, r.dia, conta, carteira, dFim, cartao, r.assinatura, grupo, r.autoQuitar, id,
+		       conta_id = ?, carteira_id = ?, fim = ?, cartao_id = ?, assinatura = ?, grupo_id = ?, auto_quitar = ?, intervalo = ? WHERE id = ?`,
+		r.desc, r.valor, r.cat, r.dia, conta, carteira, dFim, cartao, r.assinatura, grupo, r.autoQuitar, r.intervalo, id,
 	)
 	if err != nil {
 		return err
@@ -450,8 +461,18 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	// materializar abaixo de ultima_ref, que só anda para frente. Zera a marca e
 	// regenera para preencher o buraco; o dedup em GerarRecorrencias evita duplicar
 	// as ocorrências que já existem.
-	gerados := int64(0)
-	if informado["fim"] {
+	gerados, descartados := int64(0), int64(0)
+	if mudouIntervalo {
+		// a cadência mudou: descarta os pendentes já gerados (ex.: mensais que não
+		// fazem mais sentido virando anual) e deixa a regeneração refazer com o
+		// novo intervalo, respeitando a vigência.
+		res, err := conn.Exec(`DELETE FROM lancamentos WHERE recorrencia_id = ? AND status = 'pendente'`, id)
+		if err != nil {
+			return err
+		}
+		descartados, _ = res.RowsAffected()
+	}
+	if informado["fim"] || mudouIntervalo {
 		if _, err := conn.Exec(`UPDATE recorrencias SET ultima_ref = '' WHERE id = ?`, id); err != nil {
 			return err
 		}
@@ -463,11 +484,16 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	}
 
 	fmt.Printf("Recorrência #%s atualizada", id)
-	if atualizados > 0 {
+	// na troca de frequência os pendentes foram descartados e refeitos, então o
+	// "ajustados" daquele lote não interessa — só os descartados/gerados.
+	if atualizados > 0 && !mudouIntervalo {
 		fmt.Printf("; %d lançamento(s) pendente(s) ajustado(s)", atualizados)
 	}
 	if removidos > 0 {
 		fmt.Printf("; %d removido(s) por ficarem após o término", removidos)
+	}
+	if descartados > 0 {
+		fmt.Printf("; %d descartado(s) ao trocar a frequência", descartados)
 	}
 	if gerados > 0 {
 		fmt.Printf("; %d gerado(s) para preencher o período", gerados)

@@ -38,6 +38,15 @@ type GrupoGasto struct {
 	Total int64  `json:"total"`
 }
 
+// CartaoConsumo traz, por cartão de crédito, o consumo no período (compras
+// lançadas no cartão), a fatura ainda em aberto e o limite.
+type CartaoConsumo struct {
+	Nome   string `json:"nome"`
+	Gasto  int64  `json:"gasto"`  // compras no cartão dentro do período (pela data da compra)
+	Aberta int64  `json:"aberta"` // total ainda pendente (a dívida atual do cartão)
+	Limite int64  `json:"limite"`
+}
+
 // janelaMeses devolve [início do primeiro mês, hoje] cobrindo `meses` meses.
 func janelaMeses(meses int) (inicio, hoje string, refs []string) {
 	agora := time.Now()
@@ -49,12 +58,13 @@ func janelaMeses(meses int) (inicio, hoje string, refs []string) {
 	return primeiro.Format("2006-01-02"), agora.Format("2006-01-02"), refs
 }
 
-// DadosGraficos reúne as quatro séries — usado pelo endpoint JSON da web.
+// DadosGraficos reúne as séries — usado pelo endpoint JSON da web.
 type DadosGraficos struct {
-	Categorias []ParRotulo  `json:"categorias"`
-	Saldo      []ParRotulo  `json:"saldo"`
-	Mensal     []TrioMes    `json:"mensal"`
-	Grupos     []GrupoGasto `json:"grupos"`
+	Categorias []ParRotulo     `json:"categorias"`
+	Saldo      []ParRotulo     `json:"saldo"`
+	Mensal     []TrioMes       `json:"mensal"`
+	Grupos     []GrupoGasto    `json:"grupos"`
+	Cartoes    []CartaoConsumo `json:"cartoes"`
 }
 
 // GraficosDados calcula todas as séries de uma vez para os `meses` informados.
@@ -80,7 +90,90 @@ func GraficosDados(conn *sql.DB, meses int) (DadosGraficos, error) {
 	if d.Grupos, err = DespesaPorGrupo(conn); err != nil {
 		return d, err
 	}
+	if d.Cartoes, err = ConsumoCartoes(conn, inicio, hoje); err != nil {
+		return d, err
+	}
 	return d, nil
+}
+
+// ConsumoCartoes soma, por cartão de crédito, o consumo no período (compras
+// lançadas no cartão, pela data da compra), a fatura ainda em aberto e o limite
+// de cada um. Já reflete a divisão por grupo (valEf).
+func ConsumoCartoes(conn *sql.DB, inicio, hoje string) ([]CartaoConsumo, error) {
+	rows, err := conn.Query(`
+		SELECT c.nome, c.limite,
+		       COALESCE(SUM(CASE WHEN l.data_compra >= ? AND l.data_compra <= ?
+		                         THEN `+valEf("l")+` ELSE 0 END), 0) AS gasto,
+		       COALESCE(SUM(CASE WHEN l.status = 'pendente'
+		                         THEN `+valEf("l")+` ELSE 0 END), 0) AS aberta
+		FROM cartoes c
+		LEFT JOIN lancamentos l ON l.cartao_id = c.id AND l.tipo = 'pagar'
+		GROUP BY c.id, c.nome, c.limite
+		ORDER BY gasto DESC, aberta DESC, c.id`, inicio, hoje)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CartaoConsumo
+	for rows.Next() {
+		var c CartaoConsumo
+		if err := rows.Scan(&c.Nome, &c.Limite, &c.Gasto, &c.Aberta); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// CartaoSerie é o consumo mês a mês de um cartão (centavos), alinhado aos meses
+// da janela — base do gráfico de linha consumo × tempo.
+type CartaoSerie struct {
+	Nome   string  `json:"nome"`
+	Mensal []int64 `json:"mensal"`
+}
+
+// ConsumoCartoesMensal devolve os meses da janela e, por cartão que teve
+// compras, o consumo (pela data da compra) em cada mês. Já reflete a divisão por
+// grupo (valEf).
+func ConsumoCartoesMensal(conn *sql.DB, meses int) (refs []string, series []CartaoSerie, err error) {
+	inicio, hoje, refs := janelaMeses(meses)
+	rows, err := conn.Query(`
+		SELECT c.id, c.nome, substr(l.data_compra,1,7) AS mes, SUM(`+valEf("l")+`)
+		FROM cartoes c
+		JOIN lancamentos l ON l.cartao_id = c.id AND l.tipo = 'pagar'
+		WHERE l.data_compra >= ? AND l.data_compra <= ?
+		GROUP BY c.id, mes
+		ORDER BY c.id`, inicio, hoje)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	pos := map[string]int{}
+	for i, r := range refs {
+		pos[r] = i
+	}
+	porCartao := map[int64]*CartaoSerie{}
+	var ordem []int64
+	for rows.Next() {
+		var id, v int64
+		var nome, mes string
+		if err := rows.Scan(&id, &nome, &mes, &v); err != nil {
+			return nil, nil, err
+		}
+		s := porCartao[id]
+		if s == nil {
+			s = &CartaoSerie{Nome: nome, Mensal: make([]int64, len(refs))}
+			porCartao[id] = s
+			ordem = append(ordem, id)
+		}
+		if i, ok := pos[mes]; ok {
+			s.Mensal[i] += v
+		}
+	}
+	for _, id := range ordem {
+		series = append(series, *porCartao[id])
+	}
+	return refs, series, rows.Err()
 }
 
 // GastosPorCategoria soma as despesas quitadas por categoria no período.
@@ -219,7 +312,7 @@ func Graficos(conn *sql.DB, args []string) error {
 
 	fmt.Printf("GRÁFICOS — %s a %s\n", dataBR(inicio), dataBR(hoje))
 	for _, f := range []func(*sql.DB, int) error{
-		GraficoCategorias, GraficoRecDesp, GraficoSaldo, GraficoGrupos,
+		GraficoCategorias, GraficoRecDesp, GraficoSaldo, GraficoGrupos, GraficoCartoes,
 	} {
 		if err := f(conn, *meses); err != nil {
 			return err
@@ -342,6 +435,105 @@ func GraficoGrupos(conn *sql.DB, meses int) error {
 			g.Nome, money.Format(g.Minha), money.Format(g.Total), barraParcialCor(g.Minha, g.Total, maiorG, 28))
 	}
 	return w.Flush()
+}
+
+// GraficoCartoes desenha o consumo por cartão de crédito no período (barra), com
+// a fatura ainda em aberto e, quando há limite, o quanto dele está comprometido.
+func GraficoCartoes(conn *sql.DB, meses int) error {
+	inicio, hoje, _ := janelaMeses(meses)
+	cartoes, err := ConsumoCartoes(conn, inicio, hoje)
+	if err != nil {
+		return err
+	}
+	fmt.Println("\nCONSUMO POR CARTÃO (gasto no período · fatura em aberto)")
+	if len(cartoes) == 0 {
+		fmt.Println("  (nenhum cartão cadastrado)")
+		return nil
+	}
+	var maior int64
+	for _, c := range cartoes {
+		if c.Gasto > maior {
+			maior = c.Gasto
+		}
+	}
+	// barra do gasto e o uso do limite ficam juntos no ÚLTIMO campo: o ANSI tem
+	// largura zero na tela e, por vir por último, não desalinha as colunas.
+	w := novaTabela()
+	for _, c := range cartoes {
+		ultimo := barraFinaCor(c.Gasto, maior, 22, cCiano)
+		if u := usoLimite(c.Aberta, c.Limite); u != "" {
+			ultimo += "  " + u
+		}
+		fmt.Fprintf(w, "  %s\tgasto %s\taberto %s\t%s\n",
+			c.Nome, money.Format(c.Gasto), money.Format(c.Aberta), ultimo)
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	return graficoCartoesTempo(conn, meses)
+}
+
+// paletaSeries são as cores das linhas no gráfico consumo × tempo (uma por
+// cartão, na ordem).
+var paletaSeries = []asciigraph.AnsiColor{
+	asciigraph.Cyan, asciigraph.Green, asciigraph.Yellow,
+	asciigraph.Magenta, asciigraph.Blue, asciigraph.Red,
+}
+
+// graficoCartoesTempo desenha o consumo dos cartões mês a mês como gráfico de
+// linha (valor × tempo): uma linha por cartão quando cabem nas cores, senão uma
+// linha única com o total. Precisa de pelo menos dois meses para ter o que ligar.
+func graficoCartoesTempo(conn *sql.DB, meses int) error {
+	refs, series, err := ConsumoCartoesMensal(conn, meses)
+	if err != nil {
+		return err
+	}
+	if len(refs) < 2 || len(series) == 0 {
+		return nil // sem linha do tempo para 1 mês ou sem compras no período
+	}
+	fmt.Printf("\nCONSUMO NO TEMPO  (%s–%s)\n", mesBR(refs[0]), mesBR(refs[len(refs)-1]))
+
+	var dados [][]float64
+	var cores []asciigraph.AnsiColor
+	var nomes []string
+	if len(series) <= len(paletaSeries) {
+		for i, s := range series {
+			dados = append(dados, reaisSerie(s.Mensal))
+			cores = append(cores, paletaSeries[i])
+			nomes = append(nomes, s.Nome)
+		}
+	} else {
+		// cartões demais para distinguir por cor: mostra só o total mensal
+		total := make([]int64, len(refs))
+		for _, s := range series {
+			for i, v := range s.Mensal {
+				total[i] += v
+			}
+		}
+		dados = append(dados, reaisSerie(total))
+		cores = append(cores, asciigraph.Blue)
+		nomes = []string{"Total"}
+	}
+	fmt.Println(graficoLinha(dados, 8, cores, nomes, ""))
+	return nil
+}
+
+// usoLimite descreve quanto do limite a fatura em aberto compromete, colorido
+// por faixa (verde < 50%, amarelo < 80%, vermelho daí em diante). Vazio quando o
+// cartão não tem limite cadastrado.
+func usoLimite(aberta, limite int64) string {
+	if limite <= 0 {
+		return ""
+	}
+	pct := int(float64(aberta)/float64(limite)*100 + 0.5)
+	cor := cVerde
+	switch {
+	case pct >= 80:
+		cor = cVermel
+	case pct >= 50:
+		cor = cAmar
+	}
+	return pintar(cor, fmt.Sprintf("%d%% do limite", pct))
 }
 
 // barraParcialCor é barraParcial com a sua parte (█) em ciano e o restante (░)

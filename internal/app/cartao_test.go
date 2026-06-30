@@ -157,3 +157,85 @@ func TestCartaoSoPagar(t *testing.T) {
 		t.Error("cartão numa receita deveria falhar")
 	}
 }
+
+func TestConsumoCartoes(t *testing.T) {
+	conn := abreDB(t)
+	if _, err := conn.Exec(`INSERT INTO contas (nome, saldo_inicial) VALUES ('Banco', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	silencia(t, func() error {
+		return Cartao(conn, []string{"add", "--nome", "Nubank", "--limite", "5.000,00", "--fechamento", "20", "--vencimento", "27", "--conta", "1"})
+	})
+	silencia(t, func() error {
+		return Cartao(conn, []string{"add", "--nome", "Inter", "--limite", "2.000,00", "--fechamento", "10", "--vencimento", "17", "--conta", "1"})
+	})
+	// compras de hoje (a data vira a da compra), em cartões diferentes
+	silencia(t, func() error {
+		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "Mercado", "--valor", "350", "--cartao", "1"})
+	})
+	silencia(t, func() error {
+		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "Gasolina", "--valor", "200", "--cartao", "1"})
+	})
+	silencia(t, func() error {
+		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "Farmacia", "--valor", "80", "--cartao", "2"})
+	})
+
+	hoje := time.Now().Format("2006-01-02")
+	cartoes, err := ConsumoCartoes(conn, "2000-01-01", hoje)
+	if err != nil {
+		t.Fatal(err)
+	}
+	porNome := map[string]CartaoConsumo{}
+	for _, c := range cartoes {
+		porNome[c.Nome] = c
+	}
+	if c := porNome["Nubank"]; c.Gasto != 55000 || c.Aberta != 55000 || c.Limite != 500000 {
+		t.Errorf("Nubank = %+v, quer gasto/aberta 55000 e limite 500000", c)
+	}
+	if c := porNome["Inter"]; c.Gasto != 8000 || c.Aberta != 8000 || c.Limite != 200000 {
+		t.Errorf("Inter = %+v, quer gasto/aberta 8000 e limite 200000", c)
+	}
+	// a ordem é por gasto decrescente: o cartão mais usado vem primeiro
+	if len(cartoes) != 2 || cartoes[0].Nome != "Nubank" {
+		t.Errorf("ordem por consumo errada: %+v", cartoes)
+	}
+}
+
+func TestConsumoCartoesMensal(t *testing.T) {
+	conn := abreDB(t)
+	if _, err := conn.Exec(`INSERT INTO contas (nome, saldo_inicial) VALUES ('Banco', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	silencia(t, func() error {
+		return Cartao(conn, []string{"add", "--nome", "Nubank", "--fechamento", "20", "--vencimento", "27", "--conta", "1"})
+	})
+	// duas compras em meses distintos, dentro da janela
+	agora := time.Now()
+	mesPassado := agora.AddDate(0, -1, 0).Format("2006-01-02")
+	hoje := agora.Format("2006-01-02")
+	silencia(t, func() error {
+		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "A", "--valor", "300", "--cartao", "1", "--venc", mesPassado})
+	})
+	silencia(t, func() error {
+		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "B", "--valor", "200", "--cartao", "1", "--venc", hoje})
+	})
+
+	refs, series, err := ConsumoCartoesMensal(conn, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 3 {
+		t.Fatalf("janela de 3 meses devia ter 3 refs, tem %d", len(refs))
+	}
+	if len(series) != 1 || series[0].Nome != "Nubank" {
+		t.Fatalf("esperava 1 série (Nubank), veio %+v", series)
+	}
+	m := series[0].Mensal
+	if len(m) != 3 {
+		t.Fatalf("série mensal devia ter 3 pontos, tem %d", len(m))
+	}
+	// o último mês (hoje) = 200,00 e o penúltimo (mês passado) = 300,00
+	if m[2] != 20000 || m[1] != 30000 {
+		t.Errorf("consumo mensal = %v, quer [_ 30000 20000]", m)
+	}
+}
