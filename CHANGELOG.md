@@ -7,6 +7,26 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.1.0] - 2026-06-30
+
+### Adicionado
+- **Gráfico de consumo dos cartões de crédito.** Nova aba "Cartões" nos gráficos
+  (e no `prisma graficos`): uma barra por cartão com o gasto no período, a fatura
+  em aberto e o quanto do limite está comprometido (verde/amarelo/vermelho), mais
+  um gráfico de linha **consumo × tempo** com uma linha por cartão.
+- **Assinaturas com anuidade.** As assinaturas agora aceitam intervalo anual: a
+  listagem separa mensais de anuais e mostra o custo médio mensal (anuais
+  diluídas por 12); criar e editar aceitam `--intervalo mensal|anual` (e o campo
+  correspondente na interface). Trocar a frequência refaz as cobranças geradas.
+
+### Corrigido
+- **Ações da fatura usavam o id do gasto como se fosse o do cartão.** Vendo uma
+  fatura (Cartões → ver fatura), as linhas são gastos. Editar (e) dava "erro ao
+  carregar: sql: no rows" e remover (x) dava "cartão não encontrado", porque
+  buscavam um cartão pelo id do gasto selecionado. Agora, dentro de uma fatura,
+  editar e remover operam sobre o **gasto**; ver outra fatura (t) e pagar (p)
+  usam o **cartão da fatura atual**, sem pedir o id de novo.
+
 ## [1.0.4] - 2026-06-26
 
 ### Corrigido
