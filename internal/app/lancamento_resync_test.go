@@ -58,8 +58,8 @@ func TestEditarValorRecebePagamentoRedistribui(t *testing.T) {
 // preservando o total da conta.
 func TestEditarGrupoRecebePagamentoRedistribui(t *testing.T) {
 	conn := abreDB(t)
-	criaGrupo(t, conn, 1, "eu", "voce")           // 2 pessoas
-	criaGrupo(t, conn, 2, "eu", "voce", "ele")    // 3 pessoas
+	criaGrupo(t, conn, 1, "eu", "voce")        // 2 pessoas
+	criaGrupo(t, conn, 2, "eu", "voce", "ele") // 3 pessoas
 	criados, reemb, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Aluguel", Valor: 12000, Venc: "2026-06-10",
 		GrupoID: 1, RecebePagamento: true,
