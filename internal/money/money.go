@@ -26,6 +26,9 @@ func Parse(s string) (int64, error) {
 		neg = true
 		s = s[1:]
 	}
+	if s == "" {
+		return 0, fmt.Errorf("valor vazio")
+	}
 
 	var inteiro, decimal string
 	switch {
@@ -57,10 +60,20 @@ func Parse(s string) (int64, error) {
 	if inteiro == "" {
 		inteiro = "0"
 	}
+	// só dígitos daqui em diante: o ParseInt sozinho deixaria passar sinais no
+	// meio ("12,-5" viraria R$ 11,95 em silêncio)
+	if !soDigitos(inteiro) || !soDigitos(decimal) {
+		return 0, fmt.Errorf("valor inválido: %q", s)
+	}
 
 	i, err := strconv.ParseInt(inteiro, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("valor inválido: %q", s)
+	}
+	// teto de 10 bilhões de reais: acima disso é erro de digitação, e i*100+d
+	// estouraria o int64 em silêncio (viraria um valor negativo aleatório)
+	if i > 10_000_000_000 {
+		return 0, fmt.Errorf("valor %q grande demais", s)
 	}
 	d, err := strconv.ParseInt(decimal, 10, 64)
 	if err != nil {
@@ -71,6 +84,16 @@ func Parse(s string) (int64, error) {
 		c = -c
 	}
 	return c, nil
+}
+
+// soDigitos diz se s tem só algarismos 0-9 (ParseInt aceitaria "+5"/"-5").
+func soDigitos(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // Format retorna o valor em centavos formatado como "R$ 1.234,56".

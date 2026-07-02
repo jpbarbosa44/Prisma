@@ -524,6 +524,64 @@ func TestImportarOFX(t *testing.T) {
 	}
 }
 
+// No OFX o ponto é sempre decimal: "1.200" é R$ 1,20, não o milhar pt-BR do
+// money.Parse. Também cobre arredondamento de casas extras e vírgula decimal.
+func TestParseValorOFX(t *testing.T) {
+	casos := []struct {
+		entrada string
+		quer    int64
+	}{
+		{"-45.90", -4590},
+		{"1200.00", 120000},
+		{"1.200", 120}, // no money.Parse seria 120000
+		{"1.2", 120},
+		{"25.5000", 2550},
+		{"25.505", 2551}, // 3ª casa arredonda
+		{"-3,50", -350},  // banco que manda vírgula decimal
+		{"10", 1000},
+	}
+	for _, c := range casos {
+		got, err := parseValorOFX(c.entrada)
+		if err != nil {
+			t.Errorf("parseValorOFX(%q): %v", c.entrada, err)
+			continue
+		}
+		if got != c.quer {
+			t.Errorf("parseValorOFX(%q) = %d, quer %d", c.entrada, got, c.quer)
+		}
+	}
+	for _, s := range []string{"", "abc", "1.2.3", "12a.50"} {
+		if _, err := parseValorOFX(s); err == nil {
+			t.Errorf("parseValorOFX(%q): esperava erro", s)
+		}
+	}
+}
+
+// Extratos com coluna de saldo depois do valor enganam a heurística (que pega o
+// último campo monetário); --coluna-valor fixa a coluna certa.
+func TestImportarCSVColunaValor(t *testing.T) {
+	conn := abreDB(t)
+	if _, err := conn.Exec(`INSERT INTO contas (nome, saldo_inicial) VALUES ('Banco', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	csv := "data;descricao;valor;saldo\n10/06/2026;MERCADO;-89,90;910,10\n"
+	arq := filepath.Join(t.TempDir(), "extrato.csv")
+	if err := os.WriteFile(arq, []byte(csv), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	silencia(t, func() error {
+		return Importar(conn, []string{"--arquivo", arq, "--conta", "1", "--coluna-valor", "3"})
+	})
+	var valor int64
+	var tipo string
+	if err := conn.QueryRow(`SELECT valor, tipo FROM lancamentos`).Scan(&valor, &tipo); err != nil {
+		t.Fatal(err)
+	}
+	if valor != 8990 || tipo != "pagar" {
+		t.Errorf("importou valor=%d tipo=%s, quer 8990/pagar (sem --coluna-valor pegaria o saldo 910,10)", valor, tipo)
+	}
+}
+
 func TestPlanosDaCategoria(t *testing.T) {
 	conn := abreDB(t)
 	silencia(t, func() error {

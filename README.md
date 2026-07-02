@@ -54,16 +54,19 @@ Prefere o navegador? `prisma --web` sobe um servidor local (só em `127.0.0.1`, 
 
 **Guia completo por sistema operacional (Linux, macOS e Windows): [INSTALL.md](INSTALL.md)** — inclui verificação de integridade, onde ficam os dados, atualização e desinstalação.
 
-Resumo para Linux — o binário já compilado está em `dist/prisma-linux-amd64` (estático, sem dependências). Para usar como `prisma`:
+Resumo para Linux — baixe o binário estático (sem dependências) da [página de releases](https://github.com/jpbarbosa44/Prisma/releases/latest) e instale como `prisma`:
 
 ```sh
+tar -xzf prisma-linux-amd64.tar.gz
 mkdir -p ~/.local/bin
-cp dist/prisma-linux-amd64 ~/.local/bin/prisma
+cp prisma-linux-amd64 ~/.local/bin/prisma
 ```
+
+(Quem clonou o repositório pode compilar com `make install` — veja abaixo.)
 
 ### Mac e Windows
 
-Os builds para macOS e Windows também estão em `dist/`:
+Os builds para macOS e Windows também estão na [página de releases](https://github.com/jpbarbosa44/Prisma/releases/latest):
 
 | Plataforma | Arquivo |
 |---|---|

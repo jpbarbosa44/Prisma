@@ -25,6 +25,17 @@
       --err: #ee6a6a;
       --amar: #e6c84d;
       --mag: #cf8fe0;
+      /* séries dos gráficos SVG: tons mais profundos que os acentos do texto,
+         calibrados para a superfície escura (contraste ≥ 3:1 e pares adjacentes
+         distinguíveis também para daltonismo) — não reutilizar no texto */
+      --s1: #00a3b8;
+      --s2: #bd8500;
+      --s3: #4d8de0;
+      --s4: #3fa050;
+      --s5: #b565cc;
+      --s6: #d05050;
+      --rec: #3fa050;
+      --desp: #d05050;
       --gutter: clamp(20px, 2.6vw, 56px);
       --r: 8px;
       --r-sm: 6px;
@@ -320,7 +331,7 @@
     }
 
     .grafico {
-      margin: 0 0 22px;
+      margin: 0 0 26px;
     }
 
     .grafico h3 {
@@ -332,7 +343,67 @@
 
     .grafico svg {
       width: 100%;
-      max-width: 1100px;
+      max-width: 880px;
+      display: block;
+    }
+
+    .grafico text {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* área de hover dos marcos: realça a barra/ponto sob o cursor */
+    .grafico g.hit .fundo {
+      fill: transparent;
+    }
+
+    .grafico g.hit:hover .fundo {
+      fill: rgba(255, 255, 255, .04);
+    }
+
+    .grafico g.hit:hover .marca {
+      filter: brightness(1.22);
+    }
+
+    .grafico g.hit .cruz {
+      opacity: 0;
+    }
+
+    .grafico g.hit:hover .cruz {
+      opacity: 1;
+    }
+
+    /* legenda: quadradinho colorido carrega a identidade; o texto fica na cor de texto */
+    .leg {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 18px;
+      margin: 2px 0 10px;
+      font-size: 12.5px;
+    }
+
+    .leg i {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      margin-right: 7px;
+    }
+
+    /* tooltip único, reposicionado junto ao cursor */
+    #tip {
+      position: fixed;
+      display: none;
+      z-index: 50;
+      pointer-events: none;
+      background: var(--painel2);
+      border: 1px solid var(--borda-forte);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      box-shadow: var(--sombra);
+      max-width: 360px;
+      white-space: pre-line;
     }
 
     #msg {
@@ -548,6 +619,7 @@
     </form>
     <p class="dim" style="margin:10px 0 0">enter confirma · esc cancela · * obrigatório</p>
   </dialog>
+  <div id="tip" role="tooltip"></div>
 
   <script>
     "use strict";
@@ -679,12 +751,21 @@
         `<button class="item" data-i="${i}"><span class="num">${i + 1}</span>${esc(t.titulo)}<br>` +
         `<span class="dim">${esc(t.resumo)}</span></button>`).join("");
       document.querySelectorAll("#menu .item").forEach(b => b.onclick = () => abre(+b.dataset.i));
-      abre(0);
+      // deep-link: #t=N&a=M abre direto na tela N (1-based), visão M (0-based)
+      const h = new URLSearchParams(location.hash.slice(1));
+      const t = +h.get("t"), a = +h.get("a");
+      abre(t >= 1 && t <= telas.length ? t - 1 : 0);
+      if (a >= 1 && telas[atual].abas && a < telas[atual].abas.length) {
+        abaSel[atual] = a;
+        renderAbas();
+        recarrega();
+      }
     }
 
     function abre(i) {
       atual = i;
       abaSel[i] = 0; // abre sempre na primeira visão, como a TUI
+      history.replaceState(null, "", "#t=" + (i + 1)); // link direto para a tela
       document.querySelectorAll("#menu .item").forEach((b, j) => b.classList.toggle("ativo", j === i));
       $("#titulo").textContent = telas[i].titulo;
       $("#acoes").innerHTML = (telas[i].acoes || []).map((a, j) =>
@@ -707,6 +788,7 @@
         `<button class="aba${i === abaSel[atual] ? " ativo" : ""}" data-i="${i}">${esc(nome)}</button>`).join("");
       el.querySelectorAll(".aba").forEach(b =>
         b.onclick = () => { abaSel[atual] = +b.dataset.i; renderAbas(); recarrega(); });
+      history.replaceState(null, "", "#t=" + (atual + 1) + (abaSel[atual] ? "&a=" + abaSel[atual] : ""));
     }
     function cicleAba(delta) {
       const t = telas[atual];
@@ -767,7 +849,11 @@
       renderSaida(r.texto || "");
     }
 
-    /* ---- gráficos em SVG (espelham a tela ASCII "Gráficos") ---- */
+    /* ---- gráficos em SVG (espelham a tela ASCII "Gráficos") ----
+       Anatomia comum: marcas finas com ponta arredondada, grade recessiva,
+       valores em cor de texto (a cor da série fica só na marca), tooltip ao
+       passar o mouse (a área de acerto é a linha/coluna inteira, maior que a
+       marca) e legenda quando há mais de uma série. */
     function mesesAtual() {
       const i = params[atual].indexOf("--meses");
       return i >= 0 ? (params[atual][i + 1] || "6") : "6";
@@ -775,90 +861,236 @@
     function brl(c) {
       return "R$ " + (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
+    /* brlCurto abrevia para os rótulos de eixo ("R$ 2,5 mil") */
+    function brlCurto(c) {
+      return "R$ " + new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(c / 100);
+    }
     function mesBR(ref) {
       const [a, m] = ref.split("-");
       return m + "/" + a;
     }
-    function svgBarras(itens, cor, label) {
-      if (!itens.length) return `<div class="dim" style="padding:.3rem 0">sem dados no período</div>`;
-      const W = 560, rh = 26, pad = 6, labW = 128, valW = 120, barW = W - labW - valW - pad;
+    const SVG = (W, H, corpo) =>
+      `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">${corpo}</svg>`;
+    const tipAttr = txt => ` data-tip="${escAttr(txt)}"`;
+    const vazio = msg => `<div class="dim" style="padding:.3rem 0">${esc(msg)}</div>`;
+    const legenda = pares => `<div class="leg">` +
+      pares.map(([cor, nome]) => `<span><i style="background:${cor}"></i>${esc(nome)}</span>`).join("") + `</div>`;
+    const trunca = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+    /* liga o tooltip a todo elemento com data-tip do conteúdo recém-injetado */
+    function ligaTips() {
+      const el = $("#tip");
+      document.querySelectorAll("#saida [data-tip]").forEach(g => {
+        g.addEventListener("mousemove", ev => {
+          el.textContent = g.dataset.tip;
+          el.style.display = "block";
+          const m = 14, r = el.getBoundingClientRect();
+          let x = ev.clientX + m, y = ev.clientY + m;
+          if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - m;
+          if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - m;
+          el.style.left = x + "px";
+          el.style.top = y + "px";
+        });
+        g.addEventListener("mouseleave", () => { el.style.display = "none"; });
+      });
+    }
+
+    /* barras horizontais (categorias): rótulo, barra fina arredondada e o valor */
+    function svgBarras(itens, cor) {
+      if (!itens.length) return vazio("sem dados no período");
+      const W = 640, rh = 26, pad = 4, labW = 150, valW = 116, barW = W - labW - valW - pad;
       const max = Math.max(1, ...itens.map(i => Math.abs(i.valor)));
+      const total = itens.reduce((a, i) => a + i.valor, 0);
       const H = pad * 2 + itens.length * rh;
-      let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">`;
+      let s = "";
       itens.forEach((it, k) => {
         const y = pad + k * rh, w = Math.max(2, Math.abs(it.valor) / max * barW);
-        s += `<text x="${labW - 6}" y="${y + rh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(label ? label(it) : it.rotulo)}</text>`;
-        s += `<rect x="${labW}" y="${y + 4}" width="${w}" height="${rh - 9}" rx="3" fill="${cor}"/>`;
-        s += `<text x="${labW + w + 6}" y="${y + rh / 2}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(it.valor))}</text>`;
+        const pct = total > 0 ? Math.round(it.valor / total * 100) : 0;
+        s += `<g class="hit"${tipAttr(`${it.rotulo}\n${brl(it.valor)} · ${pct}% do total`)}>`;
+        s += `<rect class="fundo" x="0" y="${y}" width="${W}" height="${rh}" rx="4"/>`;
+        s += `<text x="${labW - 8}" y="${y + rh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(trunca(it.rotulo, 18))}</text>`;
+        s += `<rect class="marca" x="${labW}" y="${y + 6}" width="${w}" height="${rh - 12}" rx="3.5" fill="${cor}"/>`;
+        s += `<text x="${labW + w + 8}" y="${y + rh / 2}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(it.valor))}</text></g>`;
       });
-      return s + "</svg>";
+      return SVG(W, H, s);
     }
+
+    /* barras sobrepostas (grupos): total no trilho, a sua parte por cima com
+       um respiro da cor do painel separando as duas */
     function svgGrupos(itens) {
-      if (!itens.length) return `<div class="dim" style="padding:.3rem 0">nenhuma despesa de grupo</div>`;
-      const W = 560, rh = 26, pad = 6, labW = 128, valW = 180, barW = W - labW - valW - pad;
+      if (!itens.length) return vazio("nenhuma despesa de grupo");
+      const W = 640, rh = 28, pad = 4, labW = 150, valW = 210, barW = W - labW - valW - pad;
       const max = Math.max(1, ...itens.map(i => i.total));
       const H = pad * 2 + itens.length * rh;
-      let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">`;
+      let s = "";
       itens.forEach((it, k) => {
         const y = pad + k * rh, tot = Math.max(2, it.total / max * barW);
-        const minha = it.total > 0 ? it.minha / it.total * tot : 0;
-        s += `<text x="${labW - 6}" y="${y + rh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(it.nome)}</text>`;
-        s += `<rect x="${labW}" y="${y + 4}" width="${tot}" height="${rh - 9}" rx="3" fill="var(--borda)"/>`;
-        s += `<rect x="${labW}" y="${y + 4}" width="${minha}" height="${rh - 9}" rx="3" fill="var(--cy)"/>`;
-        s += `<text x="${labW + tot + 6}" y="${y + rh / 2}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(it.minha) + " de " + brl(it.total))}</text>`;
+        const minha = it.total > 0 ? Math.max(2, it.minha / it.total * tot) : 0;
+        const pct = it.total > 0 ? Math.round(it.minha / it.total * 100) : 0;
+        s += `<g class="hit"${tipAttr(`${it.nome}\nsua parte ${brl(it.minha)} (${pct}%) do total ${brl(it.total)}`)}>`;
+        s += `<rect class="fundo" x="0" y="${y}" width="${W}" height="${rh}" rx="4"/>`;
+        s += `<text x="${labW - 8}" y="${y + rh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(trunca(it.nome, 18))}</text>`;
+        s += `<rect x="${labW}" y="${y + 6}" width="${tot}" height="${rh - 12}" rx="3.5" fill="var(--borda)"/>`;
+        s += `<rect class="marca" x="${labW}" y="${y + 6}" width="${minha}" height="${rh - 12}" rx="3.5" fill="var(--s1)" stroke="var(--painel)" stroke-width="2"/>`;
+        s += `<text x="${labW + tot + 8}" y="${y + rh / 2}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(it.minha) + " de " + brl(it.total))}</text></g>`;
       });
-      return s + "</svg>";
+      return SVG(W, H, s);
     }
+
+    /* pares receita/despesa por mês, com 2px de respiro entre as barras do par */
     function svgMensal(itens) {
-      if (!itens.length) return "";
-      const W = 560, gh = 40, pad = 6, labW = 70, valW = 130, barW = W - labW - valW - pad;
+      if (!itens.length) return vazio("sem dados no período");
+      const W = 640, gh = 42, pad = 4, labW = 76, valW = 130, barW = W - labW - valW - pad;
       const max = Math.max(1, ...itens.map(i => Math.max(i.rec, i.desp)));
       const H = pad * 2 + itens.length * gh;
-      let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">`;
+      let s = "";
       itens.forEach((it, k) => {
         const y = pad + k * gh;
-        const wr = Math.max(1, it.rec / max * barW), wd = Math.max(1, it.desp / max * barW);
-        s += `<text x="${labW - 6}" y="${y + gh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(mesBR(it.mes))}</text>`;
-        s += `<rect x="${labW}" y="${y + 3}" width="${wr}" height="14" rx="2" fill="var(--ok)"/>`;
-        s += `<text x="${labW + wr + 6}" y="${y + 10}" dominant-baseline="middle" fill="var(--dim)">${esc(brl(it.rec))}</text>`;
-        s += `<rect x="${labW}" y="${y + 21}" width="${wd}" height="14" rx="2" fill="var(--err)"/>`;
-        s += `<text x="${labW + wd + 6}" y="${y + 28}" dominant-baseline="middle" fill="var(--dim)">${esc(brl(it.desp))}</text>`;
+        const wr = it.rec > 0 ? Math.max(2, it.rec / max * barW) : 0;
+        const wd = it.desp > 0 ? Math.max(2, it.desp / max * barW) : 0;
+        s += `<g class="hit"${tipAttr(`${mesBR(it.mes)}\nreceitas ${brl(it.rec)}\ndespesas ${brl(it.desp)}\nlíquido ${brl(it.rec - it.desp)}`)}>`;
+        s += `<rect class="fundo" x="0" y="${y}" width="${W}" height="${gh - 2}" rx="4"/>`;
+        s += `<text x="${labW - 8}" y="${y + gh / 2 - 1}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(mesBR(it.mes))}</text>`;
+        s += `<rect class="marca" x="${labW}" y="${y + 5}" width="${wr}" height="14" rx="3" fill="var(--rec)"/>`;
+        s += `<text x="${labW + wr + 7}" y="${y + 12}" dominant-baseline="middle" fill="var(--dim)" font-size="11">${esc(brl(it.rec))}</text>`;
+        s += `<rect class="marca" x="${labW}" y="${y + 21}" width="${wd}" height="14" rx="3" fill="var(--desp)"/>`;
+        s += `<text x="${labW + wd + 7}" y="${y + 28}" dominant-baseline="middle" fill="var(--dim)" font-size="11">${esc(brl(it.desp))}</text></g>`;
       });
-      return s + "</svg>";
+      return SVG(W, H, s);
     }
-    function svgLinha(pts) {
-      if (!pts.length) return "";
-      const W = 560, H = 170, pl = 8, pr = 120, pt = 14, pb = 26;
-      const vals = pts.map(p => p.valor);
-      const max = Math.max(0, ...vals), min = Math.min(0, ...vals), rng = (max - min) || 1;
-      const X = k => pl + k * (W - pl - pr) / Math.max(1, pts.length - 1);
-      const Y = v => pt + (max - v) / rng * (H - pt - pb);
-      let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMinYMin meet" font-size="12">`;
-      const zy = Y(0);
-      s += `<line x1="${pl}" y1="${zy}" x2="${W - pr}" y2="${zy}" stroke="var(--borda)" stroke-dasharray="3 3"/>`;
-      const linha = pts.map((p, k) => `${X(k)},${Y(p.valor)}`).join(" ");
-      s += `<polyline points="${linha}" fill="none" stroke="var(--cy)" stroke-width="2"/>`;
-      pts.forEach((p, k) => {
-        s += `<circle cx="${X(k)}" cy="${Y(p.valor)}" r="3" fill="var(--cy)"/>`;
-        s += `<text x="${X(k)}" y="${H - 8}" text-anchor="middle" fill="var(--dim)">${esc(mesBR(p.rotulo))}</text>`;
+
+    /* gráfico de linha(s) valor × mês: grade horizontal com rótulos compactos,
+       área degradê sob a série única, linha do zero tracejada quando visível e
+       uma coluna de acerto por mês com crosshair + tooltip. `series` é
+       [{nome, cor, vals}]; `grad` dá um id único ao degradê da área. */
+    let seqGrad = 0;
+    function svgLinhas(rotulos, series, opts = {}) {
+      const n = rotulos.length;
+      if (!n || !series.length) return vazio("sem dados no período");
+      const W = 640, H = 210, pl = 86, pr = opts.direto ? 118 : 40, pt2 = 12, pb = 26;
+      const todos = series.flatMap(s => s.vals);
+      let max = Math.max(0, ...todos), min = Math.min(0, ...todos);
+      if (max === min) max = min + 1;
+      const rng = max - min;
+      const X = k => pl + k * (W - pl - pr) / Math.max(1, n - 1);
+      const Y = v => pt2 + (max - v) / rng * (H - pt2 - pb);
+      let s = "";
+      // grade: 4 linhas horizontais recessivas com o valor à esquerda
+      for (const g of [0, 1 / 3, 2 / 3, 1]) {
+        const v = min + g * rng, y = Y(v);
+        s += `<line x1="${pl}" y1="${y}" x2="${W - pr}" y2="${y}" stroke="var(--borda)" stroke-dasharray="2 4"/>`;
+        s += `<text x="${pl - 8}" y="${y}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)" font-size="10.5">${esc(brlCurto(v))}</text>`;
+      }
+      if (min < 0 && max > 0) {
+        s += `<line x1="${pl}" y1="${Y(0)}" x2="${W - pr}" y2="${Y(0)}" stroke="var(--borda-forte)" stroke-dasharray="5 4"/>`;
+      }
+      // área sob a linha, só quando há uma série (com várias, viraria sopa)
+      if (series.length === 1) {
+        const id = "grad" + (seqGrad++);
+        s += `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="0" stop-color="${series[0].cor}" stop-opacity=".22"/>` +
+          `<stop offset="1" stop-color="${series[0].cor}" stop-opacity="0"/></linearGradient></defs>`;
+        const topo = series[0].vals.map((v, k) => `${X(k)},${Y(v)}`).join(" ");
+        s += `<polygon points="${X(0)},${H - pb} ${topo} ${X(n - 1)},${H - pb}" fill="url(#${id})"/>`;
+      }
+      for (const sr of series) {
+        const linha = sr.vals.map((v, k) => `${X(k)},${Y(v)}`).join(" ");
+        s += `<polyline points="${linha}" fill="none" stroke="${sr.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+        sr.vals.forEach((v, k) => { s += `<circle cx="${X(k)}" cy="${Y(v)}" r="2.5" fill="${sr.cor}"/>`; });
+      }
+      // rótulos do eixo X (primeiro, último e alguns intermediários)
+      const passo = Math.max(1, Math.ceil(n / 8));
+      rotulos.forEach((r, k) => {
+        if (k % passo === 0 || k === n - 1)
+          s += `<text x="${X(k)}" y="${H - 8}" text-anchor="middle" fill="var(--dim)" font-size="10.5">${esc(mesBR(r))}</text>`;
       });
-      const ult = pts[pts.length - 1];
-      s += `<text x="${W - pr + 8}" y="${Y(ult.valor)}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(ult.valor))}</text>`;
-      return s + "</svg>";
+      // rótulo direto no fim da série única (o valor "de agora")
+      if (opts.direto && series.length === 1) {
+        const ult = series[0].vals[n - 1];
+        s += `<text x="${W - pr + 8}" y="${Y(ult)}" dominant-baseline="middle" fill="var(--fg)">${esc(brl(ult))}</text>`;
+      }
+      // colunas de acerto: crosshair + pontos realçados + tooltip por mês
+      const meia = (X(1) - X(0)) / 2 || (W - pl - pr) / 2;
+      rotulos.forEach((r, k) => {
+        const linhas = series.map(sr => (series.length > 1 ? sr.nome + " " : "") + brl(sr.vals[k]));
+        s += `<g class="hit"${tipAttr(mesBR(r) + "\n" + linhas.join("\n"))}>`;
+        s += `<rect class="fundo" x="${X(k) - meia}" y="0" width="${meia * 2}" height="${H - pb + 4}"/>`;
+        s += `<g class="cruz"><line x1="${X(k)}" y1="${pt2}" x2="${X(k)}" y2="${H - pb}" stroke="var(--borda-forte)"/>`;
+        for (const sr of series) s += `<circle cx="${X(k)}" cy="${Y(sr.vals[k])}" r="4.5" fill="${sr.cor}" stroke="var(--painel)" stroke-width="2"/>`;
+        s += `</g></g>`;
+      });
+      return SVG(W, H, s);
     }
+
+    /* vista Cartões: consumo no período, uso do limite (cor por faixa, como na
+       CLI) e a linha do tempo por cartão */
+    function svgCartoes(d) {
+      const cartoes = d.cartoes || [];
+      if (!cartoes.length) return vazio("nenhum cartão cadastrado");
+      // o medidor de limite mora numa zona fixa à direita (mx); a barra + valor
+      // param antes dela para nunca colidirem
+      const W = 640, rh = 30, pad = 4, labW = 150, mx = W - 126, barW = 240;
+      const max = Math.max(1, ...cartoes.map(c => c.gasto));
+      const H = pad * 2 + cartoes.length * rh;
+      let s = "";
+      cartoes.forEach((c, k) => {
+        const y = pad + k * rh, w = c.gasto > 0 ? Math.max(2, c.gasto / max * barW) : 0;
+        let tip = `${c.nome}\ngasto no período ${brl(c.gasto)}\nfatura em aberto ${brl(c.aberta)}`;
+        let medidor = "";
+        if (c.limite > 0) {
+          const pct = Math.round(c.aberta / c.limite * 100);
+          const corUso = pct >= 80 ? "var(--desp)" : pct >= 50 ? "var(--s2)" : "var(--rec)";
+          const uso = Math.max(0, Math.min(1, c.aberta / c.limite));
+          tip += `\nlimite ${brl(c.limite)} (${pct}% comprometido)`;
+          medidor = `<rect x="${mx}" y="${y + 11}" width="70" height="8" rx="4" fill="var(--borda)"/>` +
+            `<rect x="${mx}" y="${y + 11}" width="${Math.max(2, uso * 70)}" height="8" rx="4" fill="${corUso}"/>` +
+            `<text x="${mx + 76}" y="${y + rh / 2}" dominant-baseline="middle" fill="var(--dim)" font-size="11">${pct}%</text>`;
+        }
+        s += `<g class="hit"${tipAttr(tip)}>`;
+        s += `<rect class="fundo" x="0" y="${y}" width="${W}" height="${rh}" rx="4"/>`;
+        s += `<text x="${labW - 8}" y="${y + rh / 2}" text-anchor="end" dominant-baseline="middle" fill="var(--dim)">${esc(trunca(c.nome, 18))}</text>`;
+        s += `<rect class="marca" x="${labW}" y="${y + 8}" width="${w}" height="${rh - 16}" rx="3.5" fill="var(--s1)"/>`;
+        s += `<text x="${labW + w + 8}" y="${y + rh / 2}" dominant-baseline="middle" fill="var(--fg)" font-size="11">${esc(brl(c.gasto))}</text>`;
+        s += medidor + `</g>`;
+      });
+      return SVG(W, H, s);
+    }
+
+    const coresSeries = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "var(--s6)"];
     async function renderGraficos() {
       const d = await (await fetch("api/graficos?meses=" + mesesAtual())).json();
       if (d.erro) { $("#saida").innerHTML = `<div class="err">erro: ${esc(d.erro)}</div>`; return; }
       const bloco = (titulo, corpo) => `<div class="grafico"><h3>${esc(titulo)}</h3>${corpo}</div>`;
-      // uma vista por aba, na mesma ordem da TUI (Categorias, Receitas×Despesas, Saldo, Grupos)
+      // a linha do tempo dos cartões: uma série por cartão enquanto as cores
+      // alcançam; além disso, agrega tudo numa série "Total"
+      const cartoesTempo = () => {
+        const refs = d.meses || [], series = d.cartoesMensal || [];
+        if (refs.length < 2 || !series.length) return "";
+        let srs;
+        if (series.length <= coresSeries.length) {
+          srs = series.map((s, i) => ({ nome: s.nome, cor: coresSeries[i], vals: s.mensal }));
+        } else {
+          const total = refs.map((_, k) => series.reduce((a, s) => a + (s.mensal[k] || 0), 0));
+          srs = [{ nome: "Total", cor: "var(--s1)", vals: total }];
+        }
+        const leg = srs.length > 1 ? legenda(srs.map(s => [s.cor, s.nome])) : "";
+        return bloco("Consumo no tempo", leg + svgLinhas(refs, srs, { direto: srs.length === 1 }));
+      };
+      // uma vista por aba, na mesma ordem da TUI (Categorias, Receitas×Despesas, Saldo, Grupos, Cartões)
       const vistas = [
-        () => bloco("Gastos por categoria", svgBarras(d.categorias || [], "var(--cy)")),
-        () => bloco("Receitas (verde) × despesas (vermelho) por mês", svgMensal(d.mensal || [])),
-        () => bloco("Evolução do saldo", svgLinha(d.saldo || [])),
-        () => bloco("Despesa por grupo — sua parte (ciano) do total", svgGrupos(d.grupos || [])),
+        () => bloco("Gastos por categoria", svgBarras(d.categorias || [], "var(--s1)")),
+        () => bloco("Receitas × despesas por mês",
+          legenda([["var(--rec)", "Receitas"], ["var(--desp)", "Despesas"]]) + svgMensal(d.mensal || [])),
+        () => bloco("Evolução do saldo", svgLinhas((d.saldo || []).map(p => p.rotulo),
+          (d.saldo || []).length ? [{ nome: "Saldo", cor: "var(--s1)", vals: d.saldo.map(p => p.valor) }] : [],
+          { direto: true })),
+        () => bloco("Despesa por grupo",
+          legenda([["var(--s1)", "Sua parte"], ["var(--borda)", "Total do grupo"]]) + svgGrupos(d.grupos || [])),
+        () => bloco("Consumo por cartão — gasto no período e uso do limite", svgCartoes(d)) + cartoesTempo(),
       ];
       const i = Math.min(Math.max(abaSel[atual] || 0, 0), vistas.length - 1);
       $("#saida").innerHTML = vistas[i]();
+      ligaTips();
       selecionado[atual] = null;
     }
 

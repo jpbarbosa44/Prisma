@@ -105,6 +105,7 @@ func Importar(conn *sql.DB, args []string) error {
 	contaID := fs.Int64("conta", 0, "id da conta de destino")
 	cartID := fs.Int64("carteira", 0, "id da carteira de destino")
 	cat := fs.String("cat", "importado", "categoria dos lançamentos criados")
+	colValor := fs.Int("coluna-valor", 0, "coluna do valor no CSV, contando de 1 (padrão: o último campo monetário — atenção a extratos com coluna de saldo)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -135,7 +136,7 @@ func Importar(conn *sql.DB, args []string) error {
 	if strings.HasSuffix(strings.ToLower(*arquivo), ".ofx") {
 		movs = parseOFX(string(bruto))
 	} else {
-		movs, err = parseCSVExtrato(string(bruto))
+		movs, err = parseCSVExtrato(string(bruto), *colValor)
 		if err != nil {
 			return err
 		}
@@ -229,7 +230,7 @@ func parseOFX(s string) []movimento {
 				atual.data = v[:4] + "-" + v[4:6] + "-" + v[6:8]
 			}
 			if v, ok := campo(linha, "TRNAMT"); ok {
-				if c, err := money.Parse(v); err == nil {
+				if c, err := parseValorOFX(v); err == nil {
 					atual.valor = c
 				}
 			}
@@ -243,10 +244,60 @@ func parseOFX(s string) []movimento {
 	return movs
 }
 
-// parseCSVExtrato lê um CSV de banco: detecta o separador (';' ou ','), acha
-// a coluna de data e usa o último campo monetário como valor; o resto vira
-// descrição. Linhas sem data (cabeçalhos) são ignoradas.
-func parseCSVExtrato(s string) ([]movimento, error) {
+// parseValorOFX interpreta o TRNAMT de um extrato OFX: o separador que aparecer
+// (ponto ou vírgula) é SEMPRE decimal. Não dá para reusar o money.Parse aqui —
+// nele "1.200" é milhar pt-BR (R$ 1.200,00), mas num OFX "1.200" quer dizer
+// 1 real e 20 centavos.
+func parseValorOFX(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	neg := strings.HasPrefix(s, "-")
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "-"), "+")
+	if s == "" {
+		return 0, fmt.Errorf("valor OFX vazio")
+	}
+	inteiro, decimal := s, ""
+	if i := strings.IndexAny(s, ".,"); i >= 0 {
+		inteiro, decimal = s[:i], s[i+1:]
+	}
+	if inteiro == "" {
+		inteiro = "0"
+	}
+	// normaliza para 2 casas: completa com zeros ou corta o excedente
+	// (arredondando pela 3ª casa)
+	arredonda := false
+	switch {
+	case len(decimal) > 2:
+		arredonda = decimal[2] >= '5'
+		decimal = decimal[:2]
+	default:
+		for len(decimal) < 2 {
+			decimal += "0"
+		}
+	}
+	var c int64
+	for _, r := range inteiro + decimal {
+		if r < '0' || r > '9' {
+			return 0, fmt.Errorf("valor OFX inválido: %q", s)
+		}
+		c = c*10 + int64(r-'0')
+		if c > 1_000_000_000_000 { // mesmo teto do money.Parse (10 bi de reais)
+			return 0, fmt.Errorf("valor OFX %q grande demais", s)
+		}
+	}
+	if arredonda {
+		c++
+	}
+	if neg {
+		c = -c
+	}
+	return c, nil
+}
+
+// parseCSVExtrato lê um CSV de banco: detecta o separador (';' ou ','), acha a
+// coluna de data e usa como valor a coluna colValor (contada de 1) ou, sem ela,
+// o último campo monetário; o resto vira descrição. Linhas sem data
+// (cabeçalhos) são ignoradas.
+func parseCSVExtrato(s string, colValor int) ([]movimento, error) {
 	sep := ','
 	if i := strings.IndexByte(s, '\n'); i > 0 && strings.Count(s[:i], ";") > 0 {
 		sep = ';'
@@ -272,13 +323,25 @@ func parseCSVExtrato(s string) ([]movimento, error) {
 			continue // sem data: cabeçalho ou linha inválida
 		}
 		idxValor := -1
-		for i := len(campos) - 1; i >= 0; i-- {
-			if i == idxData {
+		if colValor > 0 {
+			// coluna fixada pelo usuário (--coluna-valor): não adivinha
+			if colValor > len(campos) {
 				continue
 			}
-			if v, err := money.Parse(campos[i]); err == nil {
-				m.valor, idxValor = v, i
-				break
+			v, err := money.Parse(campos[colValor-1])
+			if err != nil {
+				continue // linha sem valor na coluna indicada (ex.: cabeçalho)
+			}
+			m.valor, idxValor = v, colValor-1
+		} else {
+			for i := len(campos) - 1; i >= 0; i-- {
+				if i == idxData {
+					continue
+				}
+				if v, err := money.Parse(campos[i]); err == nil {
+					m.valor, idxValor = v, i
+					break
+				}
 			}
 		}
 		if idxValor < 0 {

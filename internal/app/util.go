@@ -2,6 +2,7 @@
 package app
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,10 +23,18 @@ func parseData(s string) (string, error) {
 			return t.Format("2006-01-02"), nil
 		}
 	}
-	// DD/MM sem ano: assume o ano vigente.
-	if t, err := time.Parse("02/01", s); err == nil {
-		t = t.AddDate(time.Now().Year(), 0, 0)
-		return t.Format("2006-01-02"), nil
+	// DD/MM sem ano: assume o ano vigente. Monta a data direto (time.Parse sem
+	// ano cai no ano 0, que é bissexto — 29/02 viraria 01/03 em silêncio) e
+	// confere se dia/mês sobreviveram à normalização do time.Date.
+	if d, m, ok := strings.Cut(s, "/"); ok && !strings.Contains(m, "/") {
+		dia, err1 := strconv.Atoi(d)
+		mes, err2 := strconv.Atoi(m)
+		if err1 == nil && err2 == nil {
+			t := time.Date(time.Now().Year(), time.Month(mes), dia, 0, 0, 0, 0, time.UTC)
+			if t.Day() == dia && int(t.Month()) == mes {
+				return t.Format("2006-01-02"), nil
+			}
+		}
 	}
 	return "", fmt.Errorf("data inválida: %q (use AAAA-MM-DD, DD/MM/AAAA ou DD/MM)", s)
 }
@@ -109,6 +118,14 @@ func resolvePeriodo(per, ref string) (periodo, error) {
 		return periodoSemana(ref)
 	}
 	return periodoMes(ref)
+}
+
+// dbtx abstrai *sql.DB e *sql.Tx, para funções que precisam rodar tanto soltas
+// quanto dentro de uma transação maior.
+type dbtx interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
 }
 
 // parseDataT converte AAAA-MM-DD em time.Time.

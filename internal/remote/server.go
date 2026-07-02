@@ -193,6 +193,12 @@ func (s *Servidor) handleExec(w http.ResponseWriter, r *http.Request) {
 	}
 	ses.mu.Lock()
 	defer ses.mu.Unlock()
+	// entre o s.sessao() e este lock o reaper pode ter fechado a sessão ociosa;
+	// sem a checagem, ses.conn nil viraria panic dentro do database/sql
+	if ses.conn == nil {
+		s.erro(w, http.StatusNotFound, "sessão encerrada")
+		return
+	}
 	res, err := ses.exec(r.Context(), req.SQL, args)
 	if err != nil {
 		s.erro(w, http.StatusBadRequest, err.Error())
@@ -215,6 +221,10 @@ func (s *Servidor) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	ses.mu.Lock()
 	defer ses.mu.Unlock()
+	if ses.conn == nil {
+		s.erro(w, http.StatusNotFound, "sessão encerrada")
+		return
+	}
 	rows, err := ses.query(r.Context(), req.SQL, args)
 	if err != nil {
 		s.erro(w, http.StatusBadRequest, err.Error())
@@ -243,6 +253,10 @@ func (s *Servidor) handleBegin(w http.ResponseWriter, r *http.Request) {
 	ses.mu.Lock()
 	defer ses.mu.Unlock()
 	ses.toca()
+	if ses.conn == nil {
+		s.erro(w, http.StatusNotFound, "sessão encerrada")
+		return
+	}
 	if ses.tx != nil {
 		s.erro(w, http.StatusConflict, "transação já aberta")
 		return
