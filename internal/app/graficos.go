@@ -65,6 +65,9 @@ type DadosGraficos struct {
 	Mensal     []TrioMes       `json:"mensal"`
 	Grupos     []GrupoGasto    `json:"grupos"`
 	Cartoes    []CartaoConsumo `json:"cartoes"`
+	// consumo dos cartões mês a mês (linha do tempo da vista Cartões da web)
+	Meses         []string      `json:"meses"`
+	CartoesMensal []CartaoSerie `json:"cartoesMensal"`
 }
 
 // GraficosDados calcula todas as séries de uma vez para os `meses` informados.
@@ -91,6 +94,9 @@ func GraficosDados(conn *sql.DB, meses int) (DadosGraficos, error) {
 		return d, err
 	}
 	if d.Cartoes, err = ConsumoCartoes(conn, inicio, hoje); err != nil {
+		return d, err
+	}
+	if d.Meses, d.CartoesMensal, err = ConsumoCartoesMensal(conn, meses); err != nil {
 		return d, err
 	}
 	return d, nil
@@ -385,7 +391,8 @@ func GraficoRecDesp(conn *sql.DB, meses int) error {
 	for i := range rd {
 		liq[i] = rd[i].Rec - rd[i].Desp
 	}
-	fmt.Printf("  Líquido mês a mês: %s\n", pintar(cCiano, sparkline(liq)))
+	fmt.Printf("  Líquido mês a mês: %s  %s\n", sparklineSinal(liq),
+		pintar(cCinza, "(verde sobra · vermelho falta)"))
 	return nil
 }
 

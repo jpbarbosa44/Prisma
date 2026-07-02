@@ -172,6 +172,29 @@ func sparkline(vals []int64) string {
 	return b.String()
 }
 
+// sparklineSinal é a sparkline com o sinal codificado em cor: meses positivos
+// em verde, negativos em vermelho e zerados em cinza — a altura continua
+// mostrando a magnitude (escala local min..max), a cor mostra de que lado do
+// zero o mês ficou.
+func sparklineSinal(vals []int64) string {
+	base := []rune(sparkline(vals))
+	if len(base) != len(vals) {
+		return string(base)
+	}
+	var b strings.Builder
+	for i, r := range base {
+		cor := cCinza
+		switch {
+		case vals[i] > 0:
+			cor = cVerde
+		case vals[i] < 0:
+			cor = cVermel
+		}
+		b.WriteString(pintar(cor, string(r)))
+	}
+	return b.String()
+}
+
 // shade devolve o caractere de sombreado correspondente a frac (0..1), para
 // mapas de calor (sazonalidade, intensidade mês a mês).
 func shade(frac float64) string {

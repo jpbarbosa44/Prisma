@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -85,6 +87,23 @@ func rodaWeb(s *servidorWeb, args []string) error {
 	if err != nil {
 		return fmt.Errorf("não deu para escutar em %s: %w", endereco, err)
 	}
+	// o main só materializa recorrências e auto-quita na abertura; um servidor
+	// web que fica dias no ar precisa repetir essa manutenção (é idempotente).
+	// O Analytics fica de fora: é somente leitura.
+	if !s.modoAnalytics && s.conn != nil {
+		go func() {
+			t := time.NewTicker(6 * time.Hour)
+			defer t.Stop()
+			for range t.C {
+				if _, err := app.GerarRecorrencias(s.conn); err != nil {
+					fmt.Fprintf(os.Stderr, "aviso: recorrências: %v\n", err)
+				}
+				if _, err := app.QuitarVencidos(s.conn); err != nil {
+					fmt.Fprintf(os.Stderr, "aviso: auto-quitar: %v\n", err)
+				}
+			}
+		}()
+	}
 	url := "http://" + endereco
 	fmt.Printf("prisma web em %s — ctrl+c encerra\n", url)
 	if abrir {
@@ -103,7 +122,7 @@ func rodaWeb(s *servidorWeb, args []string) error {
 	return srv.Serve(ouvinte)
 }
 
-func (s *servidorWeb) rotas() *http.ServeMux {
+func (s *servidorWeb) rotas() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.pagina)
 	mux.HandleFunc("/api/versao", s.apiVersao)
@@ -112,7 +131,40 @@ func (s *servidorWeb) rotas() *http.ServeMux {
 	mux.HandleFunc("/api/graficos", s.apiGraficos)
 	mux.HandleFunc("/api/form", s.apiForm)
 	mux.HandleFunc("/api/executar", s.apiExecutar)
-	return mux
+	return protegeLocal(mux)
+}
+
+// hostLocal diz se um hostname é o próprio computador.
+func hostLocal(h string) bool {
+	return h == "127.0.0.1" || h == "localhost" || h == "::1"
+}
+
+// protegeLocal barra requisições que não partiram do navegador local, mesmo com
+// o servidor escutando só em 127.0.0.1:
+//   - Host de fora (DNS rebinding: um domínio malicioso resolvendo para
+//     127.0.0.1 chega aqui com Host = dominio-do-ataque);
+//   - Origin de outro site em métodos que não sejam GET (CSRF: qualquer página
+//     aberta no navegador conseguiria disparar POST /api/executar às cegas).
+func protegeLocal(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if apenas, _, err := net.SplitHostPort(host); err == nil {
+			host = apenas
+		}
+		host = strings.Trim(host, "[]") // [::1] com IPv6 sem porta
+		if !hostLocal(host) {
+			http.Error(w, "host não permitido", http.StatusForbidden)
+			return
+		}
+		if origem := r.Header.Get("Origin"); origem != "" && r.Method != http.MethodGet {
+			u, err := url.Parse(origem)
+			if err != nil || !hostLocal(u.Hostname()) {
+				http.Error(w, "origem não permitida", http.StatusForbidden)
+				return
+			}
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 func (s *servidorWeb) pagina(w http.ResponseWriter, r *http.Request) {
