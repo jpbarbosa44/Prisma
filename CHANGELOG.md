@@ -7,6 +7,40 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.1.1] - 2026-07-02
+
+### Adicionado
+- **Gráficos SVG na interface web.** Os gráficos da web ganharam tooltip,
+  legenda, grade e rótulos de eixo, além da nova vista "Cartões" (consumo,
+  uso do limite e linha do tempo mês a mês). A aba e o filtro ativos vão na
+  URL (`#t=N&a=M`), então dá para favoritar ou compartilhar uma vista.
+- **Manutenção periódica no servidor web.** Um servidor que fica dias no ar
+  agora gera as recorrências e roda o auto-quitar sozinho, sem precisar
+  reiniciar.
+- **`--coluna-valor` na importação de CSV.** Fixa qual coluna é o valor, para
+  extratos que também trazem uma coluna de saldo.
+
+### Corrigido
+- **OFX interpretava "1.200" como R$ 1.200,00.** O TRNAMT ganhou um parser
+  próprio: no OFX, ponto ou vírgula é sempre o separador decimal — "1.200" é
+  R$ 1,20, não milhar pt-BR.
+- **Validações de parsing.** `money.Parse` rejeita sinal no meio ("12,-5") e
+  valores acima de 10 bilhões (estouro de int64); datas DD/MM inexistentes
+  (31/06, 29/02 em ano comum) são recusadas.
+- **Auto-quitar não combina mais com cartão.** Criar, editar e recorrências
+  bloqueiam a combinação (gasto no cartão entra na fatura, não é quitável);
+  regras antigas passam a gerar sem auto-quitar.
+- **Editar só o vencimento de uma despesa "outros te pagam" deixava o
+  reembolso para trás.** Agora o reembolso vinculado move junto.
+- **Editar uma recorrência não fica mais pela metade.** A edição roda numa
+  transação: ou aplica tudo, ou nada.
+- **Remote: sessão fechada pelo reaper derrubava o servidor.** Responder uma
+  sessão já encerrada devolvia panic; agora responde 404.
+
+### Segurança
+- **Interface web protegida contra DNS rebinding e CSRF.** Pedidos com `Host`
+  de fora e métodos não-GET com `Origin` de outro site são barrados.
+
 ## [1.1.0] - 2026-06-30
 
 ### Adicionado
