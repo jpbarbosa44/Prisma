@@ -86,6 +86,9 @@ func recorrenciaAdd(conn *sql.DB, args []string) error {
 		if *contaID != 0 || *cartID != 0 {
 			return fmt.Errorf("com --cartao não informe conta nem carteira (a fatura é paga pela conta do cartão)")
 		}
+		if *autoQuit {
+			return fmt.Errorf("auto-quitar não vale para recorrências no cartão (as compras quitam ao pagar a fatura)")
+		}
 		if err := existe(conn, "cartoes", *cartaoID); err != nil {
 			return err
 		}
@@ -400,6 +403,11 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 		mudouIntervalo = v != r.intervalo
 		r.intervalo = v
 	}
+	// valida o estado final: a combinação pode nascer de qualquer um dos lados
+	// (--cartao numa regra com auto-quitar, ou --auto-quitar numa regra de cartão)
+	if r.cartao.Valid && r.autoQuitar {
+		return fmt.Errorf("auto-quitar não vale para recorrências no cartão (as compras quitam ao pagar a fatura)")
+	}
 
 	var conta, carteira, cartao, grupo, dFim any
 	if r.conta.Valid {
@@ -417,7 +425,16 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	if r.fim.Valid {
 		dFim = r.fim.String
 	}
-	_, err = conn.Exec(`
+	// daqui em diante são várias escritas encadeadas (regra, pendentes,
+	// repropagação, remoções): tudo numa transação — uma falha no meio não pode
+	// deixar a regra editada com os lançamentos pela metade.
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
 		UPDATE recorrencias SET descricao = ?, valor = ?, categoria = ?, dia = ?,
 		       conta_id = ?, carteira_id = ?, fim = ?, cartao_id = ?, assinatura = ?, grupo_id = ?, auto_quitar = ?, intervalo = ? WHERE id = ?`,
 		r.desc, r.valor, r.cat, r.dia, conta, carteira, dFim, cartao, r.assinatura, grupo, r.autoQuitar, r.intervalo, id,
@@ -427,7 +444,7 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	}
 
 	// desc/valor/categoria/grupo/auto_quitar sempre propagam aos pendentes já gerados
-	res, err := conn.Exec(`
+	res, err := tx.Exec(`
 		UPDATE lancamentos SET descricao = ?, valor = ?, categoria = ?, grupo_id = ?, auto_quitar = ?
 		WHERE recorrencia_id = ? AND status = 'pendente'`,
 		r.desc, r.valor, r.cat, grupo, r.autoQuitar, id,
@@ -439,7 +456,7 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 
 	// conta/carteira/cartão/vencimento dependem do destino (avulso x fatura) e do
 	// dia: recalcula cada pendente a partir da data da compra
-	if err := repropagaPendentes(conn, id, r.cartao, conta, carteira, r.dia); err != nil {
+	if err := repropagaPendentes(tx, id, r.cartao, conta, carteira, r.dia); err != nil {
 		return err
 	}
 
@@ -447,7 +464,7 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 	if r.fim.Valid {
 		// para cartão, o que importa para o término é a data da compra, não o
 		// vencimento da fatura (que cai num mês seguinte)
-		res, err := conn.Exec(`
+		res, err := tx.Exec(`
 			DELETE FROM lancamentos WHERE recorrencia_id = ? AND status = 'pendente'
 			       AND COALESCE(data_compra, vencimento) > ?`,
 			id, r.fim.String)
@@ -466,16 +483,23 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 		// a cadência mudou: descarta os pendentes já gerados (ex.: mensais que não
 		// fazem mais sentido virando anual) e deixa a regeneração refazer com o
 		// novo intervalo, respeitando a vigência.
-		res, err := conn.Exec(`DELETE FROM lancamentos WHERE recorrencia_id = ? AND status = 'pendente'`, id)
+		res, err := tx.Exec(`DELETE FROM lancamentos WHERE recorrencia_id = ? AND status = 'pendente'`, id)
 		if err != nil {
 			return err
 		}
 		descartados, _ = res.RowsAffected()
 	}
 	if informado["fim"] || mudouIntervalo {
-		if _, err := conn.Exec(`UPDATE recorrencias SET ultima_ref = '' WHERE id = ?`, id); err != nil {
+		if _, err := tx.Exec(`UPDATE recorrencias SET ultima_ref = '' WHERE id = ?`, id); err != nil {
 			return err
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// a regeneração roda fora da transação: GerarRecorrencias abre as suas
+	// próprias, uma por regra, e é idempotente (dedup por mês de competência)
+	if informado["fim"] || mudouIntervalo {
 		n, err := GerarRecorrencias(conn)
 		if err != nil {
 			return err
@@ -506,7 +530,7 @@ func recorrenciaEditar(conn *sql.DB, args []string) error {
 // lançamentos pendentes de uma recorrência depois de uma edição. A data da
 // compra (data_compra, ou o próprio vencimento quando avulso) é a âncora: o dia
 // é reposicionado para `dia` e, havendo cartão, o vencimento vira o da fatura.
-func repropagaPendentes(conn *sql.DB, recID any, cartao sql.NullInt64, conta, carteira any, dia int) error {
+func repropagaPendentes(conn dbtx, recID any, cartao sql.NullInt64, conta, carteira any, dia int) error {
 	var fech, vencDia int
 	var contaCartao sql.NullInt64
 	if cartao.Valid {
@@ -655,9 +679,13 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 				if r.grupo.Valid {
 					grupo = r.grupo.Int64
 				}
+				autoQuitar := r.autoQuitar
 				// cartão: a ocorrência cai numa fatura — a data vira a da compra,
 				// o vencimento passa a ser o da fatura e quem paga é a conta do cartão
 				if r.cartao.Valid {
+					// regras antigas podem ter a combinação gravada: na fatura o item
+					// quita ao pagar a fatura, nunca sozinho no vencimento
+					autoQuitar = false
 					cartao = r.cartao.Int64
 					compraT, _ := parseDataT(venc)
 					_, vencFat := faturaDe(int(r.cFech.Int64), int(r.cVenc.Int64), compraT)
@@ -673,7 +701,7 @@ func GerarRecorrencias(conn *sql.DB) (int, error) {
 				_, err := tx.Exec(`
 					INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, conta_id, carteira_id, recorrencia_id, cartao_id, data_compra, grupo_id, auto_quitar)
 					VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-					r.tipo, r.desc, r.valor, r.cat, venc, conta, carteira, r.id, cartao, dataCompra, grupo, r.autoQuitar,
+					r.tipo, r.desc, r.valor, r.cat, venc, conta, carteira, r.id, cartao, dataCompra, grupo, autoQuitar,
 				)
 				if err != nil {
 					tx.Rollback()

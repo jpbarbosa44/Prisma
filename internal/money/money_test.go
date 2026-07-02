@@ -35,10 +35,26 @@ func TestParse(t *testing.T) {
 }
 
 func TestParseInvalido(t *testing.T) {
-	for _, entrada := range []string{"", "abc", "1,234", "12,3456", "1.2.3"} {
+	for _, entrada := range []string{
+		"", "abc", "1,234", "12,3456", "1.2.3",
+		"-",              // só o sinal não é um valor
+		"12,-5", "12,+5", // sinal no meio distorceria o valor em silêncio
+		"+5",                // o "+" de receita é responsabilidade de quem chama
+		"99999999999999999", // estouraria o int64 e viraria negativo
+	} {
 		if _, err := Parse(entrada); err == nil {
 			t.Errorf("Parse(%q): esperava erro, não veio", entrada)
 		}
+	}
+}
+
+func TestParseTeto(t *testing.T) {
+	// o maior valor aceito: 10 bilhões de reais
+	if v, err := Parse("10.000.000.000,00"); err != nil || v != 1_000_000_000_000 {
+		t.Errorf("Parse(10 bi) = %d, %v; queria 1_000_000_000_000", v, err)
+	}
+	if _, err := Parse("10.000.000.001,00"); err == nil {
+		t.Error("Parse(acima do teto): esperava erro, não veio")
 	}
 }
 

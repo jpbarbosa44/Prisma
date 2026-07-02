@@ -253,6 +253,54 @@ func TestWebAnalytics(t *testing.T) {
 	})
 }
 
+// TestWebProtegeLocal garante que a API só atende o navegador local: Host de
+// fora (DNS rebinding) e Origin de outro site em POST (CSRF) são recusados.
+func TestWebProtegeLocal(t *testing.T) {
+	srv := servidorTeste(t)
+
+	t.Run("host de fora é recusado", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/telas", nil)
+		req.Host = "ataque.example.com"
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("Host forjado devia dar 403, veio %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("origin de outro site em POST é recusado", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/executar",
+			strings.NewReader(`{"tela":0,"acao":0,"vals":[]}`))
+		req.Header.Set("Origin", "https://ataque.example.com")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("Origin de fora devia dar 403, veio %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("origin local em POST passa", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/executar",
+			strings.NewReader(`{"tela":0,"acao":0,"vals":[]}`))
+		req.Header.Set("Origin", srv.URL)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusForbidden {
+			t.Errorf("Origin local não devia ser barrado (veio 403)")
+		}
+	})
+}
+
 // TestSemANSI garante que as cores ANSI da saída da CLI (asciigraph, gráficos de
 // viz.go) são removidas antes de servir ao navegador — senão apareceriam como
 // lixo no <pre>. Os caracteres de bloco/desenho são preservados.

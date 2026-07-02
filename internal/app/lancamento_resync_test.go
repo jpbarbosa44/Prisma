@@ -79,6 +79,69 @@ func TestEditarGrupoRecebePagamentoRedistribui(t *testing.T) {
 	}
 }
 
+// Mudar só o vencimento de uma despesa recebe_pagamento move o reembolso
+// vinculado junto (ele vence com a despesa), preservando os valores.
+func TestEditarVencRecebePagamentoMoveReembolso(t *testing.T) {
+	conn := abreDB(t)
+	criaGrupo(t, conn, 1, "eu", "voce")
+	criados, reemb, _, err := CriarLancamentos(conn, LancamentoParams{
+		Tipo: "pagar", Desc: "Internet", Valor: 10000, Venc: "2026-06-10",
+		GrupoID: 1, RecebePagamento: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := lancamentoEditar(conn, []string{fmt.Sprint(criados[0].ID), "--venc", "2026-07-15"}); err != nil {
+		t.Fatal(err)
+	}
+	var venc string
+	if err := conn.QueryRow(`SELECT vencimento FROM lancamentos WHERE id = ?`, reemb[0].ID).Scan(&venc); err != nil {
+		t.Fatal(err)
+	}
+	if venc != "2026-07-15" {
+		t.Fatalf("vencimento do reembolso = %s, queria 2026-07-15 (defasado = bug)", venc)
+	}
+	if got := valorDe(t, conn, criados[0].ID); got != 5000 {
+		t.Fatalf("minha parte mudou ao editar só o venc: %d, queria 5000", got)
+	}
+	if got := valorDe(t, conn, reemb[0].ID); got != 5000 {
+		t.Fatalf("reembolso mudou ao editar só o venc: %d, queria 5000", got)
+	}
+}
+
+// Auto-quitar não combina com cartão: o item quitaria sozinho no vencimento da
+// fatura sem a fatura ter sido paga. A regra vale ao criar, ao editar e nas
+// recorrências.
+func TestAutoQuitarNaoValeNoCartao(t *testing.T) {
+	conn := abreDB(t)
+	conn.Exec(`INSERT INTO cartoes (id,nome,dia_fechamento,dia_vencimento) VALUES (1,'A',20,28)`)
+
+	_, _, _, err := CriarLancamentos(conn, LancamentoParams{
+		Tipo: "pagar", Desc: "Fone", Valor: 10000, Venc: "2026-06-10",
+		CartaoID: 1, AutoQuit: true,
+	})
+	if err == nil {
+		t.Fatal("criar com cartão + auto-quitar: esperava erro")
+	}
+
+	criados, _, _, err := CriarLancamentos(conn, LancamentoParams{
+		Tipo: "pagar", Desc: "Fone", Valor: 10000, Venc: "2026-06-10", CartaoID: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lancamentoEditar(conn, []string{fmt.Sprint(criados[0].ID), "--auto-quitar", "sim"}); err == nil {
+		t.Fatal("editar item de cartão com --auto-quitar sim: esperava erro")
+	}
+
+	err = recorrenciaAdd(conn, []string{"--tipo", "pagar", "--desc", "Streaming",
+		"--valor", "50", "--dia", "10", "--cartao", "1", "--auto-quitar"})
+	if err == nil {
+		t.Fatal("recorrência com cartão + auto-quitar: esperava erro")
+	}
+}
+
 // Mover um lançamento entre cartões deve preservar a data real da compra (e
 // recalcular a fatura a partir dela), não usar o vencimento da fatura anterior.
 func TestMoverEntreCartoesPreservaDataCompra(t *testing.T) {

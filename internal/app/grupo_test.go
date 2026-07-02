@@ -20,9 +20,12 @@ func criaGrupoEDespesa(t *testing.T, conn *sql.DB, pessoas string, valor int64) 
 	if err := conn.QueryRow(`SELECT id FROM grupos ORDER BY id DESC LIMIT 1`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
+	// quitada HOJE: o relatório e o plano olham o mês corrente — uma data fixa
+	// deixaria estes testes falhando assim que o calendário virasse
+	hoje, _ := parseData("hoje")
 	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
 		Tipo: "pagar", Desc: "Mercado", Valor: valor, Cat: "mercado",
-		Venc: "2026-06-10", GrupoID: gid, Quitado: true,
+		Venc: hoje, GrupoID: gid, Quitado: true,
 	}); err != nil {
 		t.Fatalf("criando despesa do grupo: %v", err)
 	}
@@ -85,10 +88,11 @@ func TestDespesaDeGrupoDivideNoRelatorioEPlano(t *testing.T) {
 	}
 
 	// planejamento: o gasto consumido do limite também é a parte efetiva
+	hoje, _ := parseData("hoje")
 	silencia(t, func() error {
-		return Plano(conn, []string{"add", "--cat", "mercado", "--valor", "800", "--periodo", "mes", "--ref", "2026-06"})
+		return Plano(conn, []string{"add", "--cat", "mercado", "--valor", "800", "--periodo", "mes", "--ref", refAtual("mes")})
 	})
-	usos, err := PlanosDaCategoria(conn, "mercado", "2026-06-10")
+	usos, err := PlanosDaCategoria(conn, "mercado", hoje)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -309,7 +309,7 @@ func Fatura(conn *sql.DB, args []string) error {
 }
 
 // dadosCartao busca os dias do ciclo e a conta pagadora de um cartão.
-func dadosCartao(conn *sql.DB, id int64) (nome string, fech, venc int, contaID sql.NullInt64, err error) {
+func dadosCartao(conn dbtx, id int64) (nome string, fech, venc int, contaID sql.NullInt64, err error) {
 	err = conn.QueryRow(`SELECT nome, dia_fechamento, dia_vencimento, conta_id FROM cartoes WHERE id = ?`, id).
 		Scan(&nome, &fech, &venc, &contaID)
 	if err == sql.ErrNoRows {

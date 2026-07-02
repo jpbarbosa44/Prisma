@@ -18,6 +18,21 @@ func TestParseDataDDMM(t *testing.T) {
 	}
 }
 
+func TestParseDataDDMMInvalida(t *testing.T) {
+	// dias que não existem não podem ser normalizados em silêncio (o time.Parse
+	// sem ano cai no ano 0, bissexto, e 29/02 virava 01/03)
+	invalidas := []string{"31/06", "31/04", "32/01", "10/13", "0/05"}
+	ano := time.Now().Year()
+	if !(ano%4 == 0 && (ano%100 != 0 || ano%400 == 0)) {
+		invalidas = append(invalidas, "29/02")
+	}
+	for _, s := range invalidas {
+		if got, err := parseData(s); err == nil {
+			t.Errorf("parseData(%q) = %q, esperava erro", s, got)
+		}
+	}
+}
+
 func TestRemoverParcelaRaizCascade(t *testing.T) {
 	conn := abreDB(t)
 	criados, _, _, err := CriarLancamentos(conn, LancamentoParams{

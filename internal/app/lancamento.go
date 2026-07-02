@@ -125,6 +125,11 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []L
 		if p.Tipo != "pagar" {
 			return nil, nil, false, fmt.Errorf("cartão só vale para despesas (pagar)")
 		}
+		if p.AutoQuit {
+			// auto-quitar marcaria o item como pago no vencimento da fatura sem a
+			// fatura ter sido paga — e só ele, deixando a fatura meio quitada
+			return nil, nil, false, fmt.Errorf("auto-quitar não vale para compras no cartão (elas quitam ao pagar a fatura)")
+		}
 		var fech, venc int
 		var contaCartao sql.NullInt64
 		err := conn.QueryRow(
@@ -318,18 +323,30 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	return nil
 }
 
-// avisaCategoriaNova diz se a categoria nunca foi usada (proteção contra typos
-// como "mercado" vs "mercados", que viram categorias diferentes em silêncio).
+// avisaCategoriaNova diz se a categoria é inédita (proteção contra typos como
+// "mercado" vs "mercados", que viram categorias diferentes em silêncio).
+// Consulta o catálogo, que cobre também as cadastradas via `categoria add` e
+// as usadas só em recorrências — não apenas as que já apareceram em lançamentos.
 func avisaCategoriaNova(conn *sql.DB, cat string) bool {
 	c := strings.ToLower(strings.TrimSpace(cat))
 	if c == "" || c == "geral" {
 		return false
 	}
 	var n int
-	if err := conn.QueryRow(`SELECT COUNT(*) FROM lancamentos WHERE categoria = ?`, c).Scan(&n); err != nil {
+	if err := conn.QueryRow(`
+		SELECT (SELECT COUNT(*) FROM categorias WHERE nome = ?)
+		     + (SELECT COUNT(*) FROM lancamentos WHERE categoria = ?)`, c, c).Scan(&n); err != nil {
 		return false
 	}
 	return n == 0
+}
+
+// rotuloTabela dá o nome (e gênero) de exibição de cada tabela referenciável.
+var rotuloTabela = map[string]string{
+	"contas":    "conta #%d não encontrada",
+	"carteiras": "carteira #%d não encontrada",
+	"grupos":    "grupo #%d não encontrado",
+	"cartoes":   "cartão #%d não encontrado",
 }
 
 func existe(conn *sql.DB, tabela string, id int64) error {
@@ -338,8 +355,11 @@ func existe(conn *sql.DB, tabela string, id int64) error {
 		return err
 	}
 	if n == 0 {
-		singular := strings.TrimSuffix(tabela, "s")
-		return fmt.Errorf("%s #%d não encontrada", singular, id)
+		msg, ok := rotuloTabela[tabela]
+		if !ok {
+			msg = strings.TrimSuffix(tabela, "s") + " #%d não encontrado(a)"
+		}
+		return fmt.Errorf(msg, id)
 	}
 	return nil
 }
@@ -544,9 +564,10 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 
 	// despesas com recebe_pagamento guardam só a sua parte e têm um reembolso
 	// vinculado; mudar o valor ou o grupo precisa re-dividir e atualizar os dois.
-	var rp int
-	var grupoLanc sql.NullInt64
-	switch err := conn.QueryRow(`SELECT recebe_pagamento, grupo_id FROM lancamentos WHERE id = ?`, id).Scan(&rp, &grupoLanc); err {
+	var rp, autoQuitAtual int
+	var grupoLanc, cartaoLanc sql.NullInt64
+	switch err := conn.QueryRow(`SELECT recebe_pagamento, grupo_id, cartao_id, auto_quitar FROM lancamentos WHERE id = ?`, id).
+		Scan(&rp, &grupoLanc, &cartaoLanc, &autoQuitAtual); err {
 	case sql.ErrNoRows:
 		return fmt.Errorf("lançamento #%s não encontrado", id)
 	case nil:
@@ -636,6 +657,7 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 		}
 		sets, params = append(sets, "observacao = ?"), append(params, valor)
 	}
+	autoQuitFinal := autoQuitAtual
 	if informado["auto-quitar"] {
 		v := 0
 		switch strings.ToLower(strings.TrimSpace(*autoQuit)) {
@@ -646,6 +668,7 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 		default:
 			return fmt.Errorf("--auto-quitar deve ser sim ou nao")
 		}
+		autoQuitFinal = v
 		sets, params = append(sets, "auto_quitar = ?"), append(params, v)
 	}
 	if informado["cartao"] {
@@ -687,12 +710,22 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 			sets = append(sets, "cartao_id = NULL", "data_compra = NULL")
 		}
 	}
+	// o estado final não pode combinar cartão + auto-quitar (o item quitaria
+	// sozinho no vencimento da fatura, sem a fatura ter sido paga)
+	cartaoFinal := cartaoLanc.Valid
+	if informado["cartao"] {
+		cartaoFinal = *cartaoID > 0
+	}
+	if cartaoFinal && autoQuitFinal == 1 {
+		return fmt.Errorf("auto-quitar não vale para compras no cartão (elas quitam ao pagar a fatura)")
+	}
 	// recebe_pagamento: o valor informado é o TOTAL da conta. Re-divide pela
 	// quantidade de pessoas do grupo (a nova, se o grupo mudou) e guarda só a
-	// sua parte; o restante vira/atualiza o reembolso vinculado.
+	// sua parte; o restante vira/atualiza o reembolso vinculado. Mudar só o
+	// vencimento também ressincroniza: o reembolso vence junto com a despesa.
 	var ressincronizaReemb bool
 	var reembolsoValor int64
-	if rp == 1 && (informado["valor"] || informado["grupo"]) {
+	if rp == 1 && (informado["valor"] || informado["grupo"] || informado["venc"]) {
 		grupoSplit := grupoLanc
 		if informado["grupo"] {
 			if *grupoID <= 0 {
