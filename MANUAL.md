@@ -574,15 +574,20 @@ Não combina com `--empresa` (lê sempre o banco pessoal) nem com o modo cliente
 
 - **Health Score** — índice 0–100 que combina a taxa de poupança média, o nível do fundo de emergência (saldo ÷ despesa média mensal) e a constância do fluxo de caixa livre (quanto menos o líquido mensal oscila, melhor).
 - **Modo Economia** — compara os gastos do mês corrente, por categoria, com a média e o desvio padrão dos meses anteriores, e alerta os comportamentos atípicos (ex.: "restaurante 275% acima do padrão").
+- **Tendências** — ajusta uma reta ao gasto mensal de cada categoria (meses já fechados) e mostra as que sobem ou caem de forma consistente — o vazamento lento que a detecção de anomalia pontual não pega, com a projeção anual ("nesse ritmo, +R$ X em um ano").
 - **Sazonalidade** — mapeia os meses do calendário historicamente mais caros (precisa de histórico de mais de um ano para ficar útil) e avisa quando um deles está chegando.
 - **Runway** — projeta o saldo para 30/90/180 dias a partir das médias, mostra o *burn rate* (despesa média) e, se o fluxo é negativo, quantos meses faltam até o saldo zerar.
+- **Renda Comprometida** — para cada um dos próximos 6 meses, quanto da renda esperada já está tomado por parcelas, contas agendadas e recorrências — a régua para decidir se cabe parcelar algo novo e para ver quando vem o mês apertado.
 - **Metas** (tecla `m`) — informe um valor e um prazo em meses; calcula a parcela mensal necessária, cruza com o superávit médio e diz se é viável. Se não for, sugere categorias variáveis a cortar e estima em quanto tempo a meta caberia no ritmo atual.
 - **Assinaturas Ocultas** — varre o histórico atrás de despesas de mesmo valor repetidas em 3+ meses que não vêm de uma recorrência cadastrada, com o impacto anual de cada uma ("você gasta R$ X/ano neste serviço").
 - **Simulador** (tecla `s`) — sandbox *what-if*: informe uma perda de renda e/ou uma nova despesa fixa mensal e veja o fluxo livre e o runway recalculados. Tudo em memória — nada é gravado no banco.
 - **Inflação Pessoal** — compara o gasto com contas básicas (mercado, luz, água, condomínio) no trimestre atual com o mesmo trimestre do ano anterior, para medir o quanto o *seu* custo de vida subiu.
 - **Regra 50/30/20** — classifica o orçamento em necessidades, desejos e poupança/investimentos (o que sobra da renda) e compara com o padrão ideal de 50/30/20.
-- **Patrimônio Líquido** — ativos (saldo de contas + carteiras) menos dívidas (emergências ativas), com a evolução mês a mês. O histórico de dívidas não é rastreado, então a evolução aplica a dívida atual como referência.
+- **Aderência a Planos** — dos planos mensais (`prisma plano add`) de meses já encerrados, quantos foram respeitados, categoria a categoria, e o tamanho médio do estouro de quem passou do limite — fecha o ciclo planejar → medir.
+- **Patrimônio Líquido** — ativos (saldo de contas + carteiras) menos dívidas (emergências ativas, pelo saldo devedor estimado do plano de aportes), com a evolução mês a mês. O histórico de dívidas não é rastreado, então a evolução aplica a dívida de hoje como referência.
+- **Balanço dos Grupos** — por grupo de divisão de contas: a sua parte das despesas, os reembolsos gerados quando você adianta o total (`--recebe-pagamento`), quanto já voltou e quanto ainda devem.
 - **Eficiência** — acompanha as contas de utilidade da casa (luz, água, gás, internet), a proporção sobre a renda e detecta picos de consumo.
+- **Melhor Dia de Compra** — por cartão, o prazo entre comprar hoje e pagar a fatura, e o dia do ciclo (logo após o fechamento) que dá o prazo máximo — sem usar histórico, só o ciclo de cada cartão.
 
 A classificação de categorias (o que conta como "necessidade", "utilidade" ou "conta básica") é por **palavra-chave no nome da categoria** — quanto mais consistente o nome dos seus lançamentos, melhores os recortes das análises.
 

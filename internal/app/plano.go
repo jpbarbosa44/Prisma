@@ -193,6 +193,23 @@ func planoListar(conn *sql.DB) error {
 
 // planoStatus compara cada plano do período com os gastos lançados
 // (a pagar quitados + pendentes com vencimento dentro do período).
+// gastoDoPlano soma o que conta contra o limite de uma categoria no período:
+// compras de cartão pela data da compra e, fora do cartão, quitados pela
+// quitação e pendentes pelo vencimento. Compartilhado pelo status do plano e
+// pela Aderência a Planos do Analytics — os dois têm que bater.
+func gastoDoPlano(conn *sql.DB, cat string, p periodo) (int64, error) {
+	var gasto int64
+	err := conn.QueryRow(`
+		SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0) FROM lancamentos
+		WHERE tipo = 'pagar' AND categoria = ?
+		  AND ((cartao_id IS NOT NULL AND data_compra >= ? AND data_compra < ?)
+		    OR (cartao_id IS NULL AND status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
+		    OR (cartao_id IS NULL AND status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
+		cat, p.Inicio, p.Fim, p.Inicio, p.Fim, p.Inicio, p.Fim,
+	).Scan(&gasto)
+	return gasto, err
+}
+
 func planoStatus(conn *sql.DB, args []string) error {
 	fs := flag.NewFlagSet("plano status", flag.ContinueOnError)
 	per := fs.String("periodo", "mes", "mes ou semana")
@@ -237,15 +254,8 @@ func planoStatus(conn *sql.DB, args []string) error {
 	fmt.Fprintln(w, "CATEGORIA\tLIMITE\tGASTO\tRESTANTE\tUSO")
 	var estourou []string
 	for i := range linhas {
-		err := conn.QueryRow(`
-			SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0) FROM lancamentos
-			WHERE tipo = 'pagar' AND categoria = ?
-			  AND ((cartao_id IS NOT NULL AND data_compra >= ? AND data_compra < ?)
-			    OR (cartao_id IS NULL AND status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
-			    OR (cartao_id IS NULL AND status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
-			linhas[i].cat, p.Inicio, p.Fim, p.Inicio, p.Fim, p.Inicio, p.Fim,
-		).Scan(&linhas[i].gasto)
-		if err != nil {
+		var err error
+		if linhas[i].gasto, err = gastoDoPlano(conn, linhas[i].cat, p); err != nil {
 			return err
 		}
 		l := linhas[i]

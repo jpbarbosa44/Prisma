@@ -1008,3 +1008,500 @@ type anomaliaAlerta struct {
 	atual, media int64
 	acima        float64 // % acima da média histórica
 }
+
+// AnalyticsComprometimento (RF12) mostra, para cada um dos próximos meses,
+// quanto da renda esperada já está tomado por obrigações conhecidas — parcelas,
+// contas agendadas e recorrências — antes de o mês começar. É a régua para
+// decidir se cabe parcelar algo novo: o Runway diz se o fluxo médio fecha; aqui
+// aparece QUANDO vem o mês apertado.
+func AnalyticsComprometimento(conn *sql.DB) error {
+	mediaRec, _, err := mediasHistoricas(conn)
+	if err != nil {
+		return err
+	}
+	const janela = 6
+	agora := time.Now()
+	base := time.Date(agora.Year(), agora.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	fmt.Println("RENDA COMPROMETIDA — Parcelas e Contas Já Agendadas")
+	fmt.Println("(quanto da renda esperada de cada mês já está tomado antes de ele começar)")
+	fmt.Println()
+	w := novaTabela()
+	fmt.Fprintln(w, "MÊS\tRENDA ESPERADA\tCOMPROMETIDO\t% TOMADO\t")
+	pior, piorPct := "", 0.0
+	for i := 1; i <= janela; i++ {
+		ref := base.AddDate(0, i, 0).Format("2006-01")
+		p, err := periodoMes(ref)
+		if err != nil {
+			return err
+		}
+		renda, _, err := previstoMes(conn, "receber", p, mediaRec)
+		if err != nil {
+			return err
+		}
+		// média 0 de fallback: comprometido é só o que JÁ está agendado —
+		// projetar despesa média aqui diria "100% comprometido" para todo mundo
+		comprometido, _, err := previstoMes(conn, "pagar", p, 0)
+		if err != nil {
+			return err
+		}
+		prop, barra := "-", ""
+		if renda > 0 {
+			pc := pct(comprometido, renda)
+			prop = fmt.Sprintf("%.0f%%", pc)
+			barra = barraFinaCor(comprometido, renda, 20, corFaixaUso(pc))
+			if pc > piorPct {
+				pior, piorPct = ref, pc
+			}
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", mesBR(ref), money.Format(renda), money.Format(comprometido), prop, barra)
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	fmt.Println()
+	switch {
+	case pior == "":
+		fmt.Println("Sem renda prevista nos próximos meses para medir o comprometimento.")
+	case piorPct >= 80:
+		fmt.Printf("⚠ %s é o mês mais apertado: %.0f%% da renda já tem dono. Evite parcelar algo novo até lá.\n",
+			mesBR(pior), piorPct)
+	case piorPct >= 50:
+		fmt.Printf("O mês mais comprometido é %s (%.0f%% da renda). Há margem, mas parcele com critério.\n",
+			mesBR(pior), piorPct)
+	default:
+		fmt.Printf("👍 Folga boa: nem o mês mais comprometido (%s, %.0f%%) passa da metade da renda.\n",
+			mesBR(pior), piorPct)
+	}
+	fmt.Println("\n(comprometido = parcelas, contas agendadas e recorrências; renda pela previsão)")
+	return nil
+}
+
+// corFaixaUso colore um percentual de comprometimento: verde < 50, amarelo < 80,
+// vermelho daí em diante — as mesmas faixas de usoLimite.
+func corFaixaUso(pc float64) string {
+	switch {
+	case pc >= 80:
+		return cVermel
+	case pc >= 50:
+		return cAmar
+	default:
+		return cVerde
+	}
+}
+
+// AnalyticsAderenciaPlanos (RF13) fecha o ciclo do planejamento: dos planos
+// mensais (`prisma plano add`) de meses já encerrados, quantos foram
+// respeitados, categoria a categoria — e quem mais estoura. O gasto de cada mês
+// vem da MESMA régua do `plano status` (gastoDoPlano).
+func AnalyticsAderenciaPlanos(conn *sql.DB) error {
+	_, _, refs := janelaMeses(analyticsJanela + 1) // +1: o corrente sai da conta
+	atual := refs[len(refs)-1]
+
+	rows, err := conn.Query(`
+		SELECT categoria, limite, ref FROM planejamentos
+		WHERE periodo = 'mes' AND ref >= ? AND ref < ?
+		ORDER BY categoria, ref`, refs[0], atual)
+	if err != nil {
+		return err
+	}
+	type plano struct {
+		cat, ref string
+		limite   int64
+	}
+	var planos []plano
+	for rows.Next() {
+		var p plano
+		if err := rows.Scan(&p.cat, &p.limite, &p.ref); err != nil {
+			rows.Close()
+			return err
+		}
+		planos = append(planos, p)
+	}
+	if err := encerraRows(rows); err != nil {
+		return err
+	}
+
+	fmt.Println("ADERÊNCIA A PLANOS — Planejado x Realizado")
+	fmt.Printf("(planos mensais de %s a %s — o mês corrente, ainda aberto, fica de fora)\n\n",
+		mesBR(refs[0]), mesBR(refs[len(refs)-2]))
+	if len(planos) == 0 {
+		fmt.Println("Nenhum plano mensal de mês já encerrado na janela.")
+		fmt.Println("Crie com: prisma plano add --cat mercado --valor 800 --periodo mes")
+		return nil
+	}
+
+	// consolida por categoria: meses cumpridos e o tamanho médio do estouro
+	type placar struct {
+		cat                   string
+		cumpridos, total      int
+		estouroSoma, estouroN int64
+	}
+	porCat := map[string]*placar{}
+	var ordem []string
+	totCumpridos, totPlanos := 0, 0
+	for _, pl := range planos {
+		p, err := periodoMes(pl.ref)
+		if err != nil {
+			return err
+		}
+		gasto, err := gastoDoPlano(conn, pl.cat, p)
+		if err != nil {
+			return err
+		}
+		s := porCat[pl.cat]
+		if s == nil {
+			s = &placar{cat: pl.cat}
+			porCat[pl.cat] = s
+			ordem = append(ordem, pl.cat)
+		}
+		s.total++
+		totPlanos++
+		if gasto <= pl.limite {
+			s.cumpridos++
+			totCumpridos++
+		} else if pl.limite > 0 {
+			s.estouroSoma += (gasto - pl.limite) * 100 / pl.limite // % inteiro
+			s.estouroN++
+		}
+	}
+
+	w := novaTabela()
+	fmt.Fprintln(w, "CATEGORIA\tCUMPRIDOS\tESTOURO MÉDIO\t")
+	for _, cat := range ordem {
+		s := porCat[cat]
+		estouro := "-"
+		if s.estouroN > 0 {
+			estouro = fmt.Sprintf("+%d%%", s.estouroSoma/s.estouroN)
+		}
+		frac := pct(int64(s.cumpridos), int64(s.total))
+		fmt.Fprintf(w, "%s\t%d de %d\t%s\t%s\n", cat, s.cumpridos, s.total, estouro,
+			barraFinaCor(int64(s.cumpridos), int64(s.total), 16, corFaixaCumprimento(frac)))
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	fmt.Println()
+	geral := pct(int64(totCumpridos), int64(totPlanos))
+	switch {
+	case geral >= 80:
+		fmt.Printf("👍 Você respeitou %d de %d planos (%.0f%%): o planejamento está funcionando.\n",
+			totCumpridos, totPlanos, geral)
+	case geral >= 50:
+		fmt.Printf("Você respeitou %d de %d planos (%.0f%%). Vale revisar os limites que mais estouram.\n",
+			totCumpridos, totPlanos, geral)
+	default:
+		fmt.Printf("⚠ Só %d de %d planos respeitados (%.0f%%): ou os limites estão irreais, ou o gasto fugiu.\n",
+			totCumpridos, totPlanos, geral)
+	}
+	return nil
+}
+
+// corFaixaCumprimento colore a taxa de planos cumpridos: verde ≥ 80%, amarelo
+// ≥ 50%, vermelho abaixo (o inverso de corFaixaUso: aqui mais é melhor).
+func corFaixaCumprimento(pc float64) string {
+	switch {
+	case pc >= 80:
+		return cVerde
+	case pc >= 50:
+		return cAmar
+	default:
+		return cVermel
+	}
+}
+
+// AnalyticsTendencias (RF14) pega o vazamento lento que a detecção de anomalia
+// pontual não pega: ajusta uma reta ao gasto mensal de cada categoria (meses já
+// FECHADOS — o corrente, parcial, enviesaria a inclinação para baixo) e mostra
+// as que sobem ou caem de forma consistente.
+func AnalyticsTendencias(conn *sql.DB) error {
+	_, _, refs := janelaMeses(analyticsJanela + 1)
+	atual := refs[len(refs)-1]
+	fechados := refs[:len(refs)-1]
+
+	rows, err := conn.Query(`
+		SELECT categoria, substr(COALESCE(data_compra, quitado_em),1,7) AS mes, SUM(`+valEf("lancamentos")+`)
+		FROM lancamentos WHERE tipo='pagar' AND status='quitado'
+		  AND substr(COALESCE(data_compra, quitado_em),1,7) >= ?
+		  AND substr(COALESCE(data_compra, quitado_em),1,7) < ?
+		GROUP BY categoria, mes`, fechados[0], atual)
+	if err != nil {
+		return err
+	}
+	porCat := map[string][]int64{}
+	for rows.Next() {
+		var cat, mes string
+		var v int64
+		if err := rows.Scan(&cat, &mes, &v); err != nil {
+			rows.Close()
+			return err
+		}
+		if porCat[cat] == nil {
+			porCat[cat] = make([]int64, len(fechados))
+		}
+		for i, r := range fechados {
+			if r == mes {
+				porCat[cat][i] += v
+				break
+			}
+		}
+	}
+	if err := encerraRows(rows); err != nil {
+		return err
+	}
+
+	fmt.Println("TENDÊNCIAS — Para Onde o Gasto Está Indo")
+	fmt.Printf("(reta ajustada ao gasto mensal por categoria, %s a %s)\n\n",
+		mesBR(fechados[0]), mesBR(fechados[len(fechados)-1]))
+
+	type tend struct {
+		cat    string
+		serie  []int64
+		slope  float64 // centavos/mês
+		relMes float64 // % da média por mês
+	}
+	var tends []tend
+	for cat, serie := range porCat {
+		// a série da categoria começa no primeiro mês em que ela existiu
+		ini := 0
+		for ini < len(serie) && serie[ini] == 0 {
+			ini++
+		}
+		s := serie[ini:]
+		if len(s) < 3 {
+			continue // menos de 3 meses: não há tendência para ajustar
+		}
+		slope, media := retaSlope(s)
+		if media <= 0 {
+			continue
+		}
+		rel := slope / media * 100
+		// relevante: pelo menos ±8% da média ao mês E ±R$ 20/mês de inclinação
+		if math.Abs(rel) < 8 || math.Abs(slope) < 2000 {
+			continue
+		}
+		tends = append(tends, tend{cat, s, slope, rel})
+	}
+	if len(tends) == 0 {
+		fmt.Println("Nenhuma tendência relevante: os gastos por categoria estão estáveis. 👍")
+		return nil
+	}
+	sort.Slice(tends, func(i, j int) bool { return math.Abs(tends[i].slope) > math.Abs(tends[j].slope) })
+	if len(tends) > 8 {
+		tends = tends[:8]
+	}
+
+	w := novaTabela()
+	fmt.Fprintln(w, "CATEGORIA\tMÊS A MÊS\tTENDÊNCIA")
+	for _, td := range tends {
+		seta, cor := "▲", cVermel // gasto subindo = ruim
+		if td.slope < 0 {
+			seta, cor = "▼", cVerde
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", td.cat, sparkline(td.serie),
+			pintar(cor, fmt.Sprintf("%s %s/mês (%+.0f%%/mês)", seta, money.Format(int64(math.Abs(td.slope))), td.relMes)))
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	pior := tends[0]
+	if pior.slope > 0 {
+		fmt.Printf("\n⚠ Maior vazamento: %s sobe ~%s por mês. Nesse ritmo, são +%s em um ano.\n",
+			pior.cat, money.Format(int64(pior.slope)), money.Format(int64(pior.slope*12)))
+	}
+	return nil
+}
+
+// retaSlope ajusta uma reta y = a + b·x à série (mínimos quadrados) e devolve a
+// inclinação b (centavos por mês) e a média da série.
+func retaSlope(vals []int64) (slope, media float64) {
+	n := float64(len(vals))
+	var somaX, somaY, somaXY, somaXX float64
+	for i, v := range vals {
+		x, y := float64(i), float64(v)
+		somaX += x
+		somaY += y
+		somaXY += x * y
+		somaXX += x * x
+	}
+	den := n*somaXX - somaX*somaX
+	if den == 0 {
+		return 0, somaY / n
+	}
+	return (n*somaXY - somaX*somaY) / den, somaY / n
+}
+
+// AnalyticsGrupos (RF15) responde se dividir contas está funcionando: por
+// grupo, a sua parte das despesas, os reembolsos gerados (despesas em que você
+// adiantou o total e recebe a parte dos outros de volta), quanto já voltou e
+// quanto ainda devem.
+func AnalyticsGrupos(conn *sql.DB) error {
+	rows, err := conn.Query(`
+		SELECT g.id, g.nome, COALESCE(SUM(` + valEf("l") + `), 0)
+		FROM grupos g LEFT JOIN lancamentos l ON l.grupo_id = g.id AND l.tipo = 'pagar'
+		GROUP BY g.id, g.nome ORDER BY g.id`)
+	if err != nil {
+		return err
+	}
+	type balanco struct {
+		nome                      string
+		minha, recebido, aReceber int64
+	}
+	porGrupo := map[int64]*balanco{}
+	var ordem []int64
+	for rows.Next() {
+		var id int64
+		b := &balanco{}
+		if err := rows.Scan(&id, &b.nome, &b.minha); err != nil {
+			rows.Close()
+			return err
+		}
+		porGrupo[id] = b
+		ordem = append(ordem, id)
+	}
+	if err := encerraRows(rows); err != nil {
+		return err
+	}
+
+	fmt.Println("BALANÇO DOS GRUPOS — Divisão de Contas")
+	fmt.Println("(sua parte, o que você adiantou pelos outros e o que já voltou)")
+	fmt.Println()
+	if len(ordem) == 0 {
+		fmt.Println("Nenhum grupo cadastrado. Crie com: prisma grupo add --nome \"Casa\" --pessoas \"Eu, Maria\"")
+		return nil
+	}
+
+	// reembolsos: receitas ligadas (reembolso_de) a despesas de cada grupo
+	rows, err = conn.Query(`
+		SELECT d.grupo_id,
+		       COALESCE(SUM(CASE WHEN r.status = 'quitado'  THEN r.valor ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN r.status = 'pendente' THEN r.valor ELSE 0 END), 0)
+		FROM lancamentos r JOIN lancamentos d ON r.reembolso_de = d.id
+		WHERE r.tipo = 'receber' AND d.grupo_id IS NOT NULL
+		GROUP BY d.grupo_id`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id, recebido, pendente int64
+		if err := rows.Scan(&id, &recebido, &pendente); err != nil {
+			rows.Close()
+			return err
+		}
+		if b := porGrupo[id]; b != nil {
+			b.recebido, b.aReceber = recebido, pendente
+		}
+	}
+	if err := encerraRows(rows); err != nil {
+		return err
+	}
+
+	w := novaTabela()
+	fmt.Fprintln(w, "GRUPO\tSUA PARTE\tJÁ VOLTOU\tAINDA DEVEM\tRETORNO\t")
+	var totDevem int64
+	for _, id := range ordem {
+		b := porGrupo[id]
+		totDevem += b.aReceber
+		adiantado := b.recebido + b.aReceber
+		retorno, barra := "-", ""
+		if adiantado > 0 {
+			rp := pct(b.recebido, adiantado)
+			retorno = fmt.Sprintf("%.0f%%", rp)
+			barra = barraFinaCor(b.recebido, adiantado, 14, corFaixaCumprimento(rp))
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", b.nome, money.Format(b.minha),
+			money.Format(b.recebido), money.Format(b.aReceber), retorno, barra)
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	fmt.Println()
+	if totDevem > 0 {
+		fmt.Printf("No total, ainda têm %s para voltar dos reembolsos em aberto.\n", money.Format(totDevem))
+		fmt.Println("(receba com: prisma quitar <id> — os reembolsos são lançamentos \"receber\")")
+	} else {
+		fmt.Println("👍 Nenhum reembolso em aberto: a divisão de contas está em dia.")
+	}
+	fmt.Println("\n(despesas divididas sem \"recebe pagamento\" não geram reembolso: cada um paga")
+	fmt.Println(" a sua parte direto, e aqui conta só a sua)")
+	return nil
+}
+
+// AnalyticsMelhorDiaCartao (RF16) mostra, por cartão, quantos dias de prazo uma
+// compra HOJE ganha até o vencimento da fatura e qual o melhor dia do ciclo
+// (logo após o fechamento) com o prazo máximo. Puramente determinístico: só usa
+// o ciclo de cada cartão (faturaDe), sem histórico.
+func AnalyticsMelhorDiaCartao(conn *sql.DB) error {
+	rows, err := conn.Query(`SELECT nome, dia_fechamento, dia_vencimento FROM cartoes ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	fmt.Println("MELHOR DIA DE COMPRA — Prazo do Cartão")
+	fmt.Println("(comprando logo após o fechamento, a compra só vence na fatura seguinte)")
+	fmt.Println()
+	agora := time.Now()
+	hoje := time.Date(agora.Year(), agora.Month(), agora.Day(), 0, 0, 0, 0, time.UTC)
+
+	w := novaTabela()
+	fmt.Fprintln(w, "CARTÃO\tCOMPRANDO HOJE\tMELHOR JANELA\t")
+	achou := false
+	var melhorNome string
+	var melhorHoje int
+	for rows.Next() {
+		achou = true
+		var nome string
+		var fech, venc int
+		if err := rows.Scan(&nome, &fech, &venc); err != nil {
+			return err
+		}
+		prazoHoje := prazoCompra(fech, venc, hoje)
+		// varre o ciclo à frente atrás do dia com o prazo máximo
+		melhorDia, melhorPrazo := hoje, prazoHoje
+		for d := 1; d <= 31; d++ {
+			dia := hoje.AddDate(0, 0, d)
+			if p := prazoCompra(fech, venc, dia); p > melhorPrazo {
+				melhorDia, melhorPrazo = dia, p
+			}
+		}
+		janela := "hoje é o melhor dia ✓"
+		if !melhorDia.Equal(hoje) {
+			janela = fmt.Sprintf("a partir de %s (%d dias)", melhorDia.Format("02/01"), melhorPrazo)
+		}
+		fmt.Fprintf(w, "%s\t%d dias (vence %s)\t%s\t%s\n", nome, prazoHoje,
+			dataBR(vencimentoCompra(fech, venc, hoje)), janela,
+			barraFinaCor(int64(prazoHoje), int64(melhorPrazo), 14, cCiano))
+		if prazoHoje > melhorHoje {
+			melhorNome, melhorHoje = nome, prazoHoje
+		}
+	}
+	if !achou {
+		fmt.Println("Nenhum cartão cadastrado.")
+		return nil
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	if melhorNome != "" {
+		fmt.Printf("\nPara comprar hoje, o maior fôlego é no %s: %d dias até pagar.\n", melhorNome, melhorHoje)
+	}
+	return rows.Err()
+}
+
+// prazoCompra devolve os dias entre uma compra e o vencimento da fatura em que
+// ela cai, pelo ciclo do cartão.
+func prazoCompra(fech, venc int, compra time.Time) int {
+	_, vencFat := faturaDe(fech, venc, compra)
+	v, err := parseDataT(vencFat)
+	if err != nil {
+		return 0
+	}
+	return int(v.Sub(compra).Hours() / 24)
+}
+
+// vencimentoCompra é o vencimento (AAAA-MM-DD) da fatura de uma compra na data dada.
+func vencimentoCompra(fech, venc int, compra time.Time) string {
+	_, vencFat := faturaDe(fech, venc, compra)
+	return vencFat
+}

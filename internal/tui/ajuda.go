@@ -282,10 +282,15 @@ AS ANÁLISES
                   constância do fluxo mês a mês.
   Modo Economia   Categorias com gasto fora do padrão neste mês, comparando
                   com a média e o desvio dos meses anteriores.
+  Tendências      Categorias cujo gasto sobe (ou cai) de forma consistente mês
+                  a mês — o vazamento lento que a anomalia pontual não pega.
   Sazonalidade    Meses do ano historicamente mais caros e aviso quando um
                   deles está chegando (precisa de mais de um ano de histórico).
   Runway          Projeção do saldo em 30/90/180 dias, o ritmo de queima e,
                   se o fluxo é negativo, quantos meses até o saldo zerar.
+  Renda           Dos próximos meses, quanto da renda esperada já está tomado
+   Comprometida   por parcelas, contas agendadas e recorrências — a régua para
+                  saber se cabe parcelar algo novo.
   Metas (m)       Informe um valor e um prazo: calcula a parcela mensal, vê se
                   cabe no seu superávit e, se não couber, sugere onde cortar.
   Assinaturas     Despesas de mesmo valor repetidas em vários meses que não
@@ -298,10 +303,16 @@ AS ANÁLISES
                   passado.
   Regra 50/30/20  Quanto da renda vai para necessidades, desejos e poupança,
                   frente ao padrão ideal de 50/30/20.
+  Aderência       Dos planos mensais já encerrados (prisma plano add), quantos
+   a Planos       foram respeitados por categoria e quem mais estoura.
   Patrimônio      Ativos (contas + carteiras) menos dívidas, e a evolução do
    Líquido        patrimônio mês a mês.
+  Balanço dos     Por grupo: a sua parte, os reembolsos que você adiantou,
+   Grupos         quanto já voltou e quanto ainda devem.
   Eficiência      Consumo das contas de utilidade da casa (luz, água, gás,
                   internet), a fatia da renda e os picos.
+  Melhor Dia      Por cartão, o prazo até pagar uma compra feita hoje e o dia
+   de Compra      do ciclo (pós-fechamento) que dá o prazo máximo.
 
 DICA
   Os recortes (o que é "necessidade", "utilidade" ou "conta básica") saem do

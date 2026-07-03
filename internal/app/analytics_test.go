@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"prisma/internal/db"
+	"prisma/internal/money"
 )
 
 // TestAnalyticsSomenteLeitura garante o isolamento de dados (RNF01): a conexão
@@ -64,6 +65,96 @@ func TestAnalyticsFuncoes(t *testing.T) {
 	silencia(t, func() error { return AnalyticsMetas(conn, []string{"50.000,00", "24"}) })  // com meta
 	silencia(t, func() error { return AnalyticsSimulador(conn, nil) })                      // sem args
 	silencia(t, func() error { return AnalyticsSimulador(conn, []string{"2.000,00", ""}) }) // perda de renda
+}
+
+// TestAnalyticsNovasFuncoes confere que as análises RF12–RF16 rodam sem erro
+// sobre um banco com dados mínimos (e vazio de planos/grupos/cartões).
+func TestAnalyticsNovasFuncoes(t *testing.T) {
+	conn := abreDB(t)
+	silencia(t, func() error {
+		return NovoLancamento(conn, "receber", []string{"add", "--desc", "Salario", "--valor", "5000", "--quitado"})
+	})
+	silencia(t, func() error { return AnalyticsComprometimento(conn) })
+	silencia(t, func() error { return AnalyticsAderenciaPlanos(conn) })
+	silencia(t, func() error { return AnalyticsTendencias(conn) })
+	silencia(t, func() error { return AnalyticsGrupos(conn) })
+	silencia(t, func() error { return AnalyticsMelhorDiaCartao(conn) })
+}
+
+// TestRetaSlope confere a inclinação da regressão das Tendências.
+func TestRetaSlope(t *testing.T) {
+	// série perfeitamente linear: +100/mês
+	if slope, media := retaSlope([]int64{100, 200, 300, 400}); slope != 100 || media != 250 {
+		t.Errorf("retaSlope(linear) = (%.1f, %.1f), queria (100, 250)", slope, media)
+	}
+	// série constante: inclinação zero
+	if slope, _ := retaSlope([]int64{500, 500, 500}); slope != 0 {
+		t.Errorf("retaSlope(constante) = %.1f, queria 0", slope)
+	}
+	// um ponto só: sem inclinação definida (den == 0)
+	if slope, media := retaSlope([]int64{700}); slope != 0 || media != 700 {
+		t.Errorf("retaSlope(1 ponto) = (%.1f, %.1f), queria (0, 700)", slope, media)
+	}
+}
+
+// TestPrazoCompra confere o prazo compra→vencimento pelo ciclo do cartão:
+// comprar depois do fechamento empurra a compra para a fatura seguinte.
+func TestPrazoCompra(t *testing.T) {
+	// fecha dia 20, vence dia 27: compra em 10/06 cai na fatura de 27/06 (17
+	// dias); compra em 21/06 (pós-fechamento) só vence em 27/07 (36 dias)
+	antes := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	depois := time.Date(2026, 6, 21, 0, 0, 0, 0, time.UTC)
+	if p := prazoCompra(20, 27, antes); p != 17 {
+		t.Errorf("prazo antes do fechamento = %d, queria 17", p)
+	}
+	if p := prazoCompra(20, 27, depois); p != 36 {
+		t.Errorf("prazo após o fechamento = %d, queria 36", p)
+	}
+}
+
+// TestAderenciaPlanos monta dois planos mensais já encerrados — um cumprido,
+// um estourado — e confere o placar.
+func TestAderenciaPlanos(t *testing.T) {
+	conn := abreDB(t)
+	agora := time.Now()
+	base := time.Date(agora.Year(), agora.Month(), 1, 0, 0, 0, 0, time.UTC)
+	mesPassado := base.AddDate(0, -1, 0)
+	ref := mesPassado.Format("2006-01")
+	venc := mesPassado.AddDate(0, 0, 9).Format("02/01/2006") // dia 10 do mês passado
+
+	for _, ins := range [][]string{
+		{"mercado", "500,00"},
+		{"lazer", "100,00"},
+	} {
+		if _, err := conn.Exec(`INSERT INTO planejamentos (categoria, limite, periodo, ref)
+			VALUES (?, ?, 'mes', ?)`, ins[0], mustParse(t, ins[1]), ref); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// mercado gasta 400 (cumpre); lazer gasta 250 (estoura 150%)
+	silencia(t, func() error {
+		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "Compras", "--valor", "400,00", "--cat", "mercado", "--venc", venc, "--quitado"})
+	})
+	silencia(t, func() error {
+		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "Passeio", "--valor", "250,00", "--cat", "lazer", "--venc", venc, "--quitado"})
+	})
+
+	out := capturaSaida(t, func() error { return AnalyticsAderenciaPlanos(conn) })
+	if !strings.Contains(out, "mercado") || !strings.Contains(out, "1 de 1") {
+		t.Errorf("esperava mercado com 1 de 1 cumprido:\n%s", out)
+	}
+	if !strings.Contains(out, "+150%") {
+		t.Errorf("esperava estouro médio de +150%% no lazer:\n%s", out)
+	}
+}
+
+func mustParse(t *testing.T, s string) int64 {
+	t.Helper()
+	v, err := money.Parse(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }
 
 // TestContemAlgumaPalavraInteira garante o casamento por palavra inteira das

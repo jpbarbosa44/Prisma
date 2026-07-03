@@ -23,8 +23,10 @@ func novasTelasAnalytics(conn *sql.DB) []tela {
 	return []tela{
 		vis("Health Score", "saúde financeira 0–100", func() error { return app.AnalyticsHealthScore(conn) }),
 		vis("Modo Economia", "anomalias de gasto", func() error { return app.AnalyticsAnomalias(conn) }),
+		vis("Tendências", "vazamentos lentos", func() error { return app.AnalyticsTendencias(conn) }),
 		vis("Sazonalidade", "picos anuais", func() error { return app.AnalyticsSazonalidade(conn) }),
 		vis("Runway", "projeção de caixa", func() error { return app.AnalyticsRunway(conn) }),
+		vis("Renda Comprometida", "parcelas e agendados", func() error { return app.AnalyticsComprometimento(conn) }),
 		{
 			titulo: "Metas",
 			resumo: "viabilidade de metas",
@@ -58,8 +60,11 @@ func novasTelasAnalytics(conn *sql.DB) []tela {
 		},
 		vis("Inflação Pessoal", "custo de vida", func() error { return app.AnalyticsInflacao(conn) }),
 		vis("Regra 50/30/20", "auditoria macro", func() error { return app.AnalyticsRegra502030(conn) }),
+		vis("Aderência a Planos", "planejado x realizado", func() error { return app.AnalyticsAderenciaPlanos(conn) }),
 		vis("Patrimônio Líquido", "net worth", func() error { return app.AnalyticsPatrimonio(conn) }),
+		vis("Balanço dos Grupos", "divisão de contas", func() error { return app.AnalyticsGrupos(conn) }),
 		vis("Eficiência", "contas da casa", func() error { return app.AnalyticsUtilidades(conn) }),
+		vis("Melhor Dia de Compra", "prazo dos cartões", func() error { return app.AnalyticsMelhorDiaCartao(conn) }),
 		{
 			titulo:   "Como usar",
 			resumo:   "documentação do módulo",
