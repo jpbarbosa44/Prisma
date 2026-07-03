@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/guptarohit/asciigraph"
 
@@ -30,6 +32,12 @@ func AnalyticsHealthScore(conn *sql.DB) error {
 	recs, desps, err := estatMensal(conn, inicio, hoje, refs)
 	if err != nil {
 		return err
+	}
+	// a janela útil começa no primeiro mês com movimento: contar os meses de
+	// antes do uso do app como "gasto zero" subestimaria a despesa média (e
+	// inflaria o fundo de emergência) para quem tem pouco histórico
+	if ini := primeiroComDado(recs, desps); ini > 0 && ini < len(refs) {
+		recs, desps, refs = recs[ini:], desps[ini:], refs[ini:]
 	}
 	totRec, totDesp := somaInt(recs), somaInt(desps)
 	meses := int64(len(refs))
@@ -164,13 +172,18 @@ func AnalyticsRunway(conn *sql.DB) error {
 // mesmo valor que se repetem em vários meses e ainda não vêm de uma recorrência
 // cadastrada — prováveis assinaturas. Exibe o impacto anual de cada uma.
 func AnalyticsAssinaturasOcultas(conn *sql.DB) error {
+	// só ocorrências já vencidas: um `--repetir 12` cria meses futuros idênticos
+	// de uma vez e seria flagrado no dia do cadastro — o que o usuário acabou de
+	// lançar de propósito não é uma assinatura "oculta". O valor usa valEf, como
+	// o resto do sistema: numa despesa de grupo, o impacto é o da SUA parte.
+	hoje := time.Now().Format("2006-01-02")
 	rows, err := conn.Query(`
-		SELECT descricao, valor, COUNT(DISTINCT substr(vencimento,1,7)) AS meses
+		SELECT descricao, `+valEf("lancamentos")+` AS v, COUNT(DISTINCT substr(vencimento,1,7)) AS meses
 		FROM lancamentos
-		WHERE tipo = 'pagar' AND recorrencia_id IS NULL
-		GROUP BY lower(descricao), valor
+		WHERE tipo = 'pagar' AND recorrencia_id IS NULL AND vencimento <= ?
+		GROUP BY lower(descricao), v
 		HAVING meses >= 3
-		ORDER BY valor * meses DESC`)
+		ORDER BY v * meses DESC`, hoje)
 	if err != nil {
 		return err
 	}
@@ -208,6 +221,27 @@ func AnalyticsAssinaturasOcultas(conn *sql.DB) error {
 }
 
 // --- helpers de visualização e estatística ---
+
+// primeiroComDado devolve o índice do primeiro mês com algum movimento nas
+// séries (receita ou despesa). Meses anteriores são de antes do uso do app e
+// não devem entrar nas médias como zero. Sem movimento algum, devolve 0 (a
+// janela inteira fica como está).
+func primeiroComDado(recs, desps []int64) int {
+	for i := range recs {
+		if recs[i] != 0 || desps[i] != 0 {
+			return i
+		}
+	}
+	return 0
+}
+
+// encerraRows fecha o cursor e devolve o erro de iteração pendente, para os
+// loops que não usam defer não engolirem um resultado truncado.
+func encerraRows(rows *sql.Rows) error {
+	err := rows.Err()
+	rows.Close()
+	return err
+}
 
 // clamp01 prende x ao intervalo [0,1].
 func clamp01(x float64) float64 {
@@ -314,11 +348,18 @@ var (
 		"agua", "água", "condominio", "condomínio"}
 )
 
+// contemAlguma diz se alguma PALAVRA da categoria é exatamente uma das chaves.
+// O casamento é por palavra inteira, não por substring: "gasolina" e "gastos"
+// não podem casar a chave "gas" (senão combustível viraria conta da casa).
 func contemAlguma(cat string, chaves []string) bool {
-	c := strings.ToLower(cat)
-	for _, k := range chaves {
-		if strings.Contains(c, k) {
-			return true
+	palavras := strings.FieldsFunc(strings.ToLower(cat), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for _, p := range palavras {
+		for _, k := range chaves {
+			if p == k {
+				return true
+			}
 		}
 	}
 	return false
@@ -327,14 +368,31 @@ func contemAlguma(cat string, chaves []string) bool {
 // ehNecessidade diz se a categoria é um gasto essencial (vs. estilo de vida).
 func ehNecessidade(cat string) bool { return contemAlguma(cat, catsNecessidade) }
 
-// likeCategorias monta um filtro SQL "lower(categoria) LIKE '%k%' OR ..." a
-// partir de chaves CONSTANTES (sem entrada do usuário, sem risco de injeção).
-func likeCategorias(chaves []string) string {
-	partes := make([]string, len(chaves))
-	for i, k := range chaves {
-		partes[i] = "lower(categoria) LIKE '%" + k + "%'"
+// somaPorCategoriaFiltrada soma as despesas quitadas do período cujas categorias
+// casam as chaves. O agrupamento vem do SQL, mas o casamento fica no Go
+// (contemAlguma), a única fonte da regra de palavra inteira.
+func somaPorCategoriaFiltrada(conn *sql.DB, ini, fim string, chaves []string) (int64, error) {
+	rows, err := conn.Query(`
+		SELECT categoria, SUM(`+valEf("lancamentos")+`) FROM lancamentos
+		WHERE tipo='pagar' AND status='quitado'
+		  AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
+		GROUP BY categoria`, ini, fim)
+	if err != nil {
+		return 0, err
 	}
-	return "(" + strings.Join(partes, " OR ") + ")"
+	defer rows.Close()
+	var total int64
+	for rows.Next() {
+		var cat string
+		var v int64
+		if err := rows.Scan(&cat, &v); err != nil {
+			return 0, err
+		}
+		if contemAlguma(cat, chaves) {
+			total += v
+		}
+	}
+	return total, rows.Err()
 }
 
 func pct(parte, total int64) float64 {
@@ -425,9 +483,8 @@ func AnalyticsPatrimonio(conn *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	var dividas int64
-	if err := conn.QueryRow(
-		`SELECT COALESCE(SUM(valor_total),0) FROM emergencias WHERE status='ativa'`).Scan(&dividas); err != nil {
+	dividas, err := dividasEstimadas(conn)
+	if err != nil {
 		return err
 	}
 	liquido := ativos - dividas
@@ -435,7 +492,7 @@ func AnalyticsPatrimonio(conn *sql.DB) error {
 	fmt.Println("PATRIMÔNIO LÍQUIDO — Net Worth")
 	fmt.Println()
 	fmt.Printf("  Ativos (contas + carteiras):  %s\n", money.Format(ativos))
-	fmt.Printf("  Dívidas (emergências ativas): %s\n", money.Format(dividas))
+	fmt.Printf("  Dívidas (emergências ativas): %s  (saldo devedor estimado)\n", money.Format(dividas))
 	fmt.Printf("  Patrimônio líquido:           %s\n\n", money.Format(liquido))
 
 	saldos, err := SaldoMensal(conn, 12)
@@ -454,21 +511,65 @@ func AnalyticsPatrimonio(conn *sql.DB) error {
 	}
 	fmt.Println(graficoLinha([][]float64{reaisSerie(serie)}, 9,
 		[]asciigraph.AnsiColor{asciigraph.Green}, nil, capP))
-	fmt.Println("\n(o histórico de dívidas não é rastreado; aplica-se a dívida atual como referência)")
+	fmt.Println("\n(dívida estimada pelo plano de aportes de cada emergência desde o cadastro;")
+	fmt.Println(" na evolução, a dívida de hoje é aplicada a todos os meses como referência)")
 	return nil
+}
+
+// dividasEstimadas soma o saldo devedor atual estimado das emergências ativas:
+// projeta o plano de cada uma (simulaPlano) e toma o saldo após os meses
+// decorridos desde o cadastro — melhor aproximação que o valor_total original,
+// que ignora tudo o que já foi amortizado.
+func dividasEstimadas(conn *sql.DB) (int64, error) {
+	rows, err := conn.Query(`
+		SELECT valor_total, juros_mes, aporte_mensal, criada_em
+		FROM emergencias WHERE status='ativa'`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	agora := time.Now()
+	var total int64
+	for rows.Next() {
+		var valor, aporte int64
+		var juros float64
+		var criada string
+		if err := rows.Scan(&valor, &juros, &aporte, &criada); err != nil {
+			return 0, err
+		}
+		total += saldoDevedorEstimado(valor, juros, aporte, criada, agora)
+	}
+	return total, rows.Err()
+}
+
+// saldoDevedorEstimado devolve o saldo da dívida após os meses-calendário
+// decorridos entre o cadastro e hoje, seguindo o plano de aportes. Cadastro no
+// mês corrente (ou data inválida) devolve o valor cheio; dívida já percorrida
+// além do plano devolve o saldo final (0 se quitável).
+func saldoDevedorEstimado(valor int64, jurosPct float64, aporte int64, criadaEm string, hoje time.Time) int64 {
+	de, err := parseDataT(criadaEm)
+	if err != nil {
+		return valor
+	}
+	meses := (hoje.Year()-de.Year())*12 + int(hoje.Month()) - int(de.Month())
+	if meses <= 0 {
+		return valor
+	}
+	plano := simulaPlano(valor, jurosPct, aporte)
+	if len(plano) == 0 {
+		return valor
+	}
+	if meses > len(plano) {
+		meses = len(plano)
+	}
+	return plano[meses-1].saldoFinal
 }
 
 // AnalyticsInflacao (RF08) calcula a inflação pessoal: compara o gasto com contas
 // básicas no trimestre atual com o mesmo trimestre do ano anterior.
 func AnalyticsInflacao(conn *sql.DB) error {
 	soma := func(ini, fim string) (int64, error) {
-		var s int64
-		err := conn.QueryRow(`
-			SELECT COALESCE(SUM(`+valEf("lancamentos")+`),0) FROM lancamentos
-			WHERE tipo='pagar' AND status='quitado'
-			  AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
-			  AND `+likeCategorias(catsBasica), ini, fim).Scan(&s)
-		return s, err
+		return somaPorCategoriaFiltrada(conn, ini, fim, catsBasica)
 	}
 	agora := time.Now()
 	aIni, aFim := agora.AddDate(0, -3, 0).Format("2006-01-02"), agora.Format("2006-01-02")
@@ -509,25 +610,28 @@ func AnalyticsUtilidades(conn *sql.DB) error {
 	inicio, hoje, refs := janelaMeses(analyticsJanela)
 	porMes := map[string]int64{}
 	rows, err := conn.Query(`
-		SELECT substr(COALESCE(data_compra, quitado_em),1,7) AS mes, SUM(`+valEf("lancamentos")+`)
+		SELECT substr(COALESCE(data_compra, quitado_em),1,7) AS mes, categoria, SUM(`+valEf("lancamentos")+`)
 		FROM lancamentos WHERE tipo='pagar' AND status='quitado'
 		  AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
-		  AND `+likeCategorias(catsUtilidade)+`
-		GROUP BY mes`, inicio, hoje)
+		GROUP BY mes, categoria`, inicio, hoje)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
-		var m string
+		var m, cat string
 		var v int64
-		if err := rows.Scan(&m, &v); err != nil {
+		if err := rows.Scan(&m, &cat, &v); err != nil {
 			rows.Close()
 			return err
 		}
-		porMes[m] = v
+		if contemAlguma(cat, catsUtilidade) {
+			porMes[m] += v
+		}
 	}
-	rows.Close()
-	recs, _, err := estatMensal(conn, inicio, hoje, refs)
+	if err := encerraRows(rows); err != nil {
+		return err
+	}
+	recs, desps, err := estatMensal(conn, inicio, hoje, refs)
 	if err != nil {
 		return err
 	}
@@ -552,14 +656,17 @@ func AnalyticsUtilidades(conn *sql.DB) error {
 	if len(serie) >= 2 {
 		fmt.Printf("\nTendência (%s a %s): %s\n", mesBR(refs[0]), mesBR(refs[len(refs)-1]), pintar(cCiano, sparkline(serie)))
 	}
-	// detecção de pico: mês corrente x média dos anteriores
-	if len(serie) >= 2 {
+	// detecção de pico: mês corrente x média dos anteriores. Meses antes do
+	// primeiro movimento registrado ficam de fora — não são "gasto zero", são
+	// meses em que o app ainda não era usado, e contá-los derrubaria a média.
+	ini := primeiroComDado(recs, desps)
+	if len(serie) >= 2 && ini < len(serie)-1 {
 		atual := serie[len(serie)-1]
 		var soma int64
-		for _, v := range serie[:len(serie)-1] {
+		for _, v := range serie[ini : len(serie)-1] {
 			soma += v
 		}
-		media := soma / int64(len(serie)-1)
+		media := soma / int64(len(serie)-1-ini)
 		fmt.Println()
 		if media > 0 && atual > media*125/100 {
 			fmt.Printf("⚠ Pico: as utilidades deste mês estão %.0f%% acima da média dos meses anteriores.\n",
@@ -601,10 +708,34 @@ func AnalyticsAnomalias(conn *sql.DB) error {
 		}
 		porCat[cat][mes] = v
 	}
-	rows.Close()
+	if err := encerraRows(rows); err != nil {
+		return err
+	}
+
+	// a base de comparação começa no primeiro mês com qualquer gasto: os meses
+	// de antes do uso do app não são "gasto zero" e derrubariam a média,
+	// gerando falsos positivos para quem tem pouco histórico
+	primeiro := atual
+	for _, serie := range porCat {
+		for mes := range serie {
+			if mes < primeiro {
+				primeiro = mes
+			}
+		}
+	}
+	base := anteriores[:0:0]
+	for _, m := range anteriores {
+		if m >= primeiro {
+			base = append(base, m)
+		}
+	}
 
 	fmt.Println("MODO ECONOMIA — Detecção de Anomalias")
-	fmt.Printf("(mês corrente %s x média dos %d meses anteriores)\n\n", mesBR(atual), len(anteriores))
+	fmt.Printf("(mês corrente %s x média dos %d meses anteriores)\n\n", mesBR(atual), len(base))
+	if len(base) == 0 {
+		fmt.Println("Sem meses anteriores com gastos para servir de base de comparação.")
+		return nil
+	}
 
 	var alertas []anomaliaAlerta
 	for cat, serie := range porCat {
@@ -612,21 +743,21 @@ func AnalyticsAnomalias(conn *sql.DB) error {
 		if vAtual == 0 {
 			continue
 		}
-		// média e desvio dos meses anteriores (faltantes contam como 0)
+		// média e desvio dos meses da base (faltantes contam como 0)
 		var soma float64
-		for _, m := range anteriores {
+		for _, m := range base {
 			soma += float64(serie[m])
 		}
-		media := soma / float64(len(anteriores))
+		media := soma / float64(len(base))
 		if media <= 0 {
 			continue // categoria nova: sem base de comparação
 		}
 		var varSum float64
-		for _, m := range anteriores {
+		for _, m := range base {
 			d := float64(serie[m]) - media
 			varSum += d * d
 		}
-		desvio := math.Sqrt(varSum / float64(len(anteriores)))
+		desvio := math.Sqrt(varSum / float64(len(base)))
 		// atípico: acima de 30% da média E acima de média + 1 desvio
 		if float64(vAtual) > media*1.3 && float64(vAtual) > media+desvio {
 			alertas = append(alertas, anomaliaAlerta{cat, vAtual, int64(media), pct(vAtual-int64(media), int64(media))})
@@ -636,7 +767,8 @@ func AnalyticsAnomalias(conn *sql.DB) error {
 		fmt.Println("Nenhuma anomalia: os gastos do mês seguem o padrão histórico. 👍")
 		return nil
 	}
-	sortAlertasDesc(alertas)
+	// do maior para o menor desvio
+	sort.Slice(alertas, func(i, j int) bool { return alertas[i].acima > alertas[j].acima })
 	for _, a := range alertas {
 		fmt.Printf("⚠ %s: %s neste mês — %.0f%% acima do padrão (média %s).\n",
 			a.cat, money.Format(a.atual), a.acima, money.Format(a.media))
@@ -677,7 +809,9 @@ func AnalyticsSazonalidade(conn *sql.DB) error {
 			maior = med
 		}
 	}
-	rows.Close()
+	if err := encerraRows(rows); err != nil {
+		return err
+	}
 
 	fmt.Println("SAZONALIDADE — Meses Historicamente Mais Caros")
 	fmt.Println()
@@ -716,10 +850,14 @@ func AnalyticsSazonalidade(conn *sql.DB) error {
 	}
 	fmt.Printf("\nMédia geral mensal: %s\n", money.Format(geral))
 
-	// alerta dos próximos 3 meses se forem picos sazonais
+	// alerta dos próximos 3 meses se forem picos sazonais. O AddDate parte do
+	// dia 1º: somar meses a um dia 29–31 normaliza para o mês seguinte (31/jan
+	// + 1 mês = 2/mar) e pularia/duplicaria meses no aviso.
+	agora := time.Now()
+	base1 := time.Date(agora.Year(), agora.Month(), 1, 0, 0, 0, 0, time.UTC)
 	var avisos []string
 	for i := 1; i <= 3; i++ {
-		prox := int(time.Now().AddDate(0, i, 0).Month())
+		prox := int(base1.AddDate(0, i, 0).Month())
 		if med, ok := medias[prox]; ok && med > geral*115/100 {
 			avisos = append(avisos, fmt.Sprintf("%s (~%s)", nomes[prox-1], money.Format(med)))
 		}
@@ -750,7 +888,9 @@ func AnalyticsMetas(conn *sql.DB, args []string) error {
 	if err != nil || prazo < 1 {
 		return fmt.Errorf("prazo inválido: informe o número de meses")
 	}
-	parcela := valor / int64(prazo)
+	// teto da divisão: guardar "pelo menos" a parcela; truncar deixaria a soma
+	// das parcelas abaixo da meta
+	parcela := (valor + int64(prazo) - 1) / int64(prazo)
 	mediaRec, mediaDesp, err := mediasHistoricas(conn)
 	if err != nil {
 		return err
@@ -795,7 +935,7 @@ func AnalyticsMetas(conn *sql.DB, args []string) error {
 		fmt.Println("  (sem categorias variáveis relevantes; considere aumentar a renda ou o prazo)")
 	}
 	if superavit > 0 {
-		fmt.Printf("\nNo superávit atual, a meta levaria ~%d meses.\n", int(valor/superavit)+1)
+		fmt.Printf("\nNo superávit atual, a meta levaria ~%d meses.\n", (valor+superavit-1)/superavit)
 	}
 	return nil
 }
@@ -867,13 +1007,4 @@ type anomaliaAlerta struct {
 	cat          string
 	atual, media int64
 	acima        float64 // % acima da média histórica
-}
-
-// sortAlertasDesc ordena os alertas de anomalia do maior para o menor desvio.
-func sortAlertasDesc(a []anomaliaAlerta) {
-	for i := 1; i < len(a); i++ {
-		for j := i; j > 0 && a[j].acima > a[j-1].acima; j-- {
-			a[j], a[j-1] = a[j-1], a[j]
-		}
-	}
 }
