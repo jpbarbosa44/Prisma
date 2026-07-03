@@ -340,6 +340,13 @@ func GraficoCategorias(conn *sql.DB, meses int) error {
 		fmt.Println("  (sem despesas quitadas no período)")
 		return nil
 	}
+	return imprimeCategorias(cats)
+}
+
+// imprimeCategorias desenha a composição (barra 100% empilhada + legenda) e o
+// ranking por categoria com barra proporcional. Espera as partes já ordenadas
+// (maior primeiro) — compartilhado pelo gráfico de categorias e pela fatura.
+func imprimeCategorias(cats []ParRotulo) error {
 	var maior, total int64
 	for _, c := range cats {
 		total += c.Valor

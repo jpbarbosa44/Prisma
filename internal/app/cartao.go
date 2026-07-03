@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -342,7 +343,7 @@ func faturaVer(conn *sql.DB, args []string) error {
 		filtro = " AND status = 'pendente'"
 	}
 	rows, err := conn.Query(`
-		SELECT id, descricao, COALESCE(data_compra, ''), `+valEf("lancamentos")+`, vencimento, status
+		SELECT id, descricao, COALESCE(data_compra, ''), `+valEf("lancamentos")+`, vencimento, status, categoria
 		FROM lancamentos
 		WHERE cartao_id = ? AND substr(vencimento,1,7) = ?`+filtro+`
 		ORDER BY COALESCE(data_compra, vencimento), id`, *cartaoID, *ref)
@@ -355,16 +356,18 @@ func faturaVer(conn *sql.DB, args []string) error {
 	fmt.Fprintln(w, "ID\tCOMPRA\tDESCRIÇÃO\tVALOR\tSTATUS")
 	var total, aberto int64
 	var vencFat string
+	porCat := map[string]int64{}
 	achou, todosQuitados := false, true
 	for rows.Next() {
 		achou = true
 		var id, valor int64
-		var desc, compra, vencimento, status string
-		if err := rows.Scan(&id, &desc, &compra, &valor, &vencimento, &status); err != nil {
+		var desc, compra, vencimento, status, categoria string
+		if err := rows.Scan(&id, &desc, &compra, &valor, &vencimento, &status, &categoria); err != nil {
 			return err
 		}
 		vencFat = vencimento
 		total += valor
+		porCat[categoria] += valor
 		quando := "-"
 		if compra != "" {
 			quando = dataBR(compra)
@@ -392,6 +395,24 @@ func faturaVer(conn *sql.DB, args []string) error {
 	} else {
 		fmt.Printf("Em aberto: %s — pague com: prisma fatura pagar --cartao %d --ref %s\n",
 			money.Format(aberto), *cartaoID, *ref)
+	}
+	// gastos por categoria da fatura, no mesmo desenho de `prisma graficos`;
+	// com uma categoria só o gráfico não diz nada além do total, então sai.
+	if len(porCat) > 1 {
+		cats := make([]ParRotulo, 0, len(porCat))
+		for rotulo, v := range porCat {
+			cats = append(cats, ParRotulo{Rotulo: rotulo, Valor: v})
+		}
+		sort.Slice(cats, func(i, j int) bool {
+			if cats[i].Valor != cats[j].Valor {
+				return cats[i].Valor > cats[j].Valor
+			}
+			return cats[i].Rotulo < cats[j].Rotulo
+		})
+		fmt.Println("\nGASTOS POR CATEGORIA")
+		if err := imprimeCategorias(cats); err != nil {
+			return err
+		}
 	}
 	return nil
 }
