@@ -7,6 +7,47 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.2.0] - 2026-07-03
+
+### Adicionado
+- **Gastos por categoria na fatura do cartão.** `prisma fatura` (e a tela de
+  fatura na TUI e na web) agora encerra com a composição da fatura por
+  categoria: barra 100% empilhada com legenda e ranking com barras, no mesmo
+  desenho de `prisma graficos`.
+- **Cinco análises novas no Analytics:**
+  - **Renda Comprometida** — quanto da renda esperada de cada um dos próximos
+    6 meses já está tomado por parcelas, contas agendadas e recorrências — a
+    régua para decidir se cabe parcelar algo novo.
+  - **Aderência a Planos** — dos planos mensais já encerrados, quantos foram
+    respeitados por categoria e o tamanho médio do estouro.
+  - **Tendências** — categorias cujo gasto sobe (ou cai) de forma consistente
+    mês a mês, com a projeção anual do maior vazamento.
+  - **Balanço dos Grupos** — por grupo: a sua parte, os reembolsos que você
+    adiantou, quanto já voltou e quanto ainda devem.
+  - **Melhor Dia de Compra** — por cartão, o prazo até pagar uma compra feita
+    hoje e o dia do ciclo (pós-fechamento) com o prazo máximo.
+
+### Corrigido
+- **Categorias casam por palavra inteira nas análises.** "gasolina" e "gastos
+  gerais" não entram mais como conta da casa por conterem "gas"; o recorte por
+  nome de categoria ficou mais certeiro em Utilidades, Inflação e 50/30/20.
+- **Assinaturas Ocultas conta só o passado e a sua parte.** Lançamentos
+  futuros (ex.: `--repetir 12` recém-criado) não são mais flagrados como
+  assinatura, e despesas de grupo usam a sua parte (valEf), como o resto do
+  sistema.
+- **Médias sem os meses de antes do app.** Health Score, Modo Economia e
+  Eficiência deixam de contar como "gasto zero" os meses anteriores ao
+  primeiro lançamento — menos falsos positivos e fundo de emergência sem
+  inflar para quem tem pouco histórico.
+- **Sazonalidade no fim do mês.** O aviso dos próximos meses caros não pula
+  nem duplica mais um mês quando consultado nos dias 29–31.
+- **Patrimônio Líquido com saldo devedor estimado.** As dívidas das
+  emergências ativas agora descontam o que o plano de aportes já teria
+  amortizado desde o cadastro, em vez de usar sempre o valor original.
+- **Metas sem arredondamento contra você.** A parcela mensal e o prazo
+  estimado usam teto da divisão (antes podiam sair 1 mês a mais ou centavos a
+  menos).
+
 ## [1.1.1] - 2026-07-02
 
 ### Adicionado
