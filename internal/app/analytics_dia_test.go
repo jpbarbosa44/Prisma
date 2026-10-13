@@ -73,7 +73,7 @@ func TestCalcDiaApertado(t *testing.T) {
 	pendente(t, conn, "pagar", "Fatura Roxinho", 150000, "2026-05-03")
 	pendente(t, conn, "receber", "Salário", 500000, "2026-05-05")
 	pendente(t, conn, "pagar", "Conta vencida", 10000, "2026-04-28") // conta hoje
-	pendente(t, conn, "pagar", "Longe", 999999, "2026-07-30")       // fora da janela
+	pendente(t, conn, "pagar", "Longe", 999999, "2026-07-30")        // fora da janela
 
 	d, err := CalcDiaApertado(conn, Opcoes{})
 	if err != nil {
@@ -107,7 +107,7 @@ func TestCalcFormiga(t *testing.T) {
 		desc := []string{"iFood", "IFOOD ", "ifood *1234", "iFood (2/3)", "iFood"}[i]
 		gastoQuitado(t, conn, desc, "restaurante", 4000, d)
 	}
-	gastoQuitado(t, conn, "Uber", "transporte", 2000, "2026-06-01") // só 1 vez
+	gastoQuitado(t, conn, "Uber", "transporte", 2000, "2026-06-01")  // só 1 vez
 	gastoQuitado(t, conn, "TV", "eletronicos", 300000, "2026-05-01") // acima do limite
 
 	g, err := CalcFormiga(conn, Opcoes{}, 0)
