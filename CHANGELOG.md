@@ -7,7 +7,14 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.3.0] - 2026-10-13
+
 ### Adicionado
+- **`prisma mcp` — converse com o Claude sobre seus dados.** Servidor MCP
+  (stdio) somente leitura, sobre a mesma conexão `query_only` do Analytics:
+  o Claude Code/Desktop consulta saldo, lançamentos, relatório, extrato,
+  previsão, faturas, simulações, as análises do Analytics e, como último
+  recurso, `SELECT` livre. Registro: `claude mcp add prisma -- prisma mcp`.
 - **Analytics: quatro análises do dia a dia.** **Hoje** (painel de entrada
   com os alertas mais importantes de todas as análises), **Ritmo do Mês**
   (gasto até hoje x o mesmo trecho dos meses anteriores, com projeção de
@@ -26,12 +33,13 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 - **Período ajustável** (tecla `p`) em sete análises do Analytics, e
   **lançamentos por trás dos alertas** no Modo Economia, Tendências e Ritmo.
 
-### Adicionado
-- **`prisma mcp` — converse com o Claude sobre seus dados.** Servidor MCP
-  (stdio) somente leitura, sobre a mesma conexão `query_only` do Analytics:
-  o Claude Code/Desktop consulta saldo, lançamentos, relatório, extrato,
-  previsão, faturas, simulações, as análises do Analytics e, como último
-  recurso, `SELECT` livre. Registro: `claude mcp add prisma -- prisma mcp`.
+### Corrigido
+- **Go 1.26.9**: os binários passam a ser compilados com a versão que
+  corrige 15 vulnerabilidades da biblioteca padrão (net/http, crypto/tls,
+  net/url, encoding/asn1, net/textproto), usadas pelo bot, pelo
+  atualizador e pelo modo servidor.
+- Teste de estatísticas que dependia de uma data fixa e passava a falhar
+  com o passar do tempo.
 
 ## [1.2.0] - 2026-07-03
 
@@ -358,7 +366,8 @@ em uso desde a série 0.10.
 - Bot de Telegram: registra e consulta lançamentos por mensagem.
 - Primeira versão do projeto (CLI de finanças em Go + SQLite).
 
-[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v0.10.1...HEAD
+[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.2.0...v1.3.0
 [0.10.1]: https://github.com/jpbarbosa44/Prisma/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/jpbarbosa44/Prisma/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/jpbarbosa44/Prisma/compare/v0.9.0...v0.9.1

@@ -180,8 +180,9 @@ O Prisma mantém um catálogo de categorias. Categorias usadas num lançamento o
 
 ```sh
 prisma categoria add --nome mercado
-prisma categoria listar              # cada categoria + nº de lançamentos
+prisma categoria listar              # cada categoria + nº de lançamentos e classe
 prisma categoria editar 3 --nome supermercado   # renomeia e atualiza os lançamentos
+prisma categoria editar 7 --classe necessidade  # como o Analytics trata a categoria
 prisma categoria remover 5           # tira do catálogo (os lançamentos ficam)
 ```
 
@@ -327,19 +328,39 @@ As telas (navegue com `↑/↓` e `enter`, volte com `esc`):
 
 | Tela | O que mostra |
 |---|---|
+| **Hoje** | a tela de entrada: os alertas mais importantes de todas as análises, cada um apontando onde ver o detalhe |
 | **Health Score** | índice 0–100 de saúde financeira (poupança + fundo de emergência + constância do fluxo) |
-| **Modo Economia** | categorias com gasto atípico no mês (desvio padrão e médias do histórico) |
+| **Ritmo do Mês** | gasto até hoje × o mesmo trecho dos meses anteriores, projeção de fechamento e categorias que aceleraram |
+| **Dia Mais Apertado** | saldo dia a dia nos próximos 45 dias pelas contas lançadas: o dia mais justo e se fica negativo |
+| **Modo Economia** | categorias com gasto atípico no mês, com os lançamentos que causaram o pico |
+| **Tendências** | categorias cujo gasto sobe (ou cai) de forma consistente — o vazamento lento |
+| **Gastos Formiga** | pequenos gastos repetidos (delivery, café, app de transporte) e quanto somam no ano |
 | **Sazonalidade** | meses do calendário historicamente mais caros e avisos dos próximos |
 | **Runway** | projeção de saldo em 30/90/180 dias, *burn rate* e meses até zerar |
+| **Renda Comprometida** | quanto da renda dos próximos meses já tem dono (parcelas, contas agendadas, recorrências) |
 | **Metas** | viabilidade de uma meta (valor + prazo) frente ao superávit; sugere cortes |
-| **Assinaturas Ocultas** | despesas repetidas que parecem assinaturas, com impacto anual |
+| **Assinaturas Ocultas** | despesas repetidas que parecem assinaturas, com impacto anual e desde quando |
 | **Simulador** | *what-if*: perda de renda / nova despesa recalculando fluxo e runway (em memória) |
 | **Inflação Pessoal** | quanto o seu custo de vida básico subiu, ano a ano |
 | **Regra 50/30/20** | necessidades × desejos × poupança frente ao padrão ideal |
+| **Aderência a Planos** | dos planos mensais encerrados, quantos foram respeitados e quem mais estoura |
 | **Patrimônio Líquido** | ativos − dívidas e a evolução mês a mês |
+| **Balanço dos Grupos** | sua parte das despesas divididas, o que você adiantou e o que já voltou |
 | **Eficiência** | consumo das contas de utilidade (luz, água...) e picos |
+| **Melhor Dia de Compra** | por cartão, o prazo até pagar uma compra de hoje e o melhor dia do ciclo |
 
-Em **Metas** (tecla `m`) e **Simulador** (tecla `s`) você informa os parâmetros por um formulário — a análise roda só em memória, nada é gravado. O Analytics lê o **banco pessoal** (não combina com `--empresa`). Com `--web`, o mesmo painel abre no navegador (selo ANALYTICS), também só leitura. Detalhes no [MANUAL.md](MANUAL.md#analytics-prisma---analytics).
+Em **Metas** (tecla `m`), **Simulador** (tecla `s`) e **Gastos Formiga** (tecla `l`) você informa os parâmetros por um formulário, e as telas com janela de tempo aceitam o **período** em meses (tecla `p`) — tudo roda só em memória, nada é gravado. O que conta como necessidade, utilidade ou conta básica vem da **classe** de cada categoria (`prisma categoria editar <id> --classe ...`); sem classe, vale a palavra-chave no nome. O Analytics lê o **banco pessoal** (não combina com `--empresa`). Com `--web`, o mesmo painel abre no navegador (selo ANALYTICS), também só leitura. Detalhes no [MANUAL.md](MANUAL.md#analytics-prisma---analytics).
+
+## Converse com o Claude (`prisma mcp`)
+
+O Prisma fala **MCP** (Model Context Protocol): no Claude Code ou no Claude Desktop, você pergunta sobre as suas finanças em linguagem natural ("quanto gastei com mercado nos últimos 3 meses comparado à média?", "cabe parcelar uma TV de 4 mil em 10x?") e o assistente consulta os seus dados pelas mesmas funções da CLI e do Analytics.
+
+```sh
+claude mcp add prisma -- prisma mcp            # só consulta (somente leitura)
+claude mcp add prisma -- prisma mcp --escrita  # também importa extratos e cadastra
+```
+
+Com `--escrita`, aponte o CSV ou OFX do banco ("importa ~/Downloads/extrato.csv na conta Nubank") e o assistente interpreta as colunas, reaproveita ou cria categorias, separa compras de cartão de movimentos da conta e pode criar recorrências e assinaturas. Antes de gravar, ele mostra uma **prévia**; duplicados são ignorados, o banco ganha um snapshot antes da primeira gravação, e cada importação vira um lote que dá para **desfazer** inteiro. O que o assistente consulta é enviado ao provedor do modelo para gerar a resposta. Detalhes no [MANUAL.md](MANUAL.md#conversar-com-o-claude-prisma-mcp).
 
 ## Compartilhamento (vários dispositivos)
 
