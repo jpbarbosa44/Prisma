@@ -1,6 +1,8 @@
 package app
 
 import (
+	"database/sql"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -247,5 +249,98 @@ func TestAssinaturasOcultasIgnoraFuturo(t *testing.T) {
 	out = capturaSaida(t, func() error { return AnalyticsAssinaturasOcultas(conn) })
 	if !strings.Contains(out, "Streaming") {
 		t.Errorf("despesa igual em 3 meses vencidos devia ser flagrada:\n%s", out)
+	}
+}
+
+// fixaRelogio congela o "agora" das análises em data (AAAA-MM-DD) durante o teste.
+func fixaRelogio(t *testing.T, data string) {
+	t.Helper()
+	d, err := time.Parse("2006-01-02", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	antes := relogio
+	relogio = func() time.Time { return d.Add(12 * time.Hour) }
+	t.Cleanup(func() { relogio = antes })
+}
+
+// gastoQuitado insere uma despesa já quitada na data (competência = quitação).
+func gastoQuitado(t *testing.T, conn *sql.DB, desc, cat string, centavos int64, data string) {
+	t.Helper()
+	if _, err := conn.Exec(`INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em)
+		VALUES ('pagar', ?, ?, ?, ?, 'quitado', ?)`, desc, centavos, cat, data, data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCalcAnomaliasETendencias(t *testing.T) {
+	conn := abreDB(t)
+	fixaRelogio(t, "2026-03-15")
+	// restaurante estável em R$ 200 por 6 meses e R$ 600 no mês corrente;
+	// pet subindo R$ 50/mês nos meses fechados
+	for i, mes := range []string{"2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02"} {
+		gastoQuitado(t, conn, "Jantar", "restaurante", 20000, mes+"-10")
+		gastoQuitado(t, conn, "Ração", "pet", 20000+int64(i)*5000, mes+"-12")
+	}
+	gastoQuitado(t, conn, "Outback", "restaurante", 45000, "2026-03-05")
+	gastoQuitado(t, conn, "iFood", "restaurante", 15000, "2026-03-09")
+
+	a, err := CalcAnomalias(conn, Opcoes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Ref != "2026-03" || a.BaseMeses != 6 {
+		t.Errorf("Ref/BaseMeses = %s/%d", a.Ref, a.BaseMeses)
+	}
+	if len(a.Itens) != 1 || a.Itens[0].Categoria != "restaurante" || a.Itens[0].Atual != 60000 || a.Itens[0].Media != 20000 {
+		t.Fatalf("anomalias = %+v", a.Itens)
+	}
+	if ev, _ := lancamentosDoGasto(conn, "restaurante", a.Ref, a.Ref, 3); len(ev) != 2 || ev[0].Descricao != "Outback" {
+		t.Errorf("evidências = %+v", ev)
+	}
+	// com base de 2 meses, a janela muda
+	if a2, _ := CalcAnomalias(conn, Opcoes{Meses: 2}); a2.BaseMeses != 2 {
+		t.Errorf("Opcoes.Meses=2 → base %d", a2.BaseMeses)
+	}
+
+	td, err := CalcTendencias(conn, Opcoes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if td.De != "2025-09" || td.Ate != "2026-02" {
+		t.Errorf("janela das tendências = %s..%s", td.De, td.Ate)
+	}
+	if len(td.Itens) != 1 || td.Itens[0].Categoria != "pet" || math.Round(td.Itens[0].Slope) != 5000 {
+		t.Fatalf("tendências = %+v", td.Itens)
+	}
+}
+
+func TestCalcUtilidadesERegra(t *testing.T) {
+	conn := abreDB(t)
+	fixaRelogio(t, "2026-01-31")
+	for _, mes := range []string{"2025-10", "2025-11", "2025-12"} {
+		gastoQuitado(t, conn, "Luz", "luz", 10000, mes+"-05")
+	}
+	gastoQuitado(t, conn, "Luz", "luz", 20000, "2026-01-05")
+	gastoQuitado(t, conn, "Cinema", "lazer", 30000, "2026-01-20")
+	if _, err := conn.Exec(`INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em)
+		VALUES ('receber', 'Salário', 100000, 'salario', '2026-01-05', 'quitado', '2026-01-05')`); err != nil {
+		t.Fatal(err)
+	}
+
+	u, err := CalcUtilidades(conn, Opcoes{Meses: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(u.Refs) != 4 || u.Refs[3] != "2026-01" || !u.TemBase || u.Media != 10000 || u.Pico != 100 {
+		t.Fatalf("utilidades = %+v", u)
+	}
+
+	r, err := CalcRegra502030(conn, Opcoes{Meses: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Meses != 1 || r.Renda != 100000 || r.Necessidades != 20000 || r.Desejos != 30000 || r.Poupanca != 50000 {
+		t.Fatalf("50/30/20 = %+v", r)
 	}
 }

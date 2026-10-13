@@ -217,8 +217,8 @@ func saldoTotal(conn *sql.DB) (int64, error) {
 // não por 3 fixo — senão quem usa o Prisma há pouco tempo teria a média
 // subestimada (ex.: 1 mês de dados ÷ 3).
 func mediasHistoricas(conn *sql.DB) (rec, desp int64, err error) {
-	inicio := time.Now().AddDate(0, -3, 0).Format("2006-01-02")
-	hoje := time.Now().Format("2006-01-02")
+	inicio := relogio().AddDate(0, -3, 0).Format("2006-01-02")
+	hoje := relogio().Format("2006-01-02")
 	var somaRec, somaDesp int64
 	var primeiro sql.NullString
 	err = conn.QueryRow(`
@@ -264,7 +264,7 @@ func mesesDeHistorico(primeiro sql.NullString, ate string) int64 {
 // servem de fallback dentro de previstoMes quando um mês não tem nada conhecido.
 func fluxoMensalEsperado(conn *sql.DB, mediaRec, mediaDesp int64) (rec, desp int64, err error) {
 	const janela = 12
-	agora := time.Now()
+	agora := relogio()
 	var somaRec, somaDesp int64
 	for i := 1; i <= janela; i++ {
 		ref := agora.AddDate(0, i, 0).Format("2006-01")

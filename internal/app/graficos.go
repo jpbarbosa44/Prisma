@@ -49,7 +49,7 @@ type CartaoConsumo struct {
 
 // janelaMeses devolve [início do primeiro mês, hoje] cobrindo `meses` meses.
 func janelaMeses(meses int) (inicio, hoje string, refs []string) {
-	agora := time.Now()
+	agora := relogio()
 	primeiro := time.Date(agora.Year(), agora.Month(), 1, 0, 0, 0, 0, time.UTC).
 		AddDate(0, -(meses - 1), 0)
 	for i := 0; i < meses; i++ {

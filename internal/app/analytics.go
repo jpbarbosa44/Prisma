@@ -19,19 +19,130 @@ import (
 // (`prisma --analytics`). As funções abaixo só LEEM o banco (RNF01) e imprimem
 // o resultado — a TUI do módulo captura essa saída para exibir. O cálculo pesado
 // fica nas consultas SQL (RNF02), e a visualização usa barras ASCII (RNF03).
+//
+// Padrão das análises (as que ainda não o seguem migram aos poucos):
+//
+//	type X struct{...}                              // os dados, sem formatação
+//	func CalcX(conn *sql.DB, o Opcoes) (X, error)   // só consulta e conta
+//	func (x X) Imprimir()                           // só desenha (fmt + cores)
+//	func AnalyticsX(conn *sql.DB) error             // CalcX + Imprimir (TUI/web/MCP)
+//
+// Separar os dados do desenho deixa uma análise reaproveitar outra (o painel
+// Hoje junta várias), e os testes conferem valores em vez de texto.
 
 // analyticsJanela é a janela padrão de análise, em meses completos.
 const analyticsJanela = 6
+
+// Opcoes ajusta uma análise. O valor zero reproduz o padrão de cada uma.
+type Opcoes struct {
+	Meses int // janela em meses (0 = padrão da análise)
+}
+
+// meses devolve a janela pedida, ou o padrão, presa a [1, 36].
+func (o Opcoes) meses(padrao int) int {
+	m := o.Meses
+	if m <= 0 {
+		m = padrao
+	}
+	if m > 36 {
+		m = 36
+	}
+	return m
+}
+
+// relogio é o "agora" das análises e das janelas de tempo; os testes o fixam
+// para exercitar datas de borda (dia 1º, fim de mês, virada de ano).
+var relogio = time.Now
+
+// gastoPorCategoriaMes soma as despesas quitadas por categoria e mês de
+// competência (data da compra no cartão, senão a quitação), dos meses deMes a
+// ateMes (AAAA-MM, inclusive). É a régua única do gasto mensal das análises.
+func gastoPorCategoriaMes(conn *sql.DB, deMes, ateMes string) (map[string]map[string]int64, error) {
+	rows, err := conn.Query(`
+		SELECT categoria, substr(COALESCE(data_compra, quitado_em),1,7) AS mes, SUM(`+valEf("lancamentos")+`)
+		FROM lancamentos WHERE tipo='pagar' AND status='quitado'
+		  AND substr(COALESCE(data_compra, quitado_em),1,7) BETWEEN ? AND ?
+		GROUP BY categoria, mes`, deMes, ateMes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	porCat := map[string]map[string]int64{}
+	for rows.Next() {
+		var cat, mes string
+		var v int64
+		if err := rows.Scan(&cat, &mes, &v); err != nil {
+			return nil, err
+		}
+		if porCat[cat] == nil {
+			porCat[cat] = map[string]int64{}
+		}
+		porCat[cat][mes] = v
+	}
+	return porCat, rows.Err()
+}
+
+// LancamentoResumo é um lançamento citado como evidência de uma análise.
+type LancamentoResumo struct {
+	Data      string // competência, AAAA-MM-DD
+	Descricao string
+	Valor     int64 // valor efetivo (a sua parte, em grupo)
+}
+
+// lancamentosDoGasto devolve as n maiores despesas quitadas da categoria na
+// competência deMes..ateMes — os lançamentos por trás de um alerta.
+func lancamentosDoGasto(conn *sql.DB, cat, deMes, ateMes string, n int) ([]LancamentoResumo, error) {
+	rows, err := conn.Query(`
+		SELECT COALESCE(data_compra, quitado_em) AS d, descricao, `+valEf("lancamentos")+` AS v
+		FROM lancamentos WHERE tipo='pagar' AND status='quitado' AND categoria = ?
+		  AND substr(COALESCE(data_compra, quitado_em),1,7) BETWEEN ? AND ?
+		ORDER BY v DESC, d DESC LIMIT ?`, cat, deMes, ateMes, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LancamentoResumo
+	for rows.Next() {
+		var l LancamentoResumo
+		if err := rows.Scan(&l.Data, &l.Descricao, &l.Valor); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
 
 // AnalyticsHealthScore (RF01) calcula e exibe um índice 0–100 de saúde
 // financeira a partir de três pilares: a taxa de poupança média, o nível do
 // fundo de emergência (saldo ÷ despesa média mensal) e a constância do fluxo de
 // caixa livre (quanto menos o líquido mensal oscila, melhor).
 func AnalyticsHealthScore(conn *sql.DB) error {
-	inicio, hoje, refs := janelaMeses(analyticsJanela)
-	recs, desps, err := estatMensal(conn, inicio, hoje, refs)
+	h, err := CalcHealthScore(conn, Opcoes{})
 	if err != nil {
 		return err
+	}
+	h.Imprimir()
+	return nil
+}
+
+// HealthScore é o resultado do RF01.
+type HealthScore struct {
+	Meses          int     // meses efetivos da janela (a partir do primeiro com movimento)
+	Score          int     // 0–100
+	NotaPoupanca   float64 // 0–100
+	NotaFundo      float64 // 0–100
+	NotaConstancia float64 // 0–100
+	TaxaPoupanca   float64 // fração da renda que sobrou (pode ser negativa)
+	Cobertura      float64 // meses de despesa cobertos pelo saldo
+	Liquido        []int64 // receita − despesa, mês a mês
+}
+
+// CalcHealthScore calcula o RF01 sobre os últimos o.Meses meses (padrão 6).
+func CalcHealthScore(conn *sql.DB, o Opcoes) (HealthScore, error) {
+	inicio, hoje, refs := janelaMeses(o.meses(analyticsJanela))
+	recs, desps, err := estatMensal(conn, inicio, hoje, refs)
+	if err != nil {
+		return HealthScore{}, err
 	}
 	// a janela útil começa no primeiro mês com movimento: contar os meses de
 	// antes do uso do app como "gasto zero" subestimaria a despesa média (e
@@ -48,55 +159,57 @@ func AnalyticsHealthScore(conn *sql.DB) error {
 
 	saldo, err := saldoTotal(conn)
 	if err != nil {
-		return err
+		return HealthScore{}, err
 	}
 
+	h := HealthScore{Meses: len(refs)}
 	// 1) taxa de poupança: (receitas - despesas) / receitas; 20%+ = nota cheia
-	poup := 0.0
 	if totRec > 0 {
-		poup = float64(totRec-totDesp) / float64(totRec)
+		h.TaxaPoupanca = float64(totRec-totDesp) / float64(totRec)
 	}
-	nPoup := clamp01(poup/0.20) * 100
+	h.NotaPoupanca = clamp01(h.TaxaPoupanca/0.20) * 100
 
 	// 2) fundo de emergência: meses de despesa cobertos pelo saldo; 6 = cheio
-	cobertura := 0.0
 	switch {
 	case despMedia > 0:
-		cobertura = float64(saldo) / float64(despMedia)
+		h.Cobertura = float64(saldo) / float64(despMedia)
 	case saldo > 0:
-		cobertura = 6 // sem despesas no período: considera coberto
+		h.Cobertura = 6 // sem despesas no período: considera coberto
 	}
-	nFundo := clamp01(cobertura/6) * 100
+	h.NotaFundo = clamp01(h.Cobertura/6) * 100
 
 	// 3) constância do fluxo de caixa livre
-	nConst := constanciaScore(recs, desps)
+	h.NotaConstancia = constanciaScore(recs, desps)
 
-	score := int(math.Round(0.40*nPoup + 0.35*nFundo + 0.25*nConst))
-	if score > 100 {
-		score = 100
+	h.Score = int(math.Round(0.40*h.NotaPoupanca + 0.35*h.NotaFundo + 0.25*h.NotaConstancia))
+	if h.Score > 100 {
+		h.Score = 100
 	}
-	if score < 0 {
-		score = 0
+	if h.Score < 0 {
+		h.Score = 0
 	}
+	// líquido mês a mês resume a tendência por trás do score
+	h.Liquido = make([]int64, len(recs))
+	for i := range recs {
+		h.Liquido[i] = recs[i] - desps[i]
+	}
+	return h, nil
+}
 
+// Imprimir desenha o Health Score: medidor, componentes e o líquido mensal.
+func (h HealthScore) Imprimir() {
 	fmt.Println("HEALTH SCORE — Saúde Financeira")
-	fmt.Printf("(janela: últimos %d meses)\n\n", len(refs))
-	barra, regua := medidor(score, 40)
+	fmt.Printf("(janela: últimos %d meses)\n\n", h.Meses)
+	barra, regua := medidor(h.Score, 40)
 	fmt.Printf("  %s\n", barra)
-	fmt.Printf("  %s %d/100 · %s\n", regua, score, rotuloSaude(score))
+	fmt.Printf("  %s %d/100 · %s\n", regua, h.Score, rotuloSaude(h.Score))
 	fmt.Printf("   %s\n\n", reguaZonas(40))
 
 	fmt.Println("Componentes:")
-	linhaComp("Taxa de poupança", nPoup, fmt.Sprintf("%.0f%% da renda sobra", poup*100))
-	linhaComp("Fundo de emergência", nFundo, fmt.Sprintf("%.1f meses de despesa no saldo", cobertura))
-	linhaComp("Constância do fluxo", nConst, descConstancia(nConst))
-	// líquido mês a mês resume a tendência por trás do score
-	liq := make([]int64, len(recs))
-	for i := range recs {
-		liq[i] = recs[i] - desps[i]
-	}
-	fmt.Printf("\nLíquido mês a mês: %s\n", pintar(cCiano, sparkline(liq)))
-	return nil
+	linhaComp("Taxa de poupança", h.NotaPoupanca, fmt.Sprintf("%.0f%% da renda sobra", h.TaxaPoupanca*100))
+	linhaComp("Fundo de emergência", h.NotaFundo, fmt.Sprintf("%.1f meses de despesa no saldo", h.Cobertura))
+	linhaComp("Constância do fluxo", h.NotaConstancia, descConstancia(h.NotaConstancia))
+	fmt.Printf("\nLíquido mês a mês: %s\n", pintar(cCiano, sparkline(h.Liquido)))
 }
 
 // AnalyticsRunway (RF04) projeta o saldo para 30/90/180 dias, mostra o burn rate
@@ -109,115 +222,165 @@ func AnalyticsHealthScore(conn *sql.DB) error {
 // entram na conta mesmo além do horizonte de materialização, em vez de o runway
 // olhar só o passado quitado e projetar negativo sem motivo.
 func AnalyticsRunway(conn *sql.DB) error {
-	mediaRec, mediaDesp, err := mediasHistoricas(conn)
+	r, err := CalcRunway(conn, Opcoes{})
 	if err != nil {
 		return err
+	}
+	r.Imprimir()
+	return nil
+}
+
+// Runway é o resultado do RF04.
+type Runway struct {
+	Saldo      int64
+	ReceitaMes int64   // receita esperada por mês
+	DespesaMes int64   // despesa esperada por mês (burn rate)
+	Liquido    int64   // fluxo livre por mês
+	Projecao   []int64 // saldo projetado do mês 0 (hoje) ao mês 6
+	Meses      float64 // meses até zerar; 0 se o fluxo não é negativo
+}
+
+// CalcRunway calcula o RF04. Opcoes não se aplica (a base é a previsão).
+func CalcRunway(conn *sql.DB, _ Opcoes) (Runway, error) {
+	mediaRec, mediaDesp, err := mediasHistoricas(conn)
+	if err != nil {
+		return Runway{}, err
 	}
 	saldo, err := saldoTotal(conn)
 	if err != nil {
-		return err
+		return Runway{}, err
 	}
 	recMedia, despMedia, err := fluxoMensalEsperado(conn, mediaRec, mediaDesp)
 	if err != nil {
-		return err
+		return Runway{}, err
 	}
-	liquido := recMedia - despMedia
+	r := Runway{Saldo: saldo, ReceitaMes: recMedia, DespesaMes: despMedia, Liquido: recMedia - despMedia}
+	r.Projecao = make([]int64, 7)
+	for i := range r.Projecao {
+		r.Projecao[i] = saldo + int64(float64(r.Liquido)*float64(i))
+	}
+	if r.Liquido < 0 && saldo > 0 {
+		r.Meses = float64(saldo) / float64(-r.Liquido)
+	}
+	return r, nil
+}
 
+// Imprimir desenha o Runway: médias, projeção 30/90/180 dias e o gráfico.
+func (r Runway) Imprimir() {
 	fmt.Println("RUNWAY — Projeção de Fluxo de Caixa")
 	fmt.Println("(base: recorrências e contas agendadas; média histórica como complemento)")
 	fmt.Println()
-	fmt.Printf("  Saldo atual:        %s\n", money.Format(saldo))
-	fmt.Printf("  Receita média/mês:  %s\n", money.Format(recMedia))
-	fmt.Printf("  Despesa média/mês:  %s  (burn rate)\n", money.Format(despMedia))
-	fmt.Printf("  Fluxo livre/mês:    %s\n\n", money.Format(liquido))
+	fmt.Printf("  Saldo atual:        %s\n", money.Format(r.Saldo))
+	fmt.Printf("  Receita média/mês:  %s\n", money.Format(r.ReceitaMes))
+	fmt.Printf("  Despesa média/mês:  %s  (burn rate)\n", money.Format(r.DespesaMes))
+	fmt.Printf("  Fluxo livre/mês:    %s\n\n", money.Format(r.Liquido))
 
 	fmt.Println("Projeção do saldo:")
 	for _, h := range []struct {
 		dias  int
 		meses float64
 	}{{30, 1}, {90, 3}, {180, 6}} {
-		proj := saldo + int64(float64(liquido)*h.meses)
+		proj := r.Saldo + int64(float64(r.Liquido)*h.meses)
 		fmt.Printf("  em %3d dias: %s\n", h.dias, money.Format(proj))
 	}
 	fmt.Println()
 
-	// projeção mês a mês (0..6) como gráfico de linha
-	proj := make([]int64, 7)
-	for i := range proj {
-		proj[i] = saldo + int64(float64(liquido)*float64(i))
-	}
 	cor := asciigraph.Blue
-	if liquido < 0 {
+	if r.Liquido < 0 {
 		cor = asciigraph.Red
 	}
-	fmt.Println(graficoLinha([][]float64{reaisSerie(proj)}, 8,
+	fmt.Println(graficoLinha([][]float64{reaisSerie(r.Projecao)}, 8,
 		[]asciigraph.AnsiColor{cor}, nil, "saldo projetado — mês 0 (hoje) a mês 6"))
 	fmt.Println()
 
-	if liquido >= 0 {
+	if r.Liquido >= 0 {
 		fmt.Println("Fluxo positivo: o saldo tende a crescer; sem risco de runway.")
-		return nil
+		return
 	}
-	runway := float64(saldo) / float64(-liquido)
-	if saldo <= 0 {
-		fmt.Printf("⚠ Saldo já zerado/negativo com fluxo negativo (queima de %s/mês).\n", money.Format(-liquido))
-		return nil
+	if r.Saldo <= 0 {
+		fmt.Printf("⚠ Saldo já zerado/negativo com fluxo negativo (queima de %s/mês).\n", money.Format(-r.Liquido))
+		return
 	}
 	fmt.Printf("⚠ Fluxo negativo. Runway: %.1f meses até o saldo zerar (queima de %s/mês).\n",
-		runway, money.Format(-liquido))
-	return nil
+		r.Meses, money.Format(-r.Liquido))
 }
 
 // AnalyticsAssinaturasOcultas (RF06) varre o histórico atrás de despesas de
 // mesmo valor que se repetem em vários meses e ainda não vêm de uma recorrência
 // cadastrada — prováveis assinaturas. Exibe o impacto anual de cada uma.
 func AnalyticsAssinaturasOcultas(conn *sql.DB) error {
+	a, err := CalcAssinaturasOcultas(conn, Opcoes{})
+	if err != nil {
+		return err
+	}
+	a.Imprimir()
+	return nil
+}
+
+// AssinaturaOculta é uma despesa repetida que parece assinatura.
+type AssinaturaOculta struct {
+	Descricao  string
+	Valor      int64
+	Meses      int    // meses distintos em que apareceu
+	Primeira   string // primeiro mês (AAAA-MM)
+	Ultima     string // último mês (AAAA-MM)
+	ImpactoAno int64
+}
+
+// AssinaturasOcultas é o resultado do RF06, do maior impacto para o menor.
+type AssinaturasOcultas struct {
+	Itens    []AssinaturaOculta
+	TotalAno int64
+}
+
+// CalcAssinaturasOcultas calcula o RF06 sobre todo o histórico já vencido.
+func CalcAssinaturasOcultas(conn *sql.DB, _ Opcoes) (AssinaturasOcultas, error) {
 	// só ocorrências já vencidas: um `--repetir 12` cria meses futuros idênticos
 	// de uma vez e seria flagrado no dia do cadastro — o que o usuário acabou de
 	// lançar de propósito não é uma assinatura "oculta". O valor usa valEf, como
 	// o resto do sistema: numa despesa de grupo, o impacto é o da SUA parte.
-	hoje := time.Now().Format("2006-01-02")
+	hoje := relogio().Format("2006-01-02")
 	rows, err := conn.Query(`
-		SELECT descricao, `+valEf("lancamentos")+` AS v, COUNT(DISTINCT substr(vencimento,1,7)) AS meses
+		SELECT descricao, `+valEf("lancamentos")+` AS v, COUNT(DISTINCT substr(vencimento,1,7)) AS meses,
+		       MIN(substr(vencimento,1,7)), MAX(substr(vencimento,1,7))
 		FROM lancamentos
 		WHERE tipo = 'pagar' AND recorrencia_id IS NULL AND vencimento <= ?
 		GROUP BY lower(descricao), v
 		HAVING meses >= 3
 		ORDER BY v * meses DESC`, hoje)
 	if err != nil {
-		return err
+		return AssinaturasOcultas{}, err
 	}
 	defer rows.Close()
+	var a AssinaturasOcultas
+	for rows.Next() {
+		var it AssinaturaOculta
+		if err := rows.Scan(&it.Descricao, &it.Valor, &it.Meses, &it.Primeira, &it.Ultima); err != nil {
+			return AssinaturasOcultas{}, err
+		}
+		it.ImpactoAno = it.Valor * 12
+		a.TotalAno += it.ImpactoAno
+		a.Itens = append(a.Itens, it)
+	}
+	return a, rows.Err()
+}
 
+// Imprimir desenha a tabela de prováveis assinaturas e o impacto anual.
+func (a AssinaturasOcultas) Imprimir() {
 	fmt.Println("ASSINATURAS OCULTAS — Recorrências prováveis")
 	fmt.Println("(despesas de mesmo valor em 3+ meses, fora das recorrências cadastradas)")
 	fmt.Println()
-
+	if len(a.Itens) == 0 {
+		fmt.Println("Nenhuma assinatura oculta detectada. 👍")
+		return
+	}
 	w := novaTabela()
 	fmt.Fprintln(w, "DESCRIÇÃO\tVALOR\tMESES\tIMPACTO/ANO")
-	achou := false
-	var totalAno int64
-	for rows.Next() {
-		achou = true
-		var desc string
-		var valor int64
-		var meses int
-		if err := rows.Scan(&desc, &valor, &meses); err != nil {
-			return err
-		}
-		impacto := valor * 12
-		totalAno += impacto
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", desc, money.Format(valor), meses, money.Format(impacto))
+	for _, it := range a.Itens {
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", it.Descricao, money.Format(it.Valor), it.Meses, money.Format(it.ImpactoAno))
 	}
-	if !achou {
-		fmt.Println("Nenhuma assinatura oculta detectada. 👍")
-		return nil
-	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
-	fmt.Printf("\nImpacto anual somado das prováveis assinaturas: %s\n", money.Format(totalAno))
-	return nil
+	w.Flush()
+	fmt.Printf("\nImpacto anual somado das prováveis assinaturas: %s\n", money.Format(a.TotalAno))
 }
 
 // --- helpers de visualização e estatística ---
@@ -405,39 +568,63 @@ func pct(parte, total int64) float64 {
 // AnalyticsRegra502030 (RF09) classifica o orçamento em Necessidades, Desejos e
 // Poupança/Investimentos (o que sobra da renda) e compara com o padrão 50/30/20.
 func AnalyticsRegra502030(conn *sql.DB) error {
-	inicio, hoje, refs := janelaMeses(analyticsJanela)
+	r, err := CalcRegra502030(conn, Opcoes{})
+	if err != nil {
+		return err
+	}
+	r.Imprimir()
+	return nil
+}
+
+// Regra502030 é o resultado do RF09: a renda do período dividida em
+// necessidades, desejos e o que sobrou (poupança, pode ser negativa).
+type Regra502030 struct {
+	Meses        int
+	Renda        int64
+	Necessidades int64
+	Desejos      int64
+	Poupanca     int64
+}
+
+// CalcRegra502030 calcula o RF09 sobre os últimos o.Meses meses (padrão 6).
+func CalcRegra502030(conn *sql.DB, o Opcoes) (Regra502030, error) {
+	inicio, hoje, refs := janelaMeses(o.meses(analyticsJanela))
 	recs, _, err := estatMensal(conn, inicio, hoje, refs)
 	if err != nil {
-		return err
+		return Regra502030{}, err
 	}
-	renda := somaInt(recs)
 	cats, err := GastosPorCategoria(conn, inicio, hoje)
 	if err != nil {
-		return err
+		return Regra502030{}, err
 	}
-	var necess, desejo, totalDesp int64
+	r := Regra502030{Meses: len(refs), Renda: somaInt(recs)}
+	var totalDesp int64
 	for _, c := range cats {
 		totalDesp += c.Valor
 		if ehNecessidade(c.Rotulo) {
-			necess += c.Valor
+			r.Necessidades += c.Valor
 		} else {
-			desejo += c.Valor
+			r.Desejos += c.Valor
 		}
 	}
-	poup := renda - totalDesp // o que sobra é o que foi guardado
+	r.Poupanca = r.Renda - totalDesp // o que sobra é o que foi guardado
+	return r, nil
+}
 
+// Imprimir desenha os três pilares contra o ideal 50/30/20.
+func (r Regra502030) Imprimir() {
 	fmt.Println("REGRA 50/30/20 — Auditoria do Orçamento")
-	fmt.Printf("(janela: últimos %d meses · renda %s)\n\n", len(refs), money.Format(renda))
-	if renda <= 0 {
+	fmt.Printf("(janela: últimos %d meses · renda %s)\n\n", r.Meses, money.Format(r.Renda))
+	if r.Renda <= 0 {
 		fmt.Println("Sem receitas no período para calcular as proporções.")
-		return nil
+		return
 	}
-	linhaPilar("Necessidades", necess, renda, 50, cCiano)
-	linhaPilar("Desejos", desejo, renda, 30, cMagen)
-	linhaPilar("Poupança/Invest.", poup, renda, 20, cVerde)
+	linhaPilar("Necessidades", r.Necessidades, r.Renda, 50, cCiano)
+	linhaPilar("Desejos", r.Desejos, r.Renda, 30, cMagen)
+	linhaPilar("Poupança/Invest.", r.Poupanca, r.Renda, 20, cVerde)
 	fmt.Println()
 
-	pN, pP := pct(necess, renda), pct(poup, renda)
+	pN, pP := pct(r.Necessidades, r.Renda), pct(r.Poupanca, r.Renda)
 	switch {
 	case pP < 0:
 		fmt.Println("⚠ Você está gastando mais do que ganha: não há poupança no período.")
@@ -448,7 +635,6 @@ func AnalyticsRegra502030(conn *sql.DB) error {
 	default:
 		fmt.Println("Dá para se aproximar do ideal aumentando a fatia guardada (meta: 20%).")
 	}
-	return nil
 }
 
 // linhaPilar imprime "Nome [barra] X%  (ideal Y%, R$ ...)", com um marcador ┊ na
@@ -528,7 +714,7 @@ func dividasEstimadas(conn *sql.DB) (int64, error) {
 		return 0, err
 	}
 	defer rows.Close()
-	agora := time.Now()
+	agora := relogio()
 	var total int64
 	for rows.Next() {
 		var valor, aporte int64
@@ -568,148 +754,186 @@ func saldoDevedorEstimado(valor int64, jurosPct float64, aporte int64, criadaEm 
 // AnalyticsInflacao (RF08) calcula a inflação pessoal: compara o gasto com contas
 // básicas no trimestre atual com o mesmo trimestre do ano anterior.
 func AnalyticsInflacao(conn *sql.DB) error {
+	i, err := CalcInflacao(conn, Opcoes{})
+	if err != nil {
+		return err
+	}
+	i.Imprimir()
+	return nil
+}
+
+// Inflacao é o resultado do RF08: gasto com contas básicas no trimestre atual
+// e no mesmo trimestre do ano anterior.
+type Inflacao struct {
+	Atual    int64
+	Anterior int64
+	Variacao float64 // % de um ano para o outro; só vale se Anterior > 0
+}
+
+// CalcInflacao calcula o RF08. Opcoes não se aplica (a janela é o trimestre).
+func CalcInflacao(conn *sql.DB, _ Opcoes) (Inflacao, error) {
 	soma := func(ini, fim string) (int64, error) {
 		return somaPorCategoriaFiltrada(conn, ini, fim, catsBasica)
 	}
-	agora := time.Now()
+	agora := relogio()
 	aIni, aFim := agora.AddDate(0, -3, 0).Format("2006-01-02"), agora.Format("2006-01-02")
 	bIni, bFim := agora.AddDate(-1, -3, 0).Format("2006-01-02"), agora.AddDate(-1, 0, 0).Format("2006-01-02")
-	atual, err := soma(aIni, aFim)
-	if err != nil {
-		return err
+	var i Inflacao
+	var err error
+	if i.Atual, err = soma(aIni, aFim); err != nil {
+		return Inflacao{}, err
 	}
-	anterior, err := soma(bIni, bFim)
-	if err != nil {
-		return err
+	if i.Anterior, err = soma(bIni, bFim); err != nil {
+		return Inflacao{}, err
 	}
+	if i.Anterior > 0 {
+		i.Variacao = pct(i.Atual-i.Anterior, i.Anterior)
+	}
+	return i, nil
+}
 
+// Imprimir desenha a comparação ano contra ano.
+func (i Inflacao) Imprimir() {
 	fmt.Println("INFLAÇÃO PESSOAL — Custo de Vida Doméstico")
 	fmt.Println("(contas básicas: mercado, luz, água, condomínio — trimestre atual x ano anterior)")
 	fmt.Println()
-	fmt.Printf("  Trimestre atual:        %s\n", money.Format(atual))
-	fmt.Printf("  Mesmo trimestre (-1 ano): %s\n\n", money.Format(anterior))
-	if anterior <= 0 {
+	fmt.Printf("  Trimestre atual:        %s\n", money.Format(i.Atual))
+	fmt.Printf("  Mesmo trimestre (-1 ano): %s\n\n", money.Format(i.Anterior))
+	if i.Anterior <= 0 {
 		fmt.Println("Sem dados do ano anterior para comparar (precisa de ~15 meses de histórico).")
-		return nil
+		return
 	}
-	inf := pct(atual-anterior, anterior)
 	switch {
-	case inf > 0:
-		fmt.Printf("Seu custo de vida básico subiu %.1f%% em um ano. 📈\n", inf)
-	case inf < 0:
-		fmt.Printf("Seu custo de vida básico caiu %.1f%% em um ano. 📉\n", -inf)
+	case i.Variacao > 0:
+		fmt.Printf("Seu custo de vida básico subiu %.1f%% em um ano. 📈\n", i.Variacao)
+	case i.Variacao < 0:
+		fmt.Printf("Seu custo de vida básico caiu %.1f%% em um ano. 📉\n", -i.Variacao)
 	default:
 		fmt.Println("Seu custo de vida básico ficou estável em um ano.")
 	}
-	return nil
 }
 
 // AnalyticsUtilidades (RF11) acompanha o consumo das contas de utilidade (luz,
 // água, gás, internet): gasto mensal, proporção da renda e detecção de picos.
 func AnalyticsUtilidades(conn *sql.DB) error {
-	inicio, hoje, refs := janelaMeses(analyticsJanela)
-	porMes := map[string]int64{}
-	rows, err := conn.Query(`
-		SELECT substr(COALESCE(data_compra, quitado_em),1,7) AS mes, categoria, SUM(`+valEf("lancamentos")+`)
-		FROM lancamentos WHERE tipo='pagar' AND status='quitado'
-		  AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
-		GROUP BY mes, categoria`, inicio, hoje)
+	u, err := CalcUtilidades(conn, Opcoes{})
 	if err != nil {
 		return err
 	}
-	for rows.Next() {
-		var m, cat string
-		var v int64
-		if err := rows.Scan(&m, &cat, &v); err != nil {
-			rows.Close()
-			return err
-		}
-		if contemAlguma(cat, catsUtilidade) {
-			porMes[m] += v
-		}
-	}
-	if err := encerraRows(rows); err != nil {
-		return err
+	u.Imprimir()
+	return nil
+}
+
+// Utilidades é o resultado do RF11, mês a mês.
+type Utilidades struct {
+	Refs    []string // meses (AAAA-MM)
+	Gasto   []int64  // gasto com utilidades em cada mês
+	Renda   []int64  // receita de cada mês
+	TemBase bool     // há meses anteriores com movimento para comparar o atual
+	Media   int64    // média dos meses anteriores (base do pico)
+	Pico    float64  // % do mês corrente acima da média (≤ 0: sem pico)
+}
+
+// CalcUtilidades calcula o RF11 sobre os últimos o.Meses meses (padrão 6).
+func CalcUtilidades(conn *sql.DB, o Opcoes) (Utilidades, error) {
+	inicio, hoje, refs := janelaMeses(o.meses(analyticsJanela))
+	porCat, err := gastoPorCategoriaMes(conn, refs[0], refs[len(refs)-1])
+	if err != nil {
+		return Utilidades{}, err
 	}
 	recs, desps, err := estatMensal(conn, inicio, hoje, refs)
 	if err != nil {
-		return err
+		return Utilidades{}, err
 	}
-
-	fmt.Println("EFICIÊNCIA DE UTILIDADES — Contas da Casa")
-	fmt.Println("(luz, água, gás, internet)")
-	fmt.Println()
-	w := novaTabela()
-	fmt.Fprintln(w, "MÊS\tUTILIDADES\t% DA RENDA")
-	serie := make([]int64, len(refs))
-	for i, ref := range refs {
-		serie[i] = porMes[ref]
-		prop := "-"
-		if recs[i] > 0 {
-			prop = fmt.Sprintf("%.1f%%", pct(porMes[ref], recs[i]))
+	u := Utilidades{Refs: refs, Renda: recs, Gasto: make([]int64, len(refs))}
+	for cat, serie := range porCat {
+		if !contemAlguma(cat, catsUtilidade) {
+			continue
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", mesBR(ref), money.Format(porMes[ref]), prop)
-	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
-	if len(serie) >= 2 {
-		fmt.Printf("\nTendência (%s a %s): %s\n", mesBR(refs[0]), mesBR(refs[len(refs)-1]), pintar(cCiano, sparkline(serie)))
+		for i, ref := range refs {
+			u.Gasto[i] += serie[ref]
+		}
 	}
 	// detecção de pico: mês corrente x média dos anteriores. Meses antes do
 	// primeiro movimento registrado ficam de fora — não são "gasto zero", são
 	// meses em que o app ainda não era usado, e contá-los derrubaria a média.
 	ini := primeiroComDado(recs, desps)
-	if len(serie) >= 2 && ini < len(serie)-1 {
-		atual := serie[len(serie)-1]
-		var soma int64
-		for _, v := range serie[ini : len(serie)-1] {
-			soma += v
-		}
-		media := soma / int64(len(serie)-1-ini)
-		fmt.Println()
-		if media > 0 && atual > media*125/100 {
-			fmt.Printf("⚠ Pico: as utilidades deste mês estão %.0f%% acima da média dos meses anteriores.\n",
-				pct(atual-media, media))
-		} else if media > 0 {
-			fmt.Println("👍 Consumo de utilidades dentro do padrão dos meses anteriores.")
+	if n := len(u.Gasto); n >= 2 && ini < n-1 {
+		u.TemBase = true
+		u.Media = somaInt(u.Gasto[ini:n-1]) / int64(n-1-ini)
+		if atual := u.Gasto[n-1]; u.Media > 0 && atual > u.Media*125/100 {
+			u.Pico = pct(atual-u.Media, u.Media)
 		}
 	}
-	return nil
+	return u, nil
+}
+
+// Imprimir desenha a tabela mensal, a tendência e o aviso de pico.
+func (u Utilidades) Imprimir() {
+	fmt.Println("EFICIÊNCIA DE UTILIDADES — Contas da Casa")
+	fmt.Println("(luz, água, gás, internet)")
+	fmt.Println()
+	w := novaTabela()
+	fmt.Fprintln(w, "MÊS\tUTILIDADES\t% DA RENDA")
+	for i, ref := range u.Refs {
+		prop := "-"
+		if u.Renda[i] > 0 {
+			prop = fmt.Sprintf("%.1f%%", pct(u.Gasto[i], u.Renda[i]))
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", mesBR(ref), money.Format(u.Gasto[i]), prop)
+	}
+	w.Flush()
+	if len(u.Gasto) >= 2 {
+		fmt.Printf("\nTendência (%s a %s): %s\n", mesBR(u.Refs[0]), mesBR(u.Refs[len(u.Refs)-1]), pintar(cCiano, sparkline(u.Gasto)))
+	}
+	if !u.TemBase {
+		return
+	}
+	fmt.Println()
+	if u.Pico > 0 {
+		fmt.Printf("⚠ Pico: as utilidades deste mês estão %.0f%% acima da média dos meses anteriores.\n", u.Pico)
+	} else if u.Media > 0 {
+		fmt.Println("👍 Consumo de utilidades dentro do padrão dos meses anteriores.")
+	}
 }
 
 // AnalyticsAnomalias (RF02) compara os gastos do mês corrente, por categoria, com
 // o histórico (média e desvio padrão dos meses anteriores) e alerta as categorias
 // com comportamento atípico (acima do padrão).
 func AnalyticsAnomalias(conn *sql.DB) error {
-	_, _, refs := janelaMeses(7) // 6 meses anteriores + o corrente
-	atual := refs[len(refs)-1]
-	anteriores := refs[:len(refs)-1]
-
-	// gasto por categoria e mês no período
-	rows, err := conn.Query(`
-		SELECT categoria, substr(COALESCE(data_compra, quitado_em),1,7) AS mes, SUM(`+valEf("lancamentos")+`)
-		FROM lancamentos WHERE tipo='pagar' AND status='quitado'
-		  AND substr(COALESCE(data_compra, quitado_em),1,7) >= ?
-		GROUP BY categoria, mes`, refs[0])
+	a, err := CalcAnomalias(conn, Opcoes{})
 	if err != nil {
 		return err
 	}
-	porCat := map[string]map[string]int64{}
-	for rows.Next() {
-		var cat, mes string
-		var v int64
-		if err := rows.Scan(&cat, &mes, &v); err != nil {
-			rows.Close()
-			return err
-		}
-		if porCat[cat] == nil {
-			porCat[cat] = map[string]int64{}
-		}
-		porCat[cat][mes] = v
-	}
-	if err := encerraRows(rows); err != nil {
-		return err
+	a.Imprimir()
+	return nil
+}
+
+// Anomalia é uma categoria com gasto atípico no mês corrente.
+type Anomalia struct {
+	Categoria string
+	Atual     int64   // gasto no mês corrente
+	Media     int64   // média dos meses da base
+	Acima     float64 // % acima da média
+}
+
+// Anomalias é o resultado do RF02, da maior para a menor.
+type Anomalias struct {
+	Ref       string // mês corrente (AAAA-MM)
+	BaseMeses int    // meses anteriores usados como base
+	Itens     []Anomalia
+}
+
+// CalcAnomalias calcula o RF02: o mês corrente contra os o.Meses meses
+// anteriores (padrão 6).
+func CalcAnomalias(conn *sql.DB, o Opcoes) (Anomalias, error) {
+	_, _, refs := janelaMeses(o.meses(analyticsJanela) + 1) // anteriores + o corrente
+	atual := refs[len(refs)-1]
+	anteriores := refs[:len(refs)-1]
+
+	porCat, err := gastoPorCategoriaMes(conn, refs[0], "9999-12")
+	if err != nil {
+		return Anomalias{}, err
 	}
 
 	// a base de comparação começa no primeiro mês com qualquer gasto: os meses
@@ -729,15 +953,11 @@ func AnalyticsAnomalias(conn *sql.DB) error {
 			base = append(base, m)
 		}
 	}
-
-	fmt.Println("MODO ECONOMIA — Detecção de Anomalias")
-	fmt.Printf("(mês corrente %s x média dos %d meses anteriores)\n\n", mesBR(atual), len(base))
+	a := Anomalias{Ref: atual, BaseMeses: len(base)}
 	if len(base) == 0 {
-		fmt.Println("Sem meses anteriores com gastos para servir de base de comparação.")
-		return nil
+		return a, nil
 	}
 
-	var alertas []anomaliaAlerta
 	for cat, serie := range porCat {
 		vAtual := serie[atual]
 		if vAtual == 0 {
@@ -760,20 +980,35 @@ func AnalyticsAnomalias(conn *sql.DB) error {
 		desvio := math.Sqrt(varSum / float64(len(base)))
 		// atípico: acima de 30% da média E acima de média + 1 desvio
 		if float64(vAtual) > media*1.3 && float64(vAtual) > media+desvio {
-			alertas = append(alertas, anomaliaAlerta{cat, vAtual, int64(media), pct(vAtual-int64(media), int64(media))})
+			a.Itens = append(a.Itens, Anomalia{cat, vAtual, int64(media), pct(vAtual-int64(media), int64(media))})
 		}
 	}
-	if len(alertas) == 0 {
+	// do maior para o menor desvio (empate: ordem alfabética, para ser estável)
+	sort.Slice(a.Itens, func(i, j int) bool {
+		if a.Itens[i].Acima != a.Itens[j].Acima {
+			return a.Itens[i].Acima > a.Itens[j].Acima
+		}
+		return a.Itens[i].Categoria < a.Itens[j].Categoria
+	})
+	return a, nil
+}
+
+// Imprimir desenha os alertas de anomalia.
+func (a Anomalias) Imprimir() {
+	fmt.Println("MODO ECONOMIA — Detecção de Anomalias")
+	fmt.Printf("(mês corrente %s x média dos %d meses anteriores)\n\n", mesBR(a.Ref), a.BaseMeses)
+	if a.BaseMeses == 0 {
+		fmt.Println("Sem meses anteriores com gastos para servir de base de comparação.")
+		return
+	}
+	if len(a.Itens) == 0 {
 		fmt.Println("Nenhuma anomalia: os gastos do mês seguem o padrão histórico. 👍")
-		return nil
+		return
 	}
-	// do maior para o menor desvio
-	sort.Slice(alertas, func(i, j int) bool { return alertas[i].acima > alertas[j].acima })
-	for _, a := range alertas {
+	for _, it := range a.Itens {
 		fmt.Printf("⚠ %s: %s neste mês — %.0f%% acima do padrão (média %s).\n",
-			a.cat, money.Format(a.atual), a.acima, money.Format(a.media))
+			it.Categoria, money.Format(it.Atual), it.Acima, money.Format(it.Media))
 	}
-	return nil
 }
 
 // AnalyticsSazonalidade (RF03) identifica padrões anuais: meses do calendário
@@ -853,7 +1088,7 @@ func AnalyticsSazonalidade(conn *sql.DB) error {
 	// alerta dos próximos 3 meses se forem picos sazonais. O AddDate parte do
 	// dia 1º: somar meses a um dia 29–31 normaliza para o mês seguinte (31/jan
 	// + 1 mês = 2/mar) e pularia/duplicaria meses no aviso.
-	agora := time.Now()
+	agora := relogio()
 	base1 := time.Date(agora.Year(), agora.Month(), 1, 0, 0, 0, 0, time.UTC)
 	var avisos []string
 	for i := 1; i <= 3; i++ {
@@ -1002,79 +1237,101 @@ func AnalyticsSimulador(conn *sql.DB, args []string) error {
 	return nil
 }
 
-// anomaliaAlerta é uma categoria com gasto atípico no mês corrente (RF02).
-type anomaliaAlerta struct {
-	cat          string
-	atual, media int64
-	acima        float64 // % acima da média histórica
-}
-
 // AnalyticsComprometimento (RF12) mostra, para cada um dos próximos meses,
 // quanto da renda esperada já está tomado por obrigações conhecidas — parcelas,
 // contas agendadas e recorrências — antes de o mês começar. É a régua para
 // decidir se cabe parcelar algo novo: o Runway diz se o fluxo médio fecha; aqui
 // aparece QUANDO vem o mês apertado.
 func AnalyticsComprometimento(conn *sql.DB) error {
-	mediaRec, _, err := mediasHistoricas(conn)
+	c, err := CalcComprometimento(conn, Opcoes{})
 	if err != nil {
 		return err
 	}
-	const janela = 6
-	agora := time.Now()
-	base := time.Date(agora.Year(), agora.Month(), 1, 0, 0, 0, 0, time.UTC)
+	c.Imprimir()
+	return nil
+}
 
+// MesComprometido é um mês futuro com a renda esperada e o que já tem dono.
+type MesComprometido struct {
+	Ref          string // AAAA-MM
+	Renda        int64
+	Comprometido int64
+	Pct          float64 // % da renda tomado; só vale se Renda > 0
+}
+
+// Comprometimento é o resultado do RF12.
+type Comprometimento struct {
+	Meses   []MesComprometido
+	Pior    string // mês mais comprometido ("" se nenhum tem renda)
+	PiorPct float64
+}
+
+// CalcComprometimento calcula o RF12 para os próximos o.Meses meses (padrão 6).
+func CalcComprometimento(conn *sql.DB, o Opcoes) (Comprometimento, error) {
+	mediaRec, _, err := mediasHistoricas(conn)
+	if err != nil {
+		return Comprometimento{}, err
+	}
+	agora := relogio()
+	base := time.Date(agora.Year(), agora.Month(), 1, 0, 0, 0, 0, time.UTC)
+	var c Comprometimento
+	for i := 1; i <= o.meses(6); i++ {
+		ref := base.AddDate(0, i, 0).Format("2006-01")
+		p, err := periodoMes(ref)
+		if err != nil {
+			return Comprometimento{}, err
+		}
+		m := MesComprometido{Ref: ref}
+		if m.Renda, _, err = previstoMes(conn, "receber", p, mediaRec); err != nil {
+			return Comprometimento{}, err
+		}
+		// média 0 de fallback: comprometido é só o que JÁ está agendado —
+		// projetar despesa média aqui diria "100% comprometido" para todo mundo
+		if m.Comprometido, _, err = previstoMes(conn, "pagar", p, 0); err != nil {
+			return Comprometimento{}, err
+		}
+		if m.Renda > 0 {
+			m.Pct = pct(m.Comprometido, m.Renda)
+			if m.Pct > c.PiorPct {
+				c.Pior, c.PiorPct = ref, m.Pct
+			}
+		}
+		c.Meses = append(c.Meses, m)
+	}
+	return c, nil
+}
+
+// Imprimir desenha a tabela mês a mês e o veredito do mês mais apertado.
+func (c Comprometimento) Imprimir() {
 	fmt.Println("RENDA COMPROMETIDA — Parcelas e Contas Já Agendadas")
 	fmt.Println("(quanto da renda esperada de cada mês já está tomado antes de ele começar)")
 	fmt.Println()
 	w := novaTabela()
 	fmt.Fprintln(w, "MÊS\tRENDA ESPERADA\tCOMPROMETIDO\t% TOMADO\t")
-	pior, piorPct := "", 0.0
-	for i := 1; i <= janela; i++ {
-		ref := base.AddDate(0, i, 0).Format("2006-01")
-		p, err := periodoMes(ref)
-		if err != nil {
-			return err
-		}
-		renda, _, err := previstoMes(conn, "receber", p, mediaRec)
-		if err != nil {
-			return err
-		}
-		// média 0 de fallback: comprometido é só o que JÁ está agendado —
-		// projetar despesa média aqui diria "100% comprometido" para todo mundo
-		comprometido, _, err := previstoMes(conn, "pagar", p, 0)
-		if err != nil {
-			return err
-		}
+	for _, m := range c.Meses {
 		prop, barra := "-", ""
-		if renda > 0 {
-			pc := pct(comprometido, renda)
-			prop = fmt.Sprintf("%.0f%%", pc)
-			barra = barraFinaCor(comprometido, renda, 20, corFaixaUso(pc))
-			if pc > piorPct {
-				pior, piorPct = ref, pc
-			}
+		if m.Renda > 0 {
+			prop = fmt.Sprintf("%.0f%%", m.Pct)
+			barra = barraFinaCor(m.Comprometido, m.Renda, 20, corFaixaUso(m.Pct))
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", mesBR(ref), money.Format(renda), money.Format(comprometido), prop, barra)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", mesBR(m.Ref), money.Format(m.Renda), money.Format(m.Comprometido), prop, barra)
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+	w.Flush()
 	fmt.Println()
 	switch {
-	case pior == "":
+	case c.Pior == "":
 		fmt.Println("Sem renda prevista nos próximos meses para medir o comprometimento.")
-	case piorPct >= 80:
+	case c.PiorPct >= 80:
 		fmt.Printf("⚠ %s é o mês mais apertado: %.0f%% da renda já tem dono. Evite parcelar algo novo até lá.\n",
-			mesBR(pior), piorPct)
-	case piorPct >= 50:
+			mesBR(c.Pior), c.PiorPct)
+	case c.PiorPct >= 50:
 		fmt.Printf("O mês mais comprometido é %s (%.0f%% da renda). Há margem, mas parcele com critério.\n",
-			mesBR(pior), piorPct)
+			mesBR(c.Pior), c.PiorPct)
 	default:
 		fmt.Printf("👍 Folga boa: nem o mês mais comprometido (%s, %.0f%%) passa da metade da renda.\n",
-			mesBR(pior), piorPct)
+			mesBR(c.Pior), c.PiorPct)
 	}
 	fmt.Println("\n(comprometido = parcelas, contas agendadas e recorrências; renda pela previsão)")
-	return nil
 }
 
 // corFaixaUso colore um percentual de comprometimento: verde < 50, amarelo < 80,
@@ -1215,53 +1472,45 @@ func corFaixaCumprimento(pc float64) string {
 // FECHADOS — o corrente, parcial, enviesaria a inclinação para baixo) e mostra
 // as que sobem ou caem de forma consistente.
 func AnalyticsTendencias(conn *sql.DB) error {
-	_, _, refs := janelaMeses(analyticsJanela + 1)
-	atual := refs[len(refs)-1]
-	fechados := refs[:len(refs)-1]
-
-	rows, err := conn.Query(`
-		SELECT categoria, substr(COALESCE(data_compra, quitado_em),1,7) AS mes, SUM(`+valEf("lancamentos")+`)
-		FROM lancamentos WHERE tipo='pagar' AND status='quitado'
-		  AND substr(COALESCE(data_compra, quitado_em),1,7) >= ?
-		  AND substr(COALESCE(data_compra, quitado_em),1,7) < ?
-		GROUP BY categoria, mes`, fechados[0], atual)
+	t, err := CalcTendencias(conn, Opcoes{})
 	if err != nil {
 		return err
 	}
-	porCat := map[string][]int64{}
-	for rows.Next() {
-		var cat, mes string
-		var v int64
-		if err := rows.Scan(&cat, &mes, &v); err != nil {
-			rows.Close()
-			return err
-		}
-		if porCat[cat] == nil {
-			porCat[cat] = make([]int64, len(fechados))
-		}
+	t.Imprimir()
+	return nil
+}
+
+// Tendencia é uma categoria cujo gasto sobe ou cai de forma consistente.
+type Tendencia struct {
+	Categoria string
+	Serie     []int64 // gasto mensal desde o primeiro mês da categoria na janela
+	Slope     float64 // centavos/mês (positivo = subindo)
+	RelMes    float64 // inclinação em % da média por mês
+}
+
+// Tendencias é o resultado do RF14, da inclinação mais forte para a mais fraca
+// (no máximo 8).
+type Tendencias struct {
+	De, Ate string // meses fechados analisados (AAAA-MM)
+	Itens   []Tendencia
+}
+
+// CalcTendencias calcula o RF14 sobre os últimos o.Meses meses FECHADOS
+// (padrão 6) — o corrente, parcial, enviesaria a inclinação para baixo.
+func CalcTendencias(conn *sql.DB, o Opcoes) (Tendencias, error) {
+	_, _, refs := janelaMeses(o.meses(analyticsJanela) + 1)
+	fechados := refs[:len(refs)-1]
+	t := Tendencias{De: fechados[0], Ate: fechados[len(fechados)-1]}
+
+	porCat, err := gastoPorCategoriaMes(conn, t.De, t.Ate)
+	if err != nil {
+		return Tendencias{}, err
+	}
+	for cat, porMes := range porCat {
+		serie := make([]int64, len(fechados))
 		for i, r := range fechados {
-			if r == mes {
-				porCat[cat][i] += v
-				break
-			}
+			serie[i] = porMes[r]
 		}
-	}
-	if err := encerraRows(rows); err != nil {
-		return err
-	}
-
-	fmt.Println("TENDÊNCIAS — Para Onde o Gasto Está Indo")
-	fmt.Printf("(reta ajustada ao gasto mensal por categoria, %s a %s)\n\n",
-		mesBR(fechados[0]), mesBR(fechados[len(fechados)-1]))
-
-	type tend struct {
-		cat    string
-		serie  []int64
-		slope  float64 // centavos/mês
-		relMes float64 // % da média por mês
-	}
-	var tends []tend
-	for cat, serie := range porCat {
 		// a série da categoria começa no primeiro mês em que ela existiu
 		ini := 0
 		for ini < len(serie) && serie[ini] == 0 {
@@ -1280,36 +1529,44 @@ func AnalyticsTendencias(conn *sql.DB) error {
 		if math.Abs(rel) < 8 || math.Abs(slope) < 2000 {
 			continue
 		}
-		tends = append(tends, tend{cat, s, slope, rel})
+		t.Itens = append(t.Itens, Tendencia{cat, s, slope, rel})
 	}
-	if len(tends) == 0 {
-		fmt.Println("Nenhuma tendência relevante: os gastos por categoria estão estáveis. 👍")
-		return nil
+	sort.Slice(t.Itens, func(i, j int) bool {
+		a, b := math.Abs(t.Itens[i].Slope), math.Abs(t.Itens[j].Slope)
+		if a != b {
+			return a > b
+		}
+		return t.Itens[i].Categoria < t.Itens[j].Categoria
+	})
+	if len(t.Itens) > 8 {
+		t.Itens = t.Itens[:8]
 	}
-	sort.Slice(tends, func(i, j int) bool { return math.Abs(tends[i].slope) > math.Abs(tends[j].slope) })
-	if len(tends) > 8 {
-		tends = tends[:8]
-	}
+	return t, nil
+}
 
+// Imprimir desenha a tabela de tendências e o maior vazamento.
+func (t Tendencias) Imprimir() {
+	fmt.Println("TENDÊNCIAS — Para Onde o Gasto Está Indo")
+	fmt.Printf("(reta ajustada ao gasto mensal por categoria, %s a %s)\n\n", mesBR(t.De), mesBR(t.Ate))
+	if len(t.Itens) == 0 {
+		fmt.Println("Nenhuma tendência relevante: os gastos por categoria estão estáveis. 👍")
+		return
+	}
 	w := novaTabela()
 	fmt.Fprintln(w, "CATEGORIA\tMÊS A MÊS\tTENDÊNCIA")
-	for _, td := range tends {
+	for _, td := range t.Itens {
 		seta, cor := "▲", cVermel // gasto subindo = ruim
-		if td.slope < 0 {
+		if td.Slope < 0 {
 			seta, cor = "▼", cVerde
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", td.cat, sparkline(td.serie),
-			pintar(cor, fmt.Sprintf("%s %s/mês (%+.0f%%/mês)", seta, money.Format(int64(math.Abs(td.slope))), td.relMes)))
+		fmt.Fprintf(w, "%s\t%s\t%s\n", td.Categoria, sparkline(td.Serie),
+			pintar(cor, fmt.Sprintf("%s %s/mês (%+.0f%%/mês)", seta, money.Format(int64(math.Abs(td.Slope))), td.RelMes)))
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
-	pior := tends[0]
-	if pior.slope > 0 {
+	w.Flush()
+	if pior := t.Itens[0]; pior.Slope > 0 {
 		fmt.Printf("\n⚠ Maior vazamento: %s sobe ~%s por mês. Nesse ritmo, são +%s em um ano.\n",
-			pior.cat, money.Format(int64(pior.slope)), money.Format(int64(pior.slope*12)))
+			pior.Categoria, money.Format(int64(pior.Slope)), money.Format(int64(pior.Slope*12)))
 	}
-	return nil
 }
 
 // retaSlope ajusta uma reta y = a + b·x à série (mínimos quadrados) e devolve a
@@ -1441,7 +1698,7 @@ func AnalyticsMelhorDiaCartao(conn *sql.DB) error {
 	fmt.Println("MELHOR DIA DE COMPRA — Prazo do Cartão")
 	fmt.Println("(comprando logo após o fechamento, a compra só vence na fatura seguinte)")
 	fmt.Println()
-	agora := time.Now()
+	agora := relogio()
 	hoje := time.Date(agora.Year(), agora.Month(), agora.Day(), 0, 0, 0, 0, time.UTC)
 
 	w := novaTabela()
