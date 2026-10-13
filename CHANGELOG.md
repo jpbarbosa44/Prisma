@@ -7,6 +7,13 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+- **`prisma mcp` — converse com o Claude sobre seus dados.** Servidor MCP
+  (stdio) somente leitura, sobre a mesma conexão `query_only` do Analytics:
+  o Claude Code/Desktop consulta saldo, lançamentos, relatório, extrato,
+  previsão, faturas, simulações, as análises do Analytics e, como último
+  recurso, `SELECT` livre. Registro: `claude mcp add prisma -- prisma mcp`.
+
 ## [1.2.0] - 2026-07-03
 
 ### Adicionado

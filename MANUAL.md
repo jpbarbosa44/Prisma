@@ -11,9 +11,10 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 5. [Comandos](#comandos)
 6. [Empresa (`prisma --empresa`)](#empresa-prisma---empresa)
 7. [Analytics (`prisma --analytics`)](#analytics-prisma---analytics)
-8. [Receitas prontas](#receitas-prontas)
-9. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
-10. [Dados e backup](#dados-e-backup)
+8. [Conversar com o Claude (`prisma mcp`)](#conversar-com-o-claude-prisma-mcp)
+9. [Receitas prontas](#receitas-prontas)
+10. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
+11. [Dados e backup](#dados-e-backup)
 
 ---
 
@@ -590,6 +591,30 @@ Não combina com `--empresa` (lê sempre o banco pessoal) nem com o modo cliente
 - **Melhor Dia de Compra** — por cartão, o prazo entre comprar hoje e pagar a fatura, e o dia do ciclo (logo após o fechamento) que dá o prazo máximo — sem usar histórico, só o ciclo de cada cartão.
 
 A classificação de categorias (o que conta como "necessidade", "utilidade" ou "conta básica") é por **palavra-chave no nome da categoria** — quanto mais consistente o nome dos seus lançamentos, melhores os recortes das análises.
+
+## Conversar com o Claude (`prisma mcp`)
+
+`prisma mcp` liga o Prisma a assistentes de IA compatíveis com o **MCP** (Model Context Protocol), como o Claude Code e o Claude Desktop. Com isso, você pergunta sobre suas finanças em linguagem natural ("quanto gastei com mercado nos últimos 3 meses comparado à média?", "cabe parcelar uma TV de 4 mil em 10x?"), e o assistente consulta seus dados pelas mesmas funções da CLI.
+
+É **somente leitura**, como o Analytics: o banco pessoal é aberto em modo `query_only`, e o assistente não consegue lançar, editar nem apagar nada. Não combina com `--empresa` nem com o modo cliente/servidor.
+
+**Claude Code:**
+
+```sh
+claude mcp add prisma -- prisma mcp
+```
+
+**Claude Desktop:** em `claude_desktop_config.json`:
+
+```json
+{ "mcpServers": { "prisma": { "command": "prisma", "args": ["mcp"] } } }
+```
+
+(Se o `prisma` não estiver no `PATH` do aplicativo, use o caminho completo do binário.)
+
+Ferramentas disponíveis para o assistente: `saldo`, `lancamentos` (filtros por mês, período, categoria, tipo e pendentes), `relatorio`, `extrato`, `previsao`, `estatisticas`, `cartoes`, `fatura`, `simular` (não grava nada), `analise` (as análises do Analytics), `categorias`, `schema` e `consulta_sql` (um `SELECT` livre, até 200 linhas, como último recurso).
+
+> **Privacidade:** o que o assistente consulta é enviado ao provedor do modelo (no caso do Claude, a Anthropic) para gerar a resposta. O Prisma em si não fala com a internet nesse modo: ele só responde ao programa que o iniciou.
 
 ## Receitas prontas
 
