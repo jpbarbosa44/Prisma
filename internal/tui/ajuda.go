@@ -272,18 +272,31 @@ para entender o que os números dizem.
 
 NAVEGAÇÃO
   Tecle o número da análise ou use ↑/↓ e enter. Dentro de uma tela, ↑/↓
-  rolam o conteúdo e esc volta ao menu. Duas telas pedem dados por formulário
-  (rodapé mostra a tecla): Metas (m) e Simulador (s).
+  rolam o conteúdo e esc volta ao menu. Algumas telas pedem dados por
+  formulário (o rodapé mostra a tecla): Metas (m), Simulador (s), Gastos
+  Formiga (l) e o período (p) das telas com janela ajustável.
 
 AS ANÁLISES
 
+  Hoje            Painel de entrada: os até 5 alertas mais importantes de
+                  todas as análises (saldo negativo previsto, ritmo acima do
+                  normal, mês comprometido, anomalia, assinatura nova,
+                  tendência de alta), cada um apontando a tela do detalhe.
   Health Score    Nota de 0 a 100 da sua saúde financeira, juntando taxa de
                   poupança, fundo de emergência (saldo ÷ despesa média) e a
                   constância do fluxo mês a mês.
+  Ritmo do Mês    Quanto você gastou até hoje contra o mesmo trecho dos meses
+   (p)            anteriores, a projeção de fechamento e as categorias que
+                  aceleraram, com os lançamentos por trás.
+  Dia Mais        O saldo dia a dia nos próximos 45 dias pelas contas já
+   Apertado       lançadas: o dia mais justo e se o saldo fica negativo.
   Modo Economia   Categorias com gasto fora do padrão neste mês, comparando
-                  com a média e o desvio dos meses anteriores.
-  Tendências      Categorias cujo gasto sobe (ou cai) de forma consistente mês
+   (p)            com a média e o desvio dos meses anteriores, com os maiores
+                  lançamentos de cada uma.
+  Tendências (p)  Categorias cujo gasto sobe (ou cai) de forma consistente mês
                   a mês — o vazamento lento que a anomalia pontual não pega.
+  Gastos Formiga  Pequenos gastos (até R$ 50, ajustável) que se repetem —
+   (l)            delivery, café, app de transporte — e quanto somam no ano.
   Sazonalidade    Meses do ano historicamente mais caros e aviso quando um
                   deles está chegando (precisa de mais de um ano de histórico).
   Runway          Projeção do saldo em 30/90/180 dias, o ritmo de queima e,
@@ -314,7 +327,13 @@ AS ANÁLISES
   Melhor Dia      Por cartão, o prazo até pagar uma compra feita hoje e o dia
    de Compra      do ciclo (pós-fechamento) que dá o prazo máximo.
 
-DICA
-  Os recortes (o que é "necessidade", "utilidade" ou "conta básica") saem do
-  NOME das categorias dos seus lançamentos. Quanto mais consistente você
-  nomeia as categorias, mais certeiras ficam as análises.`
+PERÍODO (p)
+  Health Score, Ritmo, Modo Economia, Tendências, Renda Comprometida, 50/30/20
+  e Eficiência aceitam a janela em meses (1 a 36). Vazio volta ao padrão.
+
+CLASSE DAS CATEGORIAS
+  O que é "necessidade", "utilidade" ou "conta básica" vem da classe da
+  categoria. Sem classe definida, vale o NOME (palavras como aluguel, mercado,
+  luz). Para corrigir — "pet" ou "casa" como necessidade, por exemplo — use no
+  Prisma normal a tela Categorias (tecla c) ou:
+    prisma categoria editar <id> --classe necessidade|desejo|utilidade|basica|auto`

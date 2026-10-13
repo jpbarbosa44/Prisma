@@ -8,6 +8,19 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 ## [Não lançado]
 
 ### Adicionado
+- **Analytics: quatro análises do dia a dia.** **Hoje** (painel de entrada
+  com os alertas mais importantes de todas as análises), **Ritmo do Mês**
+  (gasto até hoje x o mesmo trecho dos meses anteriores, com projeção de
+  fechamento), **Dia Mais Apertado** (saldo dia a dia nos próximos 45 dias)
+  e **Gastos Formiga** (pequenos gastos repetidos e o impacto anual).
+- **Classe configurável das categorias.** `prisma categoria editar <id>
+  --classe necessidade|desejo|utilidade|basica|auto` (ou a ação `c` na tela
+  Categorias) define como o Analytics trata cada categoria; sem classe,
+  vale a palavra-chave no nome, como antes.
+- **Período ajustável** (tecla `p`) em sete análises do Analytics, e
+  **lançamentos por trás dos alertas** no Modo Economia, Tendências e Ritmo.
+
+### Adicionado
 - **`prisma mcp` — converse com o Claude sobre seus dados.** Servidor MCP
   (stdio) somente leitura, sobre a mesma conexão `query_only` do Analytics:
   o Claude Code/Desktop consulta saldo, lançamentos, relatório, extrato,

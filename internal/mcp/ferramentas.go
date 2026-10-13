@@ -204,6 +204,10 @@ func comMeses(padrao int, f func(*sql.DB, []string) error) func(*sql.DB, argumen
 // analises mapeia o enum da ferramenta "analise" para as funções do Analytics
 // que não precisam de parâmetros.
 var analises = map[string]func(*sql.DB, ...string) error{
+	"hoje":                semPeriodo(app.AnalyticsHoje),
+	"ritmo":               app.AnalyticsRitmo,
+	"dia_apertado":        semPeriodo(app.AnalyticsDiaApertado),
+	"formiga":             app.AnalyticsFormiga,
 	"health_score":        app.AnalyticsHealthScore,
 	"runway":              semPeriodo(app.AnalyticsRunway),
 	"anomalias":           app.AnalyticsAnomalias,
@@ -227,6 +231,7 @@ func semPeriodo(f func(*sql.DB) error) func(*sql.DB, ...string) error {
 
 // nomesAnalises lista as chaves de analises numa ordem estável.
 var nomesAnalises = []string{
+	"hoje", "ritmo", "dia_apertado", "formiga",
 	"health_score", "runway", "anomalias", "tendencias", "sazonalidade",
 	"regra_50_30_20", "patrimonio", "comprometimento", "assinaturas_ocultas",
 	"aderencia_planos", "inflacao", "utilidades", "grupos", "melhor_dia_cartao",
@@ -414,10 +419,10 @@ func init() {
 		},
 		{
 			nome:      "analise",
-			descricao: "Análises do Prisma Analytics: health_score (saúde 0–100), runway (quanto tempo o caixa dura), anomalias (gastos fora do padrão), tendencias (categorias subindo/caindo), sazonalidade (picos anuais), regra_50_30_20, patrimonio (patrimônio líquido), comprometimento (renda já tomada nos próximos meses), assinaturas_ocultas, aderencia_planos (planejado x realizado), inflacao (inflação pessoal), utilidades (contas da casa), grupos (balanço de despesas divididas), melhor_dia_cartao.",
+			descricao: "Análises do Prisma Analytics: hoje (painel com os alertas mais importantes — bom ponto de partida), ritmo (gasto do mês até hoje x o normal, com projeção de fechamento), dia_apertado (menor saldo previsto nos próximos 45 dias), formiga (pequenos gastos repetidos), health_score (saúde 0–100), runway (quanto tempo o caixa dura), anomalias (gastos fora do padrão), tendencias (categorias subindo/caindo), sazonalidade (picos anuais), regra_50_30_20, patrimonio (patrimônio líquido), comprometimento (renda já tomada nos próximos meses), assinaturas_ocultas, aderencia_planos (planejado x realizado), inflacao (inflação pessoal), utilidades (contas da casa), grupos (balanço de despesas divididas), melhor_dia_cartao.",
 			params: []param{
 				{nome: "tipo", tipo: "string", descricao: "qual análise", enum: nomesAnalises, obrigatorio: true},
-				{nome: "meses", tipo: "integer", descricao: "janela em meses, 1 a 36 (health_score, anomalias, tendencias, regra_50_30_20, utilidades; em comprometimento, meses à frente). Omitido = padrão da análise"},
+				{nome: "meses", tipo: "integer", descricao: "janela em meses, 1 a 36 (health_score, ritmo, formiga, anomalias, tendencias, regra_50_30_20, utilidades; em comprometimento, meses à frente). Omitido = padrão da análise"},
 			},
 			rodar: func(conn *sql.DB, a argumentos) (string, error) {
 				f := analises[a.texto("tipo")]

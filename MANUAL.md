@@ -152,11 +152,13 @@ Catálogo de categorias. É opcional gerenciá-lo à mão: ao usar uma categoria
 prisma categoria add --nome mercado
 prisma categoria listar                       # cada categoria + nº de lançamentos
 prisma categoria editar 3 --nome supermercado # renomeia e atualiza lançamentos e recorrências
+prisma categoria editar 7 --classe necessidade # classe usada pelo Analytics
 prisma categoria remover 5                    # tira do catálogo (os lançamentos ficam intactos)
 ```
 
 - A categoria no lançamento continua sendo **texto livre**; o catálogo é só um índice. Por isso remover do catálogo não afeta os lançamentos.
 - `editar` propaga o novo nome para os lançamentos e recorrências que usavam o nome antigo.
+- `--classe` diz ao Analytics como tratar a categoria: `necessidade`, `desejo`, `utilidade` (conta da casa: luz, água, internet…), `basica` (custo de vida básico: mercado, condomínio…) ou `auto`. Em `auto` (o padrão), a classe sai de palavras-chave no nome. `listar` mostra a classe de cada uma. Na TUI e na web, é a ação `c` da tela Categorias.
 
 ### cartao / fatura
 
@@ -573,8 +575,12 @@ Não combina com `--empresa` (lê sempre o banco pessoal) nem com o modo cliente
 
 ### As análises
 
+- **Hoje** — a primeira tela: até 5 alertas das demais análises, em ordem de prioridade (saldo negativo previsto, ritmo do mês acima do normal, mês com 80%+ da renda comprometida, maior anomalia, assinatura que surgiu nos últimos 2 meses, tendência de alta mais forte), cada um indicando a tela do detalhe. Sem alertas, mostra a nota de saúde e o ritmo do mês.
+- **Ritmo do Mês** — o gasto do mês até hoje contra o mesmo trecho (até o mesmo dia) dos meses anteriores e do mês passado. Projeta o fechamento somando ao gasto atual o maior entre o restante médio dos meses anteriores e as despesas já agendadas, compara com a renda do mês e lista as categorias que aceleraram com os maiores lançamentos de cada uma.
+- **Dia Mais Apertado** — o saldo dia a dia nos próximos 45 dias, a partir do saldo de hoje e das contas a pagar e a receber já lançadas (vencidas contam como hoje). Mostra o menor saldo, a data, as maiores saídas até lá e avisa se o saldo fica negativo, por exemplo quando a fatura vence antes do salário.
+- **Gastos Formiga** (tecla `l`) — despesas de até R$ 50 (ajustável) que se repetem 4+ vezes nos últimos 3 meses (ajustável), agrupando variações da descrição ("iFood", "IFOOD *1234"). Mostra frequência, média por mês e impacto anual. Recorrências cadastradas ficam de fora.
 - **Health Score** — índice 0–100 que combina a taxa de poupança média, o nível do fundo de emergência (saldo ÷ despesa média mensal) e a constância do fluxo de caixa livre (quanto menos o líquido mensal oscila, melhor).
-- **Modo Economia** — compara os gastos do mês corrente, por categoria, com a média e o desvio padrão dos meses anteriores, e alerta os comportamentos atípicos (ex.: "restaurante 275% acima do padrão").
+- **Modo Economia** — compara os gastos do mês corrente, por categoria, com a média e o desvio padrão dos meses anteriores, e alerta os comportamentos atípicos (ex.: "restaurante 275% acima do padrão"), com os maiores lançamentos do mês de cada categoria logo abaixo.
 - **Tendências** — ajusta uma reta ao gasto mensal de cada categoria (meses já fechados) e mostra as que sobem ou caem de forma consistente — o vazamento lento que a detecção de anomalia pontual não pega, com a projeção anual ("nesse ritmo, +R$ X em um ano").
 - **Sazonalidade** — mapeia os meses do calendário historicamente mais caros (precisa de histórico de mais de um ano para ficar útil) e avisa quando um deles está chegando.
 - **Runway** — projeta o saldo para 30/90/180 dias a partir das médias, mostra o *burn rate* (despesa média) e, se o fluxo é negativo, quantos meses faltam até o saldo zerar.
@@ -590,7 +596,9 @@ Não combina com `--empresa` (lê sempre o banco pessoal) nem com o modo cliente
 - **Eficiência** — acompanha as contas de utilidade da casa (luz, água, gás, internet), a proporção sobre a renda e detecta picos de consumo.
 - **Melhor Dia de Compra** — por cartão, o prazo entre comprar hoje e pagar a fatura, e o dia do ciclo (logo após o fechamento) que dá o prazo máximo — sem usar histórico, só o ciclo de cada cartão.
 
-A classificação de categorias (o que conta como "necessidade", "utilidade" ou "conta básica") é por **palavra-chave no nome da categoria** — quanto mais consistente o nome dos seus lançamentos, melhores os recortes das análises.
+**Período (tecla `p`):** Health Score, Ritmo do Mês, Modo Economia, Tendências, Renda Comprometida, Regra 50/30/20 e Eficiência aceitam a janela em meses (1 a 36). No MCP, é o parâmetro `meses` da ferramenta `analise`.
+
+**Classificação das categorias:** o que conta como "necessidade", "utilidade" ou "conta básica" vem da **classe** da categoria (`prisma categoria editar <id> --classe ...`, veja [categoria](#categoria)). Sem classe definida, vale a **palavra-chave no nome** (aluguel, mercado, luz…). As telas 50/30/20, Eficiência e Inflação dizem quais categorias consideraram, e a 50/30/20 aponta gastos relevantes sem classe para você conferir.
 
 ## Conversar com o Claude (`prisma mcp`)
 

@@ -1094,9 +1094,9 @@ func AnalyticsAnomalias(conn *sql.DB, args ...string) error {
 // Anomalia é uma categoria com gasto atípico no mês corrente.
 type Anomalia struct {
 	Categoria string
-	Atual     int64   // gasto no mês corrente
-	Media     int64   // média dos meses da base
-	Acima     float64 // % acima da média
+	Atual     int64              // gasto no mês corrente
+	Media     int64              // média dos meses da base
+	Acima     float64            // % acima da média
 	Maiores   []LancamentoResumo // os maiores lançamentos do mês na categoria
 }
 
@@ -1683,9 +1683,9 @@ func AnalyticsTendencias(conn *sql.DB, args ...string) error {
 // Tendencia é uma categoria cujo gasto sobe ou cai de forma consistente.
 type Tendencia struct {
 	Categoria string
-	Serie     []int64 // gasto mensal desde o primeiro mês da categoria na janela
-	Slope     float64 // centavos/mês (positivo = subindo)
-	RelMes    float64 // inclinação em % da média por mês
+	Serie     []int64            // gasto mensal desde o primeiro mês da categoria na janela
+	Slope     float64            // centavos/mês (positivo = subindo)
+	RelMes    float64            // inclinação em % da média por mês
 	Maiores   []LancamentoResumo // maiores lançamentos do último mês fechado (só nas que sobem)
 }
 

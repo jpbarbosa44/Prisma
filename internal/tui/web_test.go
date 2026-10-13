@@ -247,8 +247,8 @@ func TestWebAnalytics(t *testing.T) {
 			Titulo string `json:"titulo"`
 		}
 		pega(t, srv.URL+"/api/telas", &telas)
-		if len(telas) == 0 || telas[0].Titulo != "Health Score" {
-			t.Fatalf("esperava Health Score em primeiro, veio %+v", telas)
+		if len(telas) < 2 || telas[0].Titulo != "Hoje" || telas[1].Titulo != "Health Score" {
+			t.Fatalf("esperava Hoje e Health Score em primeiro, veio %+v", telas)
 		}
 	})
 }

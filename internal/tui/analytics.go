@@ -36,9 +36,27 @@ func novasTelasAnalytics(conn *sql.DB) []tela {
 	}
 
 	return []tela{
+		vis("Hoje", "o que merece atenção", func() error { return app.AnalyticsHoje(conn) }),
 		periodo("Health Score", "saúde financeira 0–100", "1 a 36 (padrão 6)", app.AnalyticsHealthScore),
+		periodo("Ritmo do Mês", "gasto até hoje x normal", "meses de base, 1 a 36 (padrão 6)", app.AnalyticsRitmo),
+		vis("Dia Mais Apertado", "saldo dia a dia", func() error { return app.AnalyticsDiaApertado(conn) }),
 		periodo("Modo Economia", "anomalias de gasto", "meses de base, 1 a 36 (padrão 6)", app.AnalyticsAnomalias),
 		periodo("Tendências", "vazamentos lentos", "meses fechados, 1 a 36 (padrão 6)", app.AnalyticsTendencias),
+		{
+			titulo: "Gastos Formiga",
+			resumo: "pequenos gastos repetidos",
+			conteudo: func(p []string) (string, error) {
+				return captura(func() error { return app.AnalyticsFormiga(conn, p...) })
+			},
+			acoes: []acao{{
+				tecla: "l", rotulo: "período e limite",
+				campos: []campo{
+					{rotulo: "meses", dica: "1 a 36 (padrão 3)"},
+					{rotulo: "limite", dica: "valor máximo, ex.: 50,00"},
+				},
+				params: func(v []string) []string { return []string{v[0], v[1]} },
+			}},
+		},
 		vis("Sazonalidade", "picos anuais", func() error { return app.AnalyticsSazonalidade(conn) }),
 		vis("Runway", "projeção de caixa", func() error { return app.AnalyticsRunway(conn) }),
 		periodo("Renda Comprometida", "parcelas e agendados", "meses à frente, 1 a 36 (padrão 6)", app.AnalyticsComprometimento),
