@@ -35,6 +35,25 @@ Prefira as ferramentas específicas (saldo, lancamentos, relatorio, previsao, an
 elas já aplicam as regras de cartão, parcelas, grupos e transferências. Use consulta_sql
 só quando nenhuma delas responder, e consulte schema antes.`
 
+// instrucoesEscrita completam as instruções quando a sessão pode gravar.
+const instrucoesEscrita = `
+
+Esta sessão também CADASTRA dados (prisma mcp --escrita). Para importar um extrato ou fatura:
+1. ler_extrato com o caminho do arquivo (CSV/OFX/TXT) e interprete as colunas;
+2. consulte saldo (contas), cartoes e categorias para reaproveitar o que já existe;
+3. importar_lancamentos SEM confirmar: revise a prévia (duplicados, categorias novas);
+4. mostre o resumo ao usuário e, com o aval dele (ou se ele já autorizou), repita com confirmar=true.
+Prefira categorias existentes; crie novas só quando nada servir, com nomes curtos em minúsculas,
+e defina a classe com definir_categoria. Use criar_recorrencia para assinaturas e contas fixas
+que vão continuar (o histórico já vem do extrato). Cada lote pode ser revertido com desfazer_importacao.`
+
+func (s *Sessao) instrucoes() string {
+	if s.escrita == nil {
+		return instrucoes
+	}
+	return instrucoes + instrucoesEscrita
+}
+
 // limiteSaida corta respostas muito grandes (um extrato sem filtro, por ex.)
 // para não estourar o contexto do modelo.
 const limiteSaida = 60_000
@@ -65,10 +84,41 @@ type erroRPC struct {
 	Message string `json:"message"`
 }
 
+// Sessao é o estado do servidor durante uma conexão MCP.
+type Sessao struct {
+	leitura  *sql.DB // consultas; query_only quando o banco é local
+	escrita  *sql.DB // nil = servidor somente leitura
+	sqlLivre bool    // consulta_sql só existe sobre uma conexão query_only
+	banco    string  // caminho do banco local, para o snapshot antes de gravar ("" = remoto)
+	snapshot string  // backup tirado antes do primeiro lote desta sessão
+}
+
+// Servir atende um cliente MCP somente leitura sobre conn (query_only).
+func Servir(conn *sql.DB, in io.Reader, out io.Writer) error {
+	return (&Sessao{leitura: conn, sqlLivre: true}).Servir(in, out)
+}
+
+// ServirComEscrita atende um cliente MCP que também pode cadastrar dados
+// (`prisma mcp --escrita`). leitura atende as consultas e escrita as
+// gravações. sqlLivre só deve ser true se leitura for query_only; banco é o
+// arquivo local para o snapshot antes da primeira gravação ("" se remoto).
+func ServirComEscrita(leitura, escrita *sql.DB, sqlLivre bool, banco string, in io.Reader, out io.Writer) error {
+	s := &Sessao{leitura: leitura, escrita: escrita, sqlLivre: sqlLivre, banco: banco}
+	return s.Servir(in, out)
+}
+
+// disponivel diz se a ferramenta existe nesta sessão.
+func (s *Sessao) disponivel(f ferramenta) bool {
+	if f.escreve && s.escrita == nil {
+		return false
+	}
+	return f.nome != "consulta_sql" || s.sqlLivre
+}
+
 // Servir atende requisições MCP lidas de in até EOF, escrevendo as respostas
 // em out. Processa uma por vez — obrigatório, pois a captura das funções do
 // app troca os.Stdout enquanto roda.
-func Servir(conn *sql.DB, in io.Reader, out io.Writer) error {
+func (s *Sessao) Servir(in io.Reader, out io.Writer) error {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	enc := json.NewEncoder(out)
@@ -78,7 +128,7 @@ func Servir(conn *sql.DB, in io.Reader, out io.Writer) error {
 		if linha == "" {
 			continue
 		}
-		if r := trata(conn, []byte(linha)); r != nil {
+		if r := s.trata([]byte(linha)); r != nil {
 			if err := enc.Encode(r); err != nil {
 				return err
 			}
@@ -88,7 +138,7 @@ func Servir(conn *sql.DB, in io.Reader, out io.Writer) error {
 }
 
 // trata responde uma mensagem; devolve nil para notificações (sem id).
-func trata(conn *sql.DB, linha []byte) *resposta {
+func (s *Sessao) trata(linha []byte) *resposta {
 	var req requisicao
 	if err := json.Unmarshal(linha, &req); err != nil {
 		return &resposta{JSONRPC: "2.0", ID: json.RawMessage("null"),
@@ -112,13 +162,16 @@ func trata(conn *sql.DB, linha []byte) *resposta {
 			"protocolVersion": versao,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "prisma", "version": update.Versao},
-			"instructions":    instrucoes,
+			"instructions":    s.instrucoes(),
 		}
 	case "ping":
 		r.Result = map[string]any{}
 	case "tools/list":
 		lista := make([]map[string]any, 0, len(ferramentas))
 		for _, f := range ferramentas {
+			if !s.disponivel(f) {
+				continue
+			}
 			lista = append(lista, map[string]any{
 				"name":        f.nome,
 				"description": f.descricao,
@@ -136,11 +189,11 @@ func trata(conn *sql.DB, linha []byte) *resposta {
 			break
 		}
 		f, ok := buscaFerramenta(p.Name)
-		if !ok {
+		if !ok || !s.disponivel(f) {
 			r.Error = &erroRPC{erroParametros, "ferramenta desconhecida: " + p.Name}
 			break
 		}
-		r.Result = chama(conn, f, p.Arguments)
+		r.Result = s.chama(f, p.Arguments)
 	default:
 		r.Error = &erroRPC{erroMetodo, "método não suportado: " + req.Method}
 	}
@@ -150,14 +203,25 @@ func trata(conn *sql.DB, linha []byte) *resposta {
 // chama roda a ferramenta e embrulha o resultado no formato do MCP. Erros da
 // ferramenta voltam como resultado com isError (o modelo vê e corrige), não
 // como erro de protocolo.
-func chama(conn *sql.DB, f ferramenta, a argumentos) map[string]any {
+func (s *Sessao) chama(f ferramenta, a argumentos) map[string]any {
 	if a == nil {
 		a = argumentos{}
 	}
 	var texto string
 	err := f.valida(a)
 	if err == nil {
-		texto, err = f.rodar(conn, a)
+		// toda ferramenta roda sob captura: um Print perdido em alguma função
+		// do app iria para o stdout real — o canal do protocolo — e corromperia
+		// a resposta. O que escapar assim entra no texto do resultado.
+		var solto string
+		solto, err = captura(func() error {
+			var errF error
+			texto, errF = f.rodar(s, a)
+			return errF
+		})
+		if strings.TrimSpace(solto) != "" {
+			texto = strings.TrimRight(solto, "\n") + "\n" + texto
+		}
 	}
 	if err != nil {
 		texto = strings.TrimSpace(texto)

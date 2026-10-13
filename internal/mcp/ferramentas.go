@@ -19,7 +19,8 @@ import (
 // validação genérica feita antes de rodar.
 type param struct {
 	nome        string
-	tipo        string // "string" | "integer" | "number" | "boolean" | "dinheiro" (texto ou número)
+	tipo        string         // "string" | "integer" | "number" | "boolean" | "dinheiro" (texto ou número) | "array"
+	itens       map[string]any // esquema dos itens, quando tipo é "array"
 	descricao   string
 	enum        []string
 	obrigatorio bool
@@ -32,7 +33,8 @@ type ferramenta struct {
 	nome      string
 	descricao string
 	params    []param
-	rodar     func(conn *sql.DB, a argumentos) (string, error)
+	escreve   bool // só existe em sessões com escrita (prisma mcp --escrita)
+	rodar     func(s *Sessao, a argumentos) (string, error)
 }
 
 func (f ferramenta) esquema() map[string]any {
@@ -42,6 +44,9 @@ func (f ferramenta) esquema() map[string]any {
 		prop := map[string]any{"type": p.tipo, "description": p.descricao}
 		if p.tipo == "dinheiro" {
 			prop["type"] = []string{"string", "number"}
+		}
+		if p.itens != nil {
+			prop["items"] = p.itens
 		}
 		if len(p.enum) > 0 {
 			prop["enum"] = p.enum
@@ -92,6 +97,10 @@ func (f ferramenta) valida(a argumentos) error {
 		case "boolean":
 			if _, ok := v.(bool); !ok {
 				return errArg(nome, "esperava true/false")
+			}
+		case "array":
+			if _, ok := v.([]any); !ok {
+				return errArg(nome, "esperava uma lista")
 			}
 		case "dinheiro":
 			switch v.(type) {
@@ -191,8 +200,9 @@ func pMeses(padrao int) param {
 }
 
 // comMeses roda uma função do app que aceita só --meses.
-func comMeses(padrao int, f func(*sql.DB, []string) error) func(*sql.DB, argumentos) (string, error) {
-	return func(conn *sql.DB, a argumentos) (string, error) {
+func comMeses(padrao int, f func(*sql.DB, []string) error) func(*Sessao, argumentos) (string, error) {
+	return func(s *Sessao, a argumentos) (string, error) {
+		conn := s.leitura
 		m, err := a.inteiro("meses", padrao, 1, 36)
 		if err != nil {
 			return "", err
@@ -253,7 +263,8 @@ func init() {
 		{
 			nome:      "saldo",
 			descricao: "Posição geral consolidada: saldo de cada conta e carteira, pendências e total.",
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				return captura(func() error { return app.Saldo(conn, nil) })
 			},
 		},
@@ -268,7 +279,8 @@ func init() {
 				{nome: "tipo", tipo: "string", descricao: "pagar (despesa) ou receber (receita)", enum: []string{"pagar", "receber"}},
 				{nome: "so_pendentes", tipo: "boolean", descricao: "só o que ainda falta pagar/receber"},
 			},
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				var args []string
 				if m, err := a.mes("mes"); err != nil {
 					return "", err
@@ -310,7 +322,8 @@ func init() {
 				{nome: "conta", tipo: "integer", descricao: "id da conta"},
 				{nome: "carteira", tipo: "integer", descricao: "id da carteira"},
 			},
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				m, err := a.inteiro("meses", 3, 1, 36)
 				if err != nil {
 					return "", err
@@ -346,7 +359,8 @@ func init() {
 		{
 			nome:      "cartoes",
 			descricao: "Lista os cartões de crédito com id, limite, fechamento e vencimento.",
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				return captura(func() error { return app.Cartao(conn, []string{"listar"}) })
 			},
 		},
@@ -358,7 +372,8 @@ func init() {
 				{nome: "ref", tipo: "string", descricao: "fatura AAAA-MM (padrão: a aberta)"},
 				{nome: "so_abertos", tipo: "boolean", descricao: "só lançamentos ainda em aberto"},
 			},
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				id, err := a.inteiro("cartao", 0, 1, math.MaxInt32)
 				if err != nil {
 					return "", err
@@ -385,7 +400,8 @@ func init() {
 				{nome: "entrada", tipo: "dinheiro", descricao: "valor de entrada pago à vista, em reais"},
 				{nome: "descricao", tipo: "string", descricao: "o que vai comprar"},
 			},
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				v, err := a.dinheiro("valor")
 				if err != nil {
 					return "", err
@@ -424,7 +440,8 @@ func init() {
 				{nome: "tipo", tipo: "string", descricao: "qual análise", enum: nomesAnalises, obrigatorio: true},
 				{nome: "meses", tipo: "integer", descricao: "janela em meses, 1 a 36 (health_score, ritmo, formiga, anomalias, tendencias, regra_50_30_20, utilidades; em comprometimento, meses à frente). Omitido = padrão da análise"},
 			},
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				f := analises[a.texto("tipo")]
 				m, err := a.inteiro("meses", 0, 1, 36)
 				if err != nil {
@@ -440,14 +457,16 @@ func init() {
 		{
 			nome:      "categorias",
 			descricao: "Lista as categorias cadastradas.",
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				return strings.Join(app.ListaCategorias(conn), "\n"), nil
 			},
 		},
 		{
 			nome:      "schema",
 			descricao: "Mostra o CREATE TABLE de todas as tabelas do banco (com comentários), para montar consulta_sql.",
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				return consultaSQL(conn, `SELECT sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`, true)
 			},
 		},
@@ -460,7 +479,8 @@ func init() {
 			params: []param{
 				{nome: "sql", tipo: "string", descricao: "uma única instrução SELECT/WITH, sem ponto e vírgula", obrigatorio: true},
 			},
-			rodar: func(conn *sql.DB, a argumentos) (string, error) {
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
 				q, err := validaSelect(a.texto("sql"))
 				if err != nil {
 					return "", err
@@ -469,6 +489,7 @@ func init() {
 			},
 		},
 	}
+	ferramentas = append(ferramentas, ferramentasExtrato()...)
 }
 
 const maxLinhasSQL = 200

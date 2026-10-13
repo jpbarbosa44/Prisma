@@ -10,7 +10,6 @@ import (
 	"prisma/internal/app"
 	"prisma/internal/bot"
 	"prisma/internal/db"
-	"prisma/internal/mcp"
 	"prisma/internal/remote"
 	"prisma/internal/tui"
 	"prisma/internal/update"
@@ -23,7 +22,8 @@ USO
   prisma --web [--porta N]                abre a interface no navegador
   prisma --empresa [...]                  mesmos comandos, banco separado da empresa
   prisma --analytics [--web]              módulo de análise financeira (somente leitura)
-  prisma mcp                              servidor MCP: converse com o Claude sobre seus dados (somente leitura)
+  prisma mcp [--escrita]                  servidor MCP: converse com o Claude sobre seus dados
+                                          (somente leitura; --escrita deixa importar extratos e cadastrar)
   prisma <comando> [subcomando] [opções]  modo linha de comando
 
 COMANDOS
@@ -176,19 +176,14 @@ func main() {
 	// `prisma mcp` serve as consultas do Prisma a assistentes de IA (Claude
 	// Code/Desktop) pelo MCP no stdio, sobre o banco pessoal em modo somente
 	// leitura — como o Analytics. O stdout é o canal do protocolo: nada de
-	// aviso de atualização aqui, e erros vão para o stderr.
+	// aviso de atualização aqui, e erros vão para o stderr. Com --escrita o
+	// assistente também cadastra (importar extratos, categorias, recorrências).
 	if len(os.Args) >= 2 && os.Args[1] == "mcp" {
 		if modoEmpresa {
 			fmt.Fprintln(os.Stderr, "erro: mcp não pode ser combinado com --empresa")
 			os.Exit(2)
 		}
-		conn, err := db.AbrirAnalytics()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
-			os.Exit(1)
-		}
-		defer conn.Close()
-		if err := mcp.Servir(conn, os.Stdin, os.Stdout); err != nil {
+		if err := rodarMCP(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
 			os.Exit(1)
 		}

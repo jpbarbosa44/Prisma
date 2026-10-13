@@ -361,3 +361,31 @@ func parseCSVExtrato(s string, colValor int) ([]movimento, error) {
 	}
 	return movs, nil
 }
+
+// MovimentoExtrato é uma linha de extrato reconhecida automaticamente.
+type MovimentoExtrato struct {
+	Data      string // AAAA-MM-DD
+	Descricao string
+	Valor     int64 // centavos, com sinal (negativo = saída)
+}
+
+// InterpretaExtrato aplica ao conteúdo de um extrato a mesma leitura do
+// `prisma importar` (OFX pela extensão do nome; senão CSV, valor no último
+// campo monetário). É uma heurística: serve de ponto de partida para quem
+// interpreta o arquivo (o assistente via MCP), não de verdade final.
+func InterpretaExtrato(nome, conteudo string) ([]MovimentoExtrato, error) {
+	var movs []movimento
+	if strings.HasSuffix(strings.ToLower(nome), ".ofx") {
+		movs = parseOFX(conteudo)
+	} else {
+		var err error
+		if movs, err = parseCSVExtrato(conteudo, 0); err != nil {
+			return nil, err
+		}
+	}
+	out := make([]MovimentoExtrato, len(movs))
+	for i, m := range movs {
+		out[i] = MovimentoExtrato{m.data, m.desc, m.valor}
+	}
+	return out, nil
+}

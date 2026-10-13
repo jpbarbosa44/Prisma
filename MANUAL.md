@@ -620,7 +620,25 @@ claude mcp add prisma -- prisma mcp
 
 (Se o `prisma` não estiver no `PATH` do aplicativo, use o caminho completo do binário.)
 
-Ferramentas disponíveis para o assistente: `saldo`, `lancamentos` (filtros por mês, período, categoria, tipo e pendentes), `relatorio`, `extrato`, `previsao`, `estatisticas`, `cartoes`, `fatura`, `simular` (não grava nada), `analise` (as análises do Analytics), `categorias`, `schema` e `consulta_sql` (um `SELECT` livre, até 200 linhas, como último recurso).
+Ferramentas disponíveis para o assistente: `saldo`, `lancamentos` (filtros por mês, período, categoria, tipo e pendentes), `relatorio`, `extrato`, `previsao`, `estatisticas`, `cartoes`, `fatura`, `simular` (não grava nada), `analise` (as análises do Analytics, com `meses` opcional), `categorias`, `schema`, `consulta_sql` (um `SELECT` livre, até 200 linhas, como último recurso) e `ler_extrato` (lê um CSV/OFX do disco para o assistente interpretar).
+
+### Importar extratos pelo assistente (`prisma mcp --escrita`)
+
+Com `--escrita`, o assistente também **cadastra**: você aponta o CSV ou OFX do banco ("importa ~/Downloads/extrato-outubro.csv na conta Nubank") e ele interpreta as colunas, escolhe ou cria categorias, separa compras de cartão de movimentos de conta e grava.
+
+```sh
+claude mcp add prisma -- prisma mcp --escrita
+```
+
+Ferramentas a mais nesse modo:
+
+- `importar_lancamentos` — sem `confirmar`, só mostra a **prévia** (o que entra, os duplicados que serão ignorados, categorias novas, totais por categoria). Com `confirmar=true`, grava tudo num **lote**. Reimportar um extrato que se sobrepõe ao anterior não duplica nada: lançamento com o mesmo tipo, descrição, valor e data é ignorado.
+- `desfazer_importacao` — apaga um lote inteiro (sem argumento, lista os lotes). O lote fica marcado na observação de cada lançamento (`[lote mcp-AAAAMMDD-HHMMSS]`).
+- `definir_categoria` — cria a categoria e define a classe do Analytics.
+- `criar_conta` — para um banco ainda não cadastrado.
+- `criar_recorrencia` — contas fixas e assinaturas que vão continuar, sempre começando de hoje em diante (o histórico já vem do extrato). Pode ligar os lançamentos passados à recorrência, para eles saírem das Assinaturas Ocultas.
+
+Segurança: antes da primeira gravação de cada sessão, o Prisma tira um snapshot do banco em `backups/mcp-antes-*.db` (ficam os 10 mais recentes; volte com `prisma restaurar`). As consultas seguem numa conexão somente leitura, e a `consulta_sql` nunca roda na conexão que grava. No modo cliente/servidor, a escrita vai para o servidor, e a `consulta_sql` fica desligada.
 
 > **Privacidade:** o que o assistente consulta é enviado ao provedor do modelo (no caso do Claude, a Anthropic) para gerar a resposta. O Prisma em si não fala com a internet nesse modo: ele só responde ao programa que o iniciou.
 

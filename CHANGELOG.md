@@ -17,6 +17,12 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
   --classe necessidade|desejo|utilidade|basica|auto` (ou a ação `c` na tela
   Categorias) define como o Analytics trata cada categoria; sem classe,
   vale a palavra-chave no nome, como antes.
+- **MCP com escrita: importar extratos pelo assistente.** `prisma mcp
+  --escrita` deixa o Claude ler um CSV/OFX do banco (`ler_extrato`, com
+  conversão de Latin-1), mostrar a prévia e gravar os lançamentos num lote
+  (`importar_lancamentos`), com detecção de duplicados, snapshot do banco
+  antes da primeira gravação e `desfazer_importacao`. Também cria
+  categorias com classe, contas e recorrências/assinaturas.
 - **Período ajustável** (tecla `p`) em sete análises do Analytics, e
   **lançamentos por trás dos alertas** no Modo Economia, Tendências e Ritmo.
 

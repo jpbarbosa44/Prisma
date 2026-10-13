@@ -47,8 +47,14 @@ func abreSomenteLeitura(t *testing.T) *sql.DB {
 // decodificadas, falhando se alguma linha do out não for JSON.
 func conversa(t *testing.T, conn *sql.DB, msgs ...string) []map[string]any {
 	t.Helper()
+	return conversaSessao(t, &Sessao{leitura: conn, sqlLivre: true}, msgs...)
+}
+
+// conversaSessao é conversa sobre uma sessão já montada (ex.: com escrita).
+func conversaSessao(t *testing.T, s *Sessao, msgs ...string) []map[string]any {
+	t.Helper()
 	var out bytes.Buffer
-	if err := Servir(conn, strings.NewReader(strings.Join(msgs, "\n")+"\n"), &out); err != nil {
+	if err := s.Servir(strings.NewReader(strings.Join(msgs, "\n")+"\n"), &out); err != nil {
 		t.Fatalf("Servir: %v", err)
 	}
 	var resps []map[string]any
@@ -104,8 +110,14 @@ func TestProtocoloBasico(t *testing.T) {
 		t.Errorf("protocolVersion = %v", info["protocolVersion"])
 	}
 	tools := resps[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != len(ferramentas) {
-		t.Errorf("tools/list devolveu %d ferramentas, esperava %d", len(tools), len(ferramentas))
+	leitura := 0
+	for _, f := range ferramentas {
+		if !f.escreve {
+			leitura++
+		}
+	}
+	if len(tools) != leitura {
+		t.Errorf("tools/list devolveu %d ferramentas, esperava as %d de leitura", len(tools), leitura)
 	}
 	texto, isErr := resultado(t, resps[2])
 	if isErr || !strings.Contains(texto, "Nubank") {
@@ -135,6 +147,9 @@ func TestTodasAsFerramentasLeem(t *testing.T) {
 	}
 	var msgs []string
 	for i, f := range ferramentas {
+		if f.escreve || f.nome == "ler_extrato" { // escrita.go testa as de extrato e gravação
+			continue
+		}
 		msgs = append(msgs, chamada(i+1, f.nome, args[f.nome]))
 	}
 	for _, tipo := range nomesAnalises {
