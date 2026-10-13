@@ -20,13 +20,28 @@ func novasTelasAnalytics(conn *sql.DB) []tela {
 		}
 	}
 
+	// periodo cria uma tela com janela ajustável: a ação "p" pede os meses e
+	// os repassa à análise como parâmetro (vazio = padrão da análise).
+	periodo := func(titulo, resumo, dica string, f func(*sql.DB, ...string) error) tela {
+		return tela{
+			titulo:   titulo,
+			resumo:   resumo,
+			conteudo: func(p []string) (string, error) { return captura(func() error { return f(conn, p...) }) },
+			acoes: []acao{{
+				tecla: "p", rotulo: "período",
+				campos: []campo{{rotulo: "meses", dica: dica}},
+				params: func(v []string) []string { return []string{v[0]} },
+			}},
+		}
+	}
+
 	return []tela{
-		vis("Health Score", "saúde financeira 0–100", func() error { return app.AnalyticsHealthScore(conn) }),
-		vis("Modo Economia", "anomalias de gasto", func() error { return app.AnalyticsAnomalias(conn) }),
-		vis("Tendências", "vazamentos lentos", func() error { return app.AnalyticsTendencias(conn) }),
+		periodo("Health Score", "saúde financeira 0–100", "1 a 36 (padrão 6)", app.AnalyticsHealthScore),
+		periodo("Modo Economia", "anomalias de gasto", "meses de base, 1 a 36 (padrão 6)", app.AnalyticsAnomalias),
+		periodo("Tendências", "vazamentos lentos", "meses fechados, 1 a 36 (padrão 6)", app.AnalyticsTendencias),
 		vis("Sazonalidade", "picos anuais", func() error { return app.AnalyticsSazonalidade(conn) }),
 		vis("Runway", "projeção de caixa", func() error { return app.AnalyticsRunway(conn) }),
-		vis("Renda Comprometida", "parcelas e agendados", func() error { return app.AnalyticsComprometimento(conn) }),
+		periodo("Renda Comprometida", "parcelas e agendados", "meses à frente, 1 a 36 (padrão 6)", app.AnalyticsComprometimento),
 		{
 			titulo: "Metas",
 			resumo: "viabilidade de metas",
@@ -59,11 +74,11 @@ func novasTelasAnalytics(conn *sql.DB) []tela {
 			}},
 		},
 		vis("Inflação Pessoal", "custo de vida", func() error { return app.AnalyticsInflacao(conn) }),
-		vis("Regra 50/30/20", "auditoria macro", func() error { return app.AnalyticsRegra502030(conn) }),
+		periodo("Regra 50/30/20", "auditoria macro", "1 a 36 (padrão 6)", app.AnalyticsRegra502030),
 		vis("Aderência a Planos", "planejado x realizado", func() error { return app.AnalyticsAderenciaPlanos(conn) }),
 		vis("Patrimônio Líquido", "net worth", func() error { return app.AnalyticsPatrimonio(conn) }),
 		vis("Balanço dos Grupos", "divisão de contas", func() error { return app.AnalyticsGrupos(conn) }),
-		vis("Eficiência", "contas da casa", func() error { return app.AnalyticsUtilidades(conn) }),
+		periodo("Eficiência", "contas da casa", "1 a 36 (padrão 6)", app.AnalyticsUtilidades),
 		vis("Melhor Dia de Compra", "prazo dos cartões", func() error { return app.AnalyticsMelhorDiaCartao(conn) }),
 		{
 			titulo:   "Como usar",

@@ -50,6 +50,36 @@ func (o Opcoes) meses(padrao int) int {
 	return m
 }
 
+// opcoesDeArgs lê os parâmetros de tela/CLI de uma análise com janela:
+// args[0], se presente, é o número de meses (1 a 36).
+func opcoesDeArgs(args []string) (Opcoes, error) {
+	var o Opcoes
+	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(args[0]))
+		if err != nil || n < 1 || n > 36 {
+			return o, fmt.Errorf("período inválido %q: informe de 1 a 36 meses", args[0])
+		}
+		o.Meses = n
+	}
+	return o, nil
+}
+
+// imprimeEvidencias lista, recuada sob um alerta, os lançamentos que o explicam.
+func imprimeEvidencias(ls []LancamentoResumo) {
+	if len(ls) == 0 {
+		return
+	}
+	partes := make([]string, len(ls))
+	for i, l := range ls {
+		data := l.Data
+		if len(data) >= 10 {
+			data = data[8:10] + "/" + data[5:7]
+		}
+		partes[i] = fmt.Sprintf("%s %s %s", data, truncar(l.Descricao, 22), money.Format(l.Valor))
+	}
+	fmt.Println(pintar(cCinza, "    └ "+strings.Join(partes, " · ")))
+}
+
 // relogio é o "agora" das análises e das janelas de tempo; os testes o fixam
 // para exercitar datas de borda (dia 1º, fim de mês, virada de ano).
 var relogio = time.Now
@@ -116,8 +146,12 @@ func lancamentosDoGasto(conn *sql.DB, cat, deMes, ateMes string, n int) ([]Lanca
 // financeira a partir de três pilares: a taxa de poupança média, o nível do
 // fundo de emergência (saldo ÷ despesa média mensal) e a constância do fluxo de
 // caixa livre (quanto menos o líquido mensal oscila, melhor).
-func AnalyticsHealthScore(conn *sql.DB) error {
-	h, err := CalcHealthScore(conn, Opcoes{})
+func AnalyticsHealthScore(conn *sql.DB, args ...string) error {
+	o, err := opcoesDeArgs(args)
+	if err != nil {
+		return err
+	}
+	h, err := CalcHealthScore(conn, o)
 	if err != nil {
 		return err
 	}
@@ -375,9 +409,10 @@ func (a AssinaturasOcultas) Imprimir() {
 		return
 	}
 	w := novaTabela()
-	fmt.Fprintln(w, "DESCRIÇÃO\tVALOR\tMESES\tIMPACTO/ANO")
+	fmt.Fprintln(w, "DESCRIÇÃO\tVALOR\tMESES\tDESDE\tÚLTIMA\tIMPACTO/ANO")
 	for _, it := range a.Itens {
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", it.Descricao, money.Format(it.Valor), it.Meses, money.Format(it.ImpactoAno))
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n", it.Descricao, money.Format(it.Valor), it.Meses,
+			mesBR(it.Primeira), mesBR(it.Ultima), money.Format(it.ImpactoAno))
 	}
 	w.Flush()
 	fmt.Printf("\nImpacto anual somado das prováveis assinaturas: %s\n", money.Format(a.TotalAno))
@@ -668,8 +703,12 @@ func pct(parte, total int64) float64 {
 
 // AnalyticsRegra502030 (RF09) classifica o orçamento em Necessidades, Desejos e
 // Poupança/Investimentos (o que sobra da renda) e compara com o padrão 50/30/20.
-func AnalyticsRegra502030(conn *sql.DB) error {
-	r, err := CalcRegra502030(conn, Opcoes{})
+func AnalyticsRegra502030(conn *sql.DB, args ...string) error {
+	o, err := opcoesDeArgs(args)
+	if err != nil {
+		return err
+	}
+	r, err := CalcRegra502030(conn, o)
 	if err != nil {
 		return err
 	}
@@ -943,8 +982,12 @@ func (i Inflacao) Imprimir() {
 
 // AnalyticsUtilidades (RF11) acompanha o consumo das contas de utilidade (luz,
 // água, gás, internet): gasto mensal, proporção da renda e detecção de picos.
-func AnalyticsUtilidades(conn *sql.DB) error {
-	u, err := CalcUtilidades(conn, Opcoes{})
+func AnalyticsUtilidades(conn *sql.DB, args ...string) error {
+	o, err := opcoesDeArgs(args)
+	if err != nil {
+		return err
+	}
+	u, err := CalcUtilidades(conn, o)
 	if err != nil {
 		return err
 	}
@@ -1035,8 +1078,12 @@ func (u Utilidades) Imprimir() {
 // AnalyticsAnomalias (RF02) compara os gastos do mês corrente, por categoria, com
 // o histórico (média e desvio padrão dos meses anteriores) e alerta as categorias
 // com comportamento atípico (acima do padrão).
-func AnalyticsAnomalias(conn *sql.DB) error {
-	a, err := CalcAnomalias(conn, Opcoes{})
+func AnalyticsAnomalias(conn *sql.DB, args ...string) error {
+	o, err := opcoesDeArgs(args)
+	if err != nil {
+		return err
+	}
+	a, err := CalcAnomalias(conn, o)
 	if err != nil {
 		return err
 	}
@@ -1050,6 +1097,7 @@ type Anomalia struct {
 	Atual     int64   // gasto no mês corrente
 	Media     int64   // média dos meses da base
 	Acima     float64 // % acima da média
+	Maiores   []LancamentoResumo // os maiores lançamentos do mês na categoria
 }
 
 // Anomalias é o resultado do RF02, da maior para a menor.
@@ -1115,7 +1163,11 @@ func CalcAnomalias(conn *sql.DB, o Opcoes) (Anomalias, error) {
 		desvio := math.Sqrt(varSum / float64(len(base)))
 		// atípico: acima de 30% da média E acima de média + 1 desvio
 		if float64(vAtual) > media*1.3 && float64(vAtual) > media+desvio {
-			a.Itens = append(a.Itens, Anomalia{cat, vAtual, int64(media), pct(vAtual-int64(media), int64(media))})
+			ev, err := lancamentosDoGasto(conn, cat, atual, atual, 3)
+			if err != nil {
+				return Anomalias{}, err
+			}
+			a.Itens = append(a.Itens, Anomalia{cat, vAtual, int64(media), pct(vAtual-int64(media), int64(media)), ev})
 		}
 	}
 	// do maior para o menor desvio (empate: ordem alfabética, para ser estável)
@@ -1143,6 +1195,7 @@ func (a Anomalias) Imprimir() {
 	for _, it := range a.Itens {
 		fmt.Printf("⚠ %s: %s neste mês — %.0f%% acima do padrão (média %s).\n",
 			it.Categoria, money.Format(it.Atual), it.Acima, money.Format(it.Media))
+		imprimeEvidencias(it.Maiores)
 	}
 }
 
@@ -1381,8 +1434,12 @@ func AnalyticsSimulador(conn *sql.DB, args []string) error {
 // contas agendadas e recorrências — antes de o mês começar. É a régua para
 // decidir se cabe parcelar algo novo: o Runway diz se o fluxo médio fecha; aqui
 // aparece QUANDO vem o mês apertado.
-func AnalyticsComprometimento(conn *sql.DB) error {
-	c, err := CalcComprometimento(conn, Opcoes{})
+func AnalyticsComprometimento(conn *sql.DB, args ...string) error {
+	o, err := opcoesDeArgs(args)
+	if err != nil {
+		return err
+	}
+	c, err := CalcComprometimento(conn, o)
 	if err != nil {
 		return err
 	}
@@ -1610,8 +1667,12 @@ func corFaixaCumprimento(pc float64) string {
 // pontual não pega: ajusta uma reta ao gasto mensal de cada categoria (meses já
 // FECHADOS — o corrente, parcial, enviesaria a inclinação para baixo) e mostra
 // as que sobem ou caem de forma consistente.
-func AnalyticsTendencias(conn *sql.DB) error {
-	t, err := CalcTendencias(conn, Opcoes{})
+func AnalyticsTendencias(conn *sql.DB, args ...string) error {
+	o, err := opcoesDeArgs(args)
+	if err != nil {
+		return err
+	}
+	t, err := CalcTendencias(conn, o)
 	if err != nil {
 		return err
 	}
@@ -1625,6 +1686,7 @@ type Tendencia struct {
 	Serie     []int64 // gasto mensal desde o primeiro mês da categoria na janela
 	Slope     float64 // centavos/mês (positivo = subindo)
 	RelMes    float64 // inclinação em % da média por mês
+	Maiores   []LancamentoResumo // maiores lançamentos do último mês fechado (só nas que sobem)
 }
 
 // Tendencias é o resultado do RF14, da inclinação mais forte para a mais fraca
@@ -1668,7 +1730,7 @@ func CalcTendencias(conn *sql.DB, o Opcoes) (Tendencias, error) {
 		if math.Abs(rel) < 8 || math.Abs(slope) < 2000 {
 			continue
 		}
-		t.Itens = append(t.Itens, Tendencia{cat, s, slope, rel})
+		t.Itens = append(t.Itens, Tendencia{Categoria: cat, Serie: s, Slope: slope, RelMes: rel})
 	}
 	sort.Slice(t.Itens, func(i, j int) bool {
 		a, b := math.Abs(t.Itens[i].Slope), math.Abs(t.Itens[j].Slope)
@@ -1679,6 +1741,14 @@ func CalcTendencias(conn *sql.DB, o Opcoes) (Tendencias, error) {
 	})
 	if len(t.Itens) > 8 {
 		t.Itens = t.Itens[:8]
+	}
+	for i := range t.Itens {
+		if t.Itens[i].Slope <= 0 {
+			continue
+		}
+		if t.Itens[i].Maiores, err = lancamentosDoGasto(conn, t.Itens[i].Categoria, t.Ate, t.Ate, 3); err != nil {
+			return Tendencias{}, err
+		}
 	}
 	return t, nil
 }
@@ -1705,6 +1775,8 @@ func (t Tendencias) Imprimir() {
 	if pior := t.Itens[0]; pior.Slope > 0 {
 		fmt.Printf("\n⚠ Maior vazamento: %s sobe ~%s por mês. Nesse ritmo, são +%s em um ano.\n",
 			pior.Categoria, money.Format(int64(pior.Slope)), money.Format(int64(pior.Slope*12)))
+		fmt.Printf("  Maiores gastos de %s em %s:\n", pior.Categoria, mesBR(t.Ate))
+		imprimeEvidencias(pior.Maiores)
 	}
 }
 

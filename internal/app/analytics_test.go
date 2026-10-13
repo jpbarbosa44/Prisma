@@ -295,7 +295,7 @@ func TestCalcAnomaliasETendencias(t *testing.T) {
 	if len(a.Itens) != 1 || a.Itens[0].Categoria != "restaurante" || a.Itens[0].Atual != 60000 || a.Itens[0].Media != 20000 {
 		t.Fatalf("anomalias = %+v", a.Itens)
 	}
-	if ev, _ := lancamentosDoGasto(conn, "restaurante", a.Ref, a.Ref, 3); len(ev) != 2 || ev[0].Descricao != "Outback" {
+	if ev := a.Itens[0].Maiores; len(ev) != 2 || ev[0].Descricao != "Outback" || ev[0].Data != "2026-03-05" {
 		t.Errorf("evidências = %+v", ev)
 	}
 	// com base de 2 meses, a janela muda
@@ -312,6 +312,22 @@ func TestCalcAnomaliasETendencias(t *testing.T) {
 	}
 	if len(td.Itens) != 1 || td.Itens[0].Categoria != "pet" || math.Round(td.Itens[0].Slope) != 5000 {
 		t.Fatalf("tendências = %+v", td.Itens)
+	}
+	if ev := td.Itens[0].Maiores; len(ev) != 1 || ev[0].Valor != 45000 {
+		t.Errorf("evidências da tendência (último mês fechado) = %+v", ev)
+	}
+
+	// período pela tela/CLI: texto vira Opcoes; fora de 1–36 é erro
+	if o, err := opcoesDeArgs([]string{"12"}); err != nil || o.Meses != 12 {
+		t.Errorf("opcoesDeArgs(12) = %+v, %v", o, err)
+	}
+	for _, ruim := range []string{"0", "37", "abc"} {
+		if _, err := opcoesDeArgs([]string{ruim}); err == nil {
+			t.Errorf("opcoesDeArgs(%q) deveria falhar", ruim)
+		}
+	}
+	if o, _ := opcoesDeArgs([]string{""}); o.Meses != 0 {
+		t.Error("vazio deveria manter o padrão")
 	}
 }
 

@@ -203,21 +203,26 @@ func comMeses(padrao int, f func(*sql.DB, []string) error) func(*sql.DB, argumen
 
 // analises mapeia o enum da ferramenta "analise" para as funções do Analytics
 // que não precisam de parâmetros.
-var analises = map[string]func(*sql.DB) error{
+var analises = map[string]func(*sql.DB, ...string) error{
 	"health_score":        app.AnalyticsHealthScore,
-	"runway":              app.AnalyticsRunway,
+	"runway":              semPeriodo(app.AnalyticsRunway),
 	"anomalias":           app.AnalyticsAnomalias,
 	"tendencias":          app.AnalyticsTendencias,
-	"sazonalidade":        app.AnalyticsSazonalidade,
+	"sazonalidade":        semPeriodo(app.AnalyticsSazonalidade),
 	"regra_50_30_20":      app.AnalyticsRegra502030,
-	"patrimonio":          app.AnalyticsPatrimonio,
+	"patrimonio":          semPeriodo(app.AnalyticsPatrimonio),
 	"comprometimento":     app.AnalyticsComprometimento,
-	"assinaturas_ocultas": app.AnalyticsAssinaturasOcultas,
-	"aderencia_planos":    app.AnalyticsAderenciaPlanos,
-	"inflacao":            app.AnalyticsInflacao,
+	"assinaturas_ocultas": semPeriodo(app.AnalyticsAssinaturasOcultas),
+	"aderencia_planos":    semPeriodo(app.AnalyticsAderenciaPlanos),
+	"inflacao":            semPeriodo(app.AnalyticsInflacao),
 	"utilidades":          app.AnalyticsUtilidades,
-	"grupos":              app.AnalyticsGrupos,
-	"melhor_dia_cartao":   app.AnalyticsMelhorDiaCartao,
+	"grupos":              semPeriodo(app.AnalyticsGrupos),
+	"melhor_dia_cartao":   semPeriodo(app.AnalyticsMelhorDiaCartao),
+}
+
+// semPeriodo adapta uma análise sem janela configurável (o período é ignorado).
+func semPeriodo(f func(*sql.DB) error) func(*sql.DB, ...string) error {
+	return func(conn *sql.DB, _ ...string) error { return f(conn) }
 }
 
 // nomesAnalises lista as chaves de analises numa ordem estável.
@@ -412,10 +417,19 @@ func init() {
 			descricao: "Análises do Prisma Analytics: health_score (saúde 0–100), runway (quanto tempo o caixa dura), anomalias (gastos fora do padrão), tendencias (categorias subindo/caindo), sazonalidade (picos anuais), regra_50_30_20, patrimonio (patrimônio líquido), comprometimento (renda já tomada nos próximos meses), assinaturas_ocultas, aderencia_planos (planejado x realizado), inflacao (inflação pessoal), utilidades (contas da casa), grupos (balanço de despesas divididas), melhor_dia_cartao.",
 			params: []param{
 				{nome: "tipo", tipo: "string", descricao: "qual análise", enum: nomesAnalises, obrigatorio: true},
+				{nome: "meses", tipo: "integer", descricao: "janela em meses, 1 a 36 (health_score, anomalias, tendencias, regra_50_30_20, utilidades; em comprometimento, meses à frente). Omitido = padrão da análise"},
 			},
 			rodar: func(conn *sql.DB, a argumentos) (string, error) {
 				f := analises[a.texto("tipo")]
-				return captura(func() error { return f(conn) })
+				m, err := a.inteiro("meses", 0, 1, 36)
+				if err != nil {
+					return "", err
+				}
+				var args []string
+				if m > 0 {
+					args = []string{strconv.Itoa(m)}
+				}
+				return captura(func() error { return f(conn, args...) })
 			},
 		},
 		{
