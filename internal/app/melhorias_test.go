@@ -171,8 +171,11 @@ func TestGrupoSomaMesVigente(t *testing.T) {
 
 func TestEstatisticasNaoQuebra(t *testing.T) {
 	conn := abreDB(t)
+	// data relativa a hoje: com uma data fixa, o lançamento sai da janela de
+	// 3 meses com o passar do tempo e o teste quebra sozinho
+	hoje, _ := parseData("hoje")
 	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{
-		Tipo: "pagar", Desc: "Mercado", Valor: 30000, Cat: "mercado", Venc: "2026-06-05", Quitado: true,
+		Tipo: "pagar", Desc: "Mercado", Valor: 30000, Cat: "mercado", Venc: hoje, Quitado: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
