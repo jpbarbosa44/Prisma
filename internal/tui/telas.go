@@ -529,6 +529,32 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 					},
 				},
 				{
+					tecla: "c", rotulo: "classe (Analytics)",
+					campos: []campo{
+						{rotulo: "id", dica: "número da categoria", obrigatorio: true},
+						{rotulo: "classe", opcoes: func() []opcao {
+							ops := []opcao{{"auto", "automática (palavra-chave)"}}
+							for _, c := range app.ClassesCategoria {
+								ops = append(ops, opcao{c, c})
+							}
+							return ops
+						}},
+					},
+					carregar: func(id string) ([]string, error) {
+						var classe string
+						if err := conn.QueryRow(`SELECT classe FROM categorias WHERE id = ?`, id).Scan(&classe); err != nil {
+							return nil, err
+						}
+						if classe == "" {
+							classe = "auto"
+						}
+						return []string{classe}, nil
+					},
+					executar: func(v []string) (string, error) {
+						return exec(func() error { return app.Categoria(conn, []string{"editar", v[0], "--classe", v[1]}) })
+					},
+				},
+				{
 					tecla: "x", rotulo: "remover", confirma: true,
 					campos: []campo{{rotulo: "id", dica: "número da categoria", obrigatorio: true}},
 					executar: func(v []string) (string, error) {

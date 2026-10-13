@@ -30,7 +30,7 @@ COMANDOS
   conta        Contas bancárias            add | listar | editar | remover
   carteira     Carteiras (dinheiro etc.)   add | listar | editar | remover
   grupo        Pessoas que dividem gastos  add | listar | editar | remover
-  categoria    Catálogo de categorias      add | listar | editar | remover
+  categoria    Catálogo de categorias      add | listar | editar [--nome] [--classe] | remover
   cartao       Cartões de crédito          add | listar | editar | remover
   fatura       Fatura do cartão            --cartao N [--ref AAAA-MM] | pagar --cartao N
   socio        Sócios da empresa           add | listar | editar | remover  (com --empresa)

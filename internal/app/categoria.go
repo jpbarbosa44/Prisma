@@ -81,21 +81,45 @@ func categoriaAdd(conn *sql.DB, args []string) error {
 	return nil
 }
 
-// categoriaEditar renomeia a categoria e atualiza os lançamentos/recorrências
-// que a usam, para a classificação não se perder.
+// categoriaEditar renomeia a categoria (atualizando os lançamentos/recorrências
+// que a usam, para a classificação não se perder) e/ou define a classe que o
+// Analytics usa (necessidade, desejo, utilidade, basica; auto volta à regra por
+// palavra-chave).
 func categoriaEditar(conn *sql.DB, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("uso: prisma categoria editar <id> --nome <novo>")
+		return fmt.Errorf("uso: prisma categoria editar <id> [--nome <novo>] [--classe necessidade|desejo|utilidade|basica|auto]")
 	}
 	id := args[0]
 	fs := flag.NewFlagSet("categoria editar", flag.ContinueOnError)
 	nome := fs.String("nome", "", "novo nome")
+	classe := fs.String("classe", "", "classe no Analytics: necessidade, desejo, utilidade, basica ou auto")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 	novo := strings.ToLower(strings.TrimSpace(*nome))
-	if novo == "" {
-		return fmt.Errorf("--nome é obrigatório")
+	if novo == "" && *classe == "" {
+		return fmt.Errorf("informe --nome e/ou --classe")
+	}
+	if *classe != "" {
+		k, err := normalizaClasse(*classe)
+		if err != nil {
+			return err
+		}
+		res, err := conn.Exec(`UPDATE categorias SET classe = ? WHERE id = ?`, k, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("categoria #%s não encontrada", id)
+		}
+		if k == "" {
+			fmt.Printf("Categoria #%s volta à classificação automática.\n", id)
+		} else {
+			fmt.Printf("Categoria #%s classificada como %s.\n", id, k)
+		}
+		if novo == "" {
+			return nil
+		}
 	}
 
 	tx, err := conn.Begin()
@@ -125,7 +149,27 @@ func categoriaEditar(conn *sql.DB, args []string) error {
 	return nil
 }
 
+// normalizaClasse valida a classe de --classe; "auto" (ou "automatica") vira
+// vazio, a classificação por palavra-chave.
+func normalizaClasse(s string) (string, error) {
+	k := strings.ToLower(strings.TrimSpace(s))
+	k = strings.NewReplacer("á", "a", "â", "a", "ê", "e").Replace(k)
+	if k == "auto" || k == "automatica" {
+		return "", nil
+	}
+	for _, c := range ClassesCategoria {
+		if k == c {
+			return k, nil
+		}
+	}
+	return "", fmt.Errorf("classe inválida %q (use: %s ou auto)", s, strings.Join(ClassesCategoria, ", "))
+}
+
 func categoriaListar(conn *sql.DB) error {
+	cl, err := carregaClassificador(conn)
+	if err != nil {
+		return err
+	}
 	rows, err := conn.Query(`
 		SELECT c.id, c.nome,
 		       (SELECT COUNT(*) FROM lancamentos l WHERE l.categoria = c.nome)
@@ -155,11 +199,20 @@ func categoriaListar(conn *sql.DB) error {
 		return nil
 	}
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tNOME\tLANÇAMENTOS")
+	fmt.Fprintln(w, "ID\tNOME\tLANÇAMENTOS\tCLASSE")
 	for _, l := range cats {
-		fmt.Fprintf(w, "%d\t%s\t%d\n", l.id, l.nome, l.usos)
+		classe, configurada, _ := cl.efetiva(l.nome)
+		if !configurada {
+			classe = "auto (" + classe + ")"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%d\t%s\n", l.id, l.nome, l.usos, classe)
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	fmt.Println("\nA classe orienta o Analytics (50/30/20, Eficiência, Inflação). Ajuste com:")
+	fmt.Println("  prisma categoria editar <id> --classe necessidade|desejo|utilidade|basica|auto")
+	return nil
 }
 
 // categoriaRemover apaga só o catálogo; os lançamentos com essa categoria

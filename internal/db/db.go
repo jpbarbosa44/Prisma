@@ -444,6 +444,9 @@ func migrate(conn *sql.DB) error {
 		{"recorrencias", "intervalo", `ALTER TABLE recorrencias ADD COLUMN intervalo TEXT NOT NULL DEFAULT 'mensal'`},
 		{"lancamentos", "recebe_pagamento", `ALTER TABLE lancamentos ADD COLUMN recebe_pagamento INTEGER NOT NULL DEFAULT 0`},
 		{"lancamentos", "reembolso_de", `ALTER TABLE lancamentos ADD COLUMN reembolso_de INTEGER REFERENCES lancamentos(id) ON DELETE CASCADE`},
+		// classe da categoria para o Analytics: necessidade | desejo | utilidade |
+		// basica, ou '' (automática, por palavra-chave no nome)
+		{"categorias", "classe", `ALTER TABLE categorias ADD COLUMN classe TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, c := range colunas {
 		if err := conn.QueryRow(

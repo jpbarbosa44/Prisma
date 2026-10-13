@@ -344,3 +344,59 @@ func TestCalcUtilidadesERegra(t *testing.T) {
 		t.Fatalf("50/30/20 = %+v", r)
 	}
 }
+
+// TestClasseConfiguradaVencePalavraChave: "casa" e "pet" não casam nenhuma
+// palavra-chave (contam como desejo); configuradas como necessidade, mudam o
+// 50/30/20. "luz" configurada como desejo sai das utilidades.
+func TestClasseConfiguradaVencePalavraChave(t *testing.T) {
+	conn := abreDB(t)
+	fixaRelogio(t, "2026-05-20")
+	gastoQuitado(t, conn, "Reforma", "casa", 40000, "2026-05-02")
+	gastoQuitado(t, conn, "Ração", "pet", 10000, "2026-05-03")
+	gastoQuitado(t, conn, "Luz", "luz", 10000, "2026-05-04")
+	if _, err := conn.Exec(`INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em)
+		VALUES ('receber', 'Salário', 200000, 'salario', '2026-05-05', 'quitado', '2026-05-05')`); err != nil {
+		t.Fatal(err)
+	}
+	silencia(t, func() error { return Categoria(conn, []string{"add", "--nome", "casa"}) })
+	silencia(t, func() error { return Categoria(conn, []string{"add", "--nome", "pet"}) })
+	silencia(t, func() error { return Categoria(conn, []string{"add", "--nome", "luz"}) })
+	var idCasa, idLuz string
+	conn.QueryRow(`SELECT id FROM categorias WHERE nome='casa'`).Scan(&idCasa)
+
+	antes, err := CalcRegra502030(conn, Opcoes{Meses: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if antes.Necessidades != 10000 || antes.Desejos != 50000 || antes.Configuradas != 0 {
+		t.Fatalf("antes de configurar: %+v", antes)
+	}
+	if strings.Join(antes.Revisar, ",") != "casa,pet" {
+		t.Errorf("Revisar = %v, esperava casa e pet", antes.Revisar)
+	}
+
+	silencia(t, func() error { return Categoria(conn, []string{"editar", idCasa, "--classe", "necessidade"}) })
+	depois, _ := CalcRegra502030(conn, Opcoes{Meses: 1})
+	if depois.Necessidades != 50000 || depois.Desejos != 10000 || depois.Configuradas != 1 {
+		t.Fatalf("depois de configurar: %+v", depois)
+	}
+
+	conn.QueryRow(`SELECT id FROM categorias WHERE nome='luz'`).Scan(&idLuz)
+	silencia(t, func() error { return Categoria(conn, []string{"editar", idLuz, "--classe", "desejo"}) })
+	if u, _ := CalcUtilidades(conn, Opcoes{Meses: 1}); u.Gasto[0] != 0 || len(u.Categorias) != 0 {
+		t.Errorf("luz como desejo ainda conta como utilidade: %+v", u)
+	}
+	if out := capturaSaida(t, func() error { return Categoria(conn, []string{"listar"}) }); !strings.Contains(out, "auto (desejo)") ||
+		!strings.Contains(out, "necessidade") {
+		t.Errorf("listar sem a coluna CLASSE esperada:\n%s", out)
+	}
+
+	// auto volta à palavra-chave; classe inválida é recusada
+	silencia(t, func() error { return Categoria(conn, []string{"editar", idLuz, "--classe", "auto"}) })
+	if u, _ := CalcUtilidades(conn, Opcoes{Meses: 1}); u.Gasto[0] != 10000 {
+		t.Errorf("luz em auto deveria voltar às utilidades: %+v", u)
+	}
+	if err := Categoria(conn, []string{"editar", idLuz, "--classe", "luxo"}); err == nil {
+		t.Error("classe inválida deveria falhar")
+	}
+}

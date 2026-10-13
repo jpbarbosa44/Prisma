@@ -511,6 +511,108 @@ var (
 		"agua", "água", "condominio", "condomínio"}
 )
 
+// Classes de categoria configuráveis (`prisma categoria editar <id> --classe`).
+// Vazio = automática: a classe vem das palavras-chave acima.
+const (
+	ClasseNecessidade = "necessidade"
+	ClasseDesejo      = "desejo"
+	ClasseUtilidade   = "utilidade" // conta da casa: também é necessidade e básica
+	ClasseBasica      = "basica"    // custo de vida básico: também é necessidade
+)
+
+// ClassesCategoria lista as classes aceitas, na ordem de exibição.
+var ClassesCategoria = []string{ClasseNecessidade, ClasseDesejo, ClasseUtilidade, ClasseBasica}
+
+// classificador decide a classe de cada categoria: a configurada no catálogo
+// vence; sem ela, cada pergunta usa a sua lista de palavras-chave (a regra
+// antiga), então quem não configura nada vê os mesmos números de antes.
+type classificador struct {
+	classes map[string]string // nome (minúsculo) -> classe configurada
+}
+
+// carregaClassificador lê as classes configuradas do catálogo.
+func carregaClassificador(conn *sql.DB) (classificador, error) {
+	rows, err := conn.Query(`SELECT nome, classe FROM categorias WHERE classe <> ''`)
+	if err != nil {
+		return classificador{}, err
+	}
+	defer rows.Close()
+	c := classificador{classes: map[string]string{}}
+	for rows.Next() {
+		var nome, classe string
+		if err := rows.Scan(&nome, &classe); err != nil {
+			return classificador{}, err
+		}
+		c.classes[strings.ToLower(nome)] = classe
+	}
+	return c, rows.Err()
+}
+
+// configurada devolve a classe configurada da categoria ("" se automática).
+func (c classificador) configurada(cat string) string {
+	return c.classes[strings.ToLower(strings.TrimSpace(cat))]
+}
+
+// necessidade diz se a categoria é um gasto essencial (vs. estilo de vida).
+func (c classificador) necessidade(cat string) bool {
+	if k := c.configurada(cat); k != "" {
+		return k == ClasseNecessidade || k == ClasseUtilidade || k == ClasseBasica
+	}
+	return contemAlguma(cat, catsNecessidade)
+}
+
+// utilidade diz se a categoria é conta de utilidade da casa (RF11).
+func (c classificador) utilidade(cat string) bool {
+	if k := c.configurada(cat); k != "" {
+		return k == ClasseUtilidade
+	}
+	return contemAlguma(cat, catsUtilidade)
+}
+
+// basica diz se a categoria entra no custo de vida básico (RF08).
+func (c classificador) basica(cat string) bool {
+	if k := c.configurada(cat); k != "" {
+		return k == ClasseBasica || k == ClasseUtilidade
+	}
+	return contemAlguma(cat, catsBasica)
+}
+
+// ClasseEfetiva devolve a classe que o Analytics usa para a categoria e se ela
+// veio da configuração (true) ou das palavras-chave (false).
+func ClasseEfetiva(conn *sql.DB, cat string) (string, bool, error) {
+	c, err := carregaClassificador(conn)
+	if err != nil {
+		return "", false, err
+	}
+	return c.efetiva(cat)
+}
+
+func (c classificador) efetiva(cat string) (string, bool, error) {
+	if k := c.configurada(cat); k != "" {
+		return k, true, nil
+	}
+	switch {
+	case c.utilidade(cat):
+		return ClasseUtilidade, false, nil
+	case c.basica(cat):
+		return ClasseBasica, false, nil
+	case c.necessidade(cat):
+		return ClasseNecessidade, false, nil
+	}
+	return ClasseDesejo, false, nil
+}
+
+// rodapeClasses diz quais categorias entraram numa análise por classe e como
+// ajustar a lista.
+func rodapeClasses(cats []string, classe string) {
+	if len(cats) == 0 {
+		fmt.Printf("\n(nenhuma categoria com gasto foi classificada como %s;\n ajuste com: prisma categoria editar <id> --classe %s)\n", classe, classe)
+		return
+	}
+	sort.Strings(cats)
+	fmt.Printf("\n(categorias consideradas: %s;\n ajuste com: prisma categoria editar <id> --classe %s)\n", strings.Join(cats, ", "), classe)
+}
+
 // contemAlguma diz se alguma PALAVRA da categoria é exatamente uma das chaves.
 // O casamento é por palavra inteira, não por substring: "gasolina" e "gastos"
 // não podem casar a chave "gas" (senão combustível viraria conta da casa).
@@ -528,34 +630,33 @@ func contemAlguma(cat string, chaves []string) bool {
 	return false
 }
 
-// ehNecessidade diz se a categoria é um gasto essencial (vs. estilo de vida).
-func ehNecessidade(cat string) bool { return contemAlguma(cat, catsNecessidade) }
-
 // somaPorCategoriaFiltrada soma as despesas quitadas do período cujas categorias
-// casam as chaves. O agrupamento vem do SQL, mas o casamento fica no Go
-// (contemAlguma), a única fonte da regra de palavra inteira.
-func somaPorCategoriaFiltrada(conn *sql.DB, ini, fim string, chaves []string) (int64, error) {
+// passam no filtro, e devolve também os nomes que entraram na soma. O
+// agrupamento vem do SQL; a classificação fica no Go (classificador).
+func somaPorCategoriaFiltrada(conn *sql.DB, ini, fim string, filtro func(string) bool) (int64, []string, error) {
 	rows, err := conn.Query(`
 		SELECT categoria, SUM(`+valEf("lancamentos")+`) FROM lancamentos
 		WHERE tipo='pagar' AND status='quitado'
 		  AND COALESCE(data_compra, quitado_em) >= ? AND COALESCE(data_compra, quitado_em) <= ?
 		GROUP BY categoria`, ini, fim)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer rows.Close()
 	var total int64
+	var nomes []string
 	for rows.Next() {
 		var cat string
 		var v int64
 		if err := rows.Scan(&cat, &v); err != nil {
-			return 0, err
+			return 0, nil, err
 		}
-		if contemAlguma(cat, chaves) {
+		if filtro(cat) {
 			total += v
+			nomes = append(nomes, cat)
 		}
 	}
-	return total, rows.Err()
+	return total, nomes, rows.Err()
 }
 
 func pct(parte, total int64) float64 {
@@ -584,6 +685,9 @@ type Regra502030 struct {
 	Necessidades int64
 	Desejos      int64
 	Poupanca     int64
+	Configuradas int      // categorias do período com classe configurada
+	Automaticas  int      // categorias do período classificadas por palavra-chave
+	Revisar      []string // gasto relevante que é "desejo" só por falta de classe
 }
 
 // CalcRegra502030 calcula o RF09 sobre os últimos o.Meses meses (padrão 6).
@@ -597,17 +701,33 @@ func CalcRegra502030(conn *sql.DB, o Opcoes) (Regra502030, error) {
 	if err != nil {
 		return Regra502030{}, err
 	}
+	cl, err := carregaClassificador(conn)
+	if err != nil {
+		return Regra502030{}, err
+	}
 	r := Regra502030{Meses: len(refs), Renda: somaInt(recs)}
 	var totalDesp int64
 	for _, c := range cats {
 		totalDesp += c.Valor
-		if ehNecessidade(c.Rotulo) {
+		if cl.necessidade(c.Rotulo) {
 			r.Necessidades += c.Valor
 		} else {
 			r.Desejos += c.Valor
 		}
 	}
 	r.Poupanca = r.Renda - totalDesp // o que sobra é o que foi guardado
+	for _, c := range cats {         // já em ordem decrescente de gasto
+		if cl.configurada(c.Rotulo) != "" {
+			r.Configuradas++
+			continue
+		}
+		r.Automaticas++
+		// 5%+ do gasto do período, contando como desejo só por não casar
+		// nenhuma palavra-chave: vale o usuário confirmar
+		if !cl.necessidade(c.Rotulo) && c.Valor*20 >= totalDesp && c.Rotulo != "geral" {
+			r.Revisar = append(r.Revisar, c.Rotulo)
+		}
+	}
 	return r, nil
 }
 
@@ -634,6 +754,12 @@ func (r Regra502030) Imprimir() {
 		fmt.Println("👍 Boa taxa de poupança: dentro ou acima do ideal de 20%.")
 	default:
 		fmt.Println("Dá para se aproximar do ideal aumentando a fatia guardada (meta: 20%).")
+	}
+	fmt.Printf("\n(classificação: %d categoria(s) com classe configurada, %d automática(s) por palavra-chave)\n",
+		r.Configuradas, r.Automaticas)
+	if len(r.Revisar) > 0 {
+		fmt.Printf("Confira: %s entra(m) como desejo por não ter classe definida.\n", strings.Join(r.Revisar, ", "))
+		fmt.Println("Se alguma for essencial: prisma categoria editar <id> --classe necessidade")
 	}
 }
 
@@ -765,25 +891,26 @@ func AnalyticsInflacao(conn *sql.DB) error {
 // Inflacao é o resultado do RF08: gasto com contas básicas no trimestre atual
 // e no mesmo trimestre do ano anterior.
 type Inflacao struct {
-	Atual    int64
-	Anterior int64
-	Variacao float64 // % de um ano para o outro; só vale se Anterior > 0
+	Atual      int64
+	Anterior   int64
+	Variacao   float64  // % de um ano para o outro; só vale se Anterior > 0
+	Categorias []string // categorias básicas com gasto no trimestre atual
 }
 
 // CalcInflacao calcula o RF08. Opcoes não se aplica (a janela é o trimestre).
 func CalcInflacao(conn *sql.DB, _ Opcoes) (Inflacao, error) {
-	soma := func(ini, fim string) (int64, error) {
-		return somaPorCategoriaFiltrada(conn, ini, fim, catsBasica)
+	cl, err := carregaClassificador(conn)
+	if err != nil {
+		return Inflacao{}, err
 	}
 	agora := relogio()
 	aIni, aFim := agora.AddDate(0, -3, 0).Format("2006-01-02"), agora.Format("2006-01-02")
 	bIni, bFim := agora.AddDate(-1, -3, 0).Format("2006-01-02"), agora.AddDate(-1, 0, 0).Format("2006-01-02")
 	var i Inflacao
-	var err error
-	if i.Atual, err = soma(aIni, aFim); err != nil {
+	if i.Atual, i.Categorias, err = somaPorCategoriaFiltrada(conn, aIni, aFim, cl.basica); err != nil {
 		return Inflacao{}, err
 	}
-	if i.Anterior, err = soma(bIni, bFim); err != nil {
+	if i.Anterior, _, err = somaPorCategoriaFiltrada(conn, bIni, bFim, cl.basica); err != nil {
 		return Inflacao{}, err
 	}
 	if i.Anterior > 0 {
@@ -799,6 +926,7 @@ func (i Inflacao) Imprimir() {
 	fmt.Println()
 	fmt.Printf("  Trimestre atual:        %s\n", money.Format(i.Atual))
 	fmt.Printf("  Mesmo trimestre (-1 ano): %s\n\n", money.Format(i.Anterior))
+	defer rodapeClasses(i.Categorias, ClasseBasica)
 	if i.Anterior <= 0 {
 		fmt.Println("Sem dados do ano anterior para comparar (precisa de ~15 meses de histórico).")
 		return
@@ -826,12 +954,13 @@ func AnalyticsUtilidades(conn *sql.DB) error {
 
 // Utilidades é o resultado do RF11, mês a mês.
 type Utilidades struct {
-	Refs    []string // meses (AAAA-MM)
-	Gasto   []int64  // gasto com utilidades em cada mês
-	Renda   []int64  // receita de cada mês
-	TemBase bool     // há meses anteriores com movimento para comparar o atual
-	Media   int64    // média dos meses anteriores (base do pico)
-	Pico    float64  // % do mês corrente acima da média (≤ 0: sem pico)
+	Refs       []string // meses (AAAA-MM)
+	Gasto      []int64  // gasto com utilidades em cada mês
+	Renda      []int64  // receita de cada mês
+	Categorias []string // categorias de utilidade com gasto na janela
+	TemBase    bool     // há meses anteriores com movimento para comparar o atual
+	Media      int64    // média dos meses anteriores (base do pico)
+	Pico       float64  // % do mês corrente acima da média (≤ 0: sem pico)
 }
 
 // CalcUtilidades calcula o RF11 sobre os últimos o.Meses meses (padrão 6).
@@ -845,11 +974,16 @@ func CalcUtilidades(conn *sql.DB, o Opcoes) (Utilidades, error) {
 	if err != nil {
 		return Utilidades{}, err
 	}
+	cl, err := carregaClassificador(conn)
+	if err != nil {
+		return Utilidades{}, err
+	}
 	u := Utilidades{Refs: refs, Renda: recs, Gasto: make([]int64, len(refs))}
 	for cat, serie := range porCat {
-		if !contemAlguma(cat, catsUtilidade) {
+		if !cl.utilidade(cat) {
 			continue
 		}
+		u.Categorias = append(u.Categorias, cat)
 		for i, ref := range refs {
 			u.Gasto[i] += serie[ref]
 		}
@@ -873,6 +1007,7 @@ func (u Utilidades) Imprimir() {
 	fmt.Println("EFICIÊNCIA DE UTILIDADES — Contas da Casa")
 	fmt.Println("(luz, água, gás, internet)")
 	fmt.Println()
+	defer rodapeClasses(u.Categorias, ClasseUtilidade)
 	w := novaTabela()
 	fmt.Fprintln(w, "MÊS\tUTILIDADES\t% DA RENDA")
 	for i, ref := range u.Refs {
@@ -1155,10 +1290,14 @@ func AnalyticsMetas(conn *sql.DB, args []string) error {
 	if meses == 0 {
 		meses = 1
 	}
+	cl, err := carregaClassificador(conn)
+	if err != nil {
+		return err
+	}
 	fmt.Println("Categorias variáveis que poderiam ser reduzidas (média mensal):")
 	achou := false
 	for _, c := range cats {
-		if ehNecessidade(c.Rotulo) {
+		if cl.necessidade(c.Rotulo) {
 			continue
 		}
 		if m := c.Valor / meses; m > 0 {

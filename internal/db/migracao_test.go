@@ -58,6 +58,16 @@ func TestMigracaoBancoAntigo(t *testing.T) {
 		}
 	}
 
+	// classe das categorias (Analytics)
+	var nClasse int
+	if err := conn.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('categorias') WHERE name = 'classe'`).Scan(&nClasse); err != nil {
+		t.Fatal(err)
+	}
+	if nClasse != 1 {
+		t.Error("coluna categorias.classe não foi adicionada pela migração")
+	}
+
 	// o dado antigo sobreviveu intacto
 	var desc string
 	var valor int64
