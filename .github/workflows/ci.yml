@@ -68,4 +68,6 @@ jobs:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath ./cmd/prisma
+        run: |
+          go build -trimpath ./cmd/prisma
+          go build -trimpath ./cmd/prisma-app

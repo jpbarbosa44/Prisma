@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -247,5 +248,46 @@ func TestConfereSHA256(t *testing.T) {
 	}
 	if err := confere(bin, []byte(somasOK), "prisma-mac-arm64"); err == nil {
 		t.Error("confere sem o asset no SHA256SUMS deveria falhar")
+	}
+}
+
+func TestNomeAppDe(t *testing.T) {
+	casos := map[string]string{
+		"prisma-linux-amd64":       "prisma-app-linux-amd64",
+		"prisma-windows-amd64.exe": "prisma-app-windows-amd64.exe",
+		"prisma-mac-arm64":         "prisma-app-mac-arm64",
+		"prisma.exe":               "prisma-app.exe",
+	}
+	for in, want := range casos {
+		if got := nomeAppDe(in); got != want {
+			t.Errorf("nomeAppDe(%q) = %q, queria %q", in, got, want)
+		}
+	}
+}
+
+// TestAtualizaApp tira o prisma-app do mesmo pacote do prisma, confere o
+// SHA256 e troca o arquivo instalado; um app adulterado não é instalado.
+func TestAtualizaApp(t *testing.T) {
+	novo := []byte("\x7fELF app novo")
+	pacote := fazTarGz(t, map[string][]byte{
+		"prisma-linux-amd64":     []byte("\x7fELF prisma novo"),
+		"prisma-app-linux-amd64": novo,
+	})
+	soma := sha256.Sum256(novo)
+	somas := []byte(hex.EncodeToString(soma[:]) + "  prisma-app-linux-amd64\n")
+
+	instalado := filepath.Join(t.TempDir(), "prisma-app")
+	if err := os.WriteFile(instalado, []byte("velho"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := atualizaApp(instalado, pacote, somas, "prisma-linux-amd64.tar.gz", "prisma-linux-amd64"); err != nil {
+		t.Fatalf("atualizaApp: %v", err)
+	}
+	if got, _ := os.ReadFile(instalado); !bytes.Equal(got, novo) {
+		t.Errorf("o app instalado devia ser o novo, veio %q", got)
+	}
+
+	if err := atualizaApp(instalado, pacote, []byte("00  prisma-app-linux-amd64\n"), "prisma-linux-amd64.tar.gz", "prisma-linux-amd64"); err == nil {
+		t.Error("SHA256 errado devia impedir a troca")
 	}
 }

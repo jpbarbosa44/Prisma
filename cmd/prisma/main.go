@@ -10,6 +10,7 @@ import (
 	"prisma/internal/app"
 	"prisma/internal/bot"
 	"prisma/internal/db"
+	"prisma/internal/desktop"
 	"prisma/internal/remote"
 	"prisma/internal/tui"
 	"prisma/internal/update"
@@ -20,6 +21,9 @@ const ajuda = `prisma — gerenciador de finanças pessoais
 USO
   prisma                                  abre a interface no terminal
   prisma --web [--porta N]                abre a interface no navegador
+  prisma app                              abre o Prisma numa janela própria (app desktop)
+  prisma instalar-atalho                  põe o Prisma no menu de aplicativos, com ícone
+  prisma remover-atalho                   tira o atalho do menu
   prisma --empresa [...]                  mesmos comandos, banco separado da empresa
   prisma --analytics [--web]              módulo de análise financeira (somente leitura)
   prisma mcp [--escrita]                  servidor MCP: converse com o Claude sobre seus dados
@@ -109,6 +113,18 @@ COMPARTILHAMENTO (casal/família na mesma rede)
   (o comando "prisma servidor" mostra o host, o token e o fingerprint prontos)
 `
 
+// comandoDesktop trata os comandos do app desktop, que não abrem o banco: a
+// janela (prisma-app) abre o dela.
+func comandoDesktop(cmd string, args []string) error {
+	switch cmd {
+	case "instalar-atalho":
+		return desktop.InstalarAtalho()
+	case "remover-atalho":
+		return desktop.RemoverAtalho()
+	}
+	return desktop.Abrir(args)
+}
+
 func main() {
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
@@ -120,6 +136,12 @@ func main() {
 			return
 		case "atualizar", "update", "autoupdate":
 			if err := update.Atualizar(); err != nil {
+				fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "app", "--app", "instalar-atalho", "remover-atalho":
+			if err := comandoDesktop(os.Args[1], os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "erro: %v\n", err)
 				os.Exit(1)
 			}

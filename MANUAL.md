@@ -7,7 +7,7 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 1. [Conceitos](#conceitos)
 2. [Formatos aceitos](#formatos-aceitos)
 3. [A interface de terminal (TUI)](#a-interface-de-terminal-tui)
-4. [A interface web (--web)](#a-interface-web---web)
+4. [A interface web (--web)](#a-interface-web---web) e o [app desktop](#o-app-desktop-prisma-app)
 5. [Comandos](#comandos)
 6. [Empresa (`prisma --empresa`)](#empresa-prisma---empresa)
 7. [Analytics (`prisma --analytics`)](#analytics-prisma---analytics)
@@ -109,6 +109,23 @@ A navegação espelha a TUI:
 - Nas telas com abas (Estatísticas, Gráficos), `←/→` ou um clique na régua trocam a visão. Em Pagar/Receber, `←/→` muda o mês e `t` alterna entre pagar, receber e todos.
 - Nos formulários, `enter` confirma e `esc` cancela; campos com `*` são obrigatórios; em edições, campos vazios mantêm o valor atual.
 - Remoções e o "zerar banco" pedem confirmação, como na TUI.
+- O seletor **Pessoal · Empresa · Analytics** no topo troca de modo sem reiniciar nada: o mesmo servidor atende o banco pessoal, o da empresa (como `prisma --empresa`) e o Analytics (como `prisma --analytics`, somente leitura). O banco de cada modo só é aberto na primeira vez que você o escolhe, e o modo fica na URL (`?modo=empresa`), então dá para guardar nos favoritos. `prisma --empresa --web` e `prisma --analytics --web` só mudam o modo em que a página abre.
+
+### O app desktop (prisma app)
+
+A mesma interface web numa janela própria, para usar o Prisma sem terminal. É o programa `prisma-app`, que vem em cada pacote do release e fica na mesma pasta do `prisma`:
+
+```sh
+prisma app                # abre a janela (o mesmo que dois cliques no prisma-app)
+prisma instalar-atalho    # Prisma no menu de aplicativos, com ícone
+prisma remover-atalho     # tira o atalho
+```
+
+- O servidor sobe numa porta livre de `127.0.0.1` e fecha junto com a janela.
+- Só existe uma janela: abrir o app de novo traz a que já está aberta para a frente.
+- Os links externos (como o "ver release" do aviso de versão nova) abrem no navegador do sistema.
+- Usa o banco pessoal, como o `prisma` sem argumentos, inclusive no modo cliente.
+- O atalho fica em `~/.local/share/applications` no Linux, no menu Iniciar no Windows e em `~/Applications/Prisma.app` no macOS.
 
 ## Comandos
 

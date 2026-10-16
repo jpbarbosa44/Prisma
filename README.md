@@ -46,7 +46,17 @@ Nas tabelas, `↑/↓` selecionam a linha e as ações usam o item selecionado (
 
 Tudo também funciona como comandos diretos (`prisma saldo`, `prisma pagar add ...`), útil para scripts — veja os exemplos abaixo.
 
-Prefere o navegador? `prisma --web` sobe um servidor local (só em `127.0.0.1`, nada sai da sua máquina) e abre as mesmas telas no browser, com os mesmos atalhos de teclado. Opções: `--porta N` muda a porta (padrão 7747) e `--sem-abrir` não chama o navegador.
+Prefere o navegador? `prisma --web` sobe um servidor local (só em `127.0.0.1`, nada sai da sua máquina) e abre as mesmas telas no browser, com os mesmos atalhos de teclado. Opções: `--porta N` muda a porta (padrão 7747) e `--sem-abrir` não chama o navegador. O seletor **Pessoal · Empresa · Analytics** no topo da página troca entre as finanças pessoais, as da empresa e o Analytics sem reiniciar o servidor.
+
+Prefere um programa com ícone, sem terminal? O **app desktop** abre a mesma interface numa janela própria. Ele vem em cada pacote do release, como `prisma-app`, ao lado do `prisma`:
+
+```sh
+prisma app                # abre a janela (ou dê dois cliques no prisma-app)
+prisma instalar-atalho    # Prisma no menu de aplicativos, com ícone
+prisma remover-atalho
+```
+
+O servidor sobe numa porta livre de `127.0.0.1` e fecha junto com a janela. Abrir o app de novo traz a janela que já está aberta para a frente, e os links externos abrem no navegador. O atalho fica em `~/.local/share/applications` no Linux, no menu Iniciar no Windows e em `~/Applications/Prisma.app` no macOS. Requisitos: no Linux, o WebKitGTK (`libwebkit2gtk-4.1-0` no Debian/Ubuntu, `webkit2gtk4.1` no Fedora); no Windows, o WebView2, que já vem no Windows 10 e 11; no macOS 11 ou mais novo, nada além do sistema.
 
 **Documentação:** [MANUAL.md](MANUAL.md) tem o guia de uso completo (todas as telas, comandos, filtros e receitas prontas); [INSTALL.md](INSTALL.md) cobre a instalação em cada sistema.
 
@@ -76,7 +86,7 @@ Os builds para macOS e Windows também estão na [página de releases](https://g
 | Windows x86-64 | `prisma-windows-amd64.exe` |
 | Windows ARM | `prisma-windows-arm64.exe` |
 
-No macOS, na primeira execução o Gatekeeper pode bloquear por não ser assinado — libere com `xattr -d com.apple.quarantine prisma-mac-arm64` ou em Ajustes › Privacidade e Segurança. No Windows, use o Windows Terminal ou PowerShell para a interface renderizar corretamente.
+Cada pacote traz dois programas: o `prisma` (terminal, web, bot e MCP) e o `prisma-app` (o app desktop). No macOS, na primeira execução o Gatekeeper pode bloquear por não serem assinados — libere com `xattr -d com.apple.quarantine prisma-mac-arm64 prisma-app-mac-arm64` ou em Ajustes › Privacidade e Segurança. No Windows, use o Windows Terminal ou PowerShell para a interface renderizar corretamente.
 
 ### Compilando do código
 

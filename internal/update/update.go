@@ -194,6 +194,12 @@ func Atualizar() error {
 	if err := troca(bin); err != nil {
 		return err
 	}
+	// o app desktop, quando instalado ao lado, vai junto
+	if app, ok := AppAoLado(); ok {
+		if err := atualizaApp(app, pacote, somas, arquivo, binInterno); err != nil {
+			fmt.Printf("aviso: o prisma foi atualizado, mas o prisma-app não: %v\n", err)
+		}
+	}
 	salva(cache{Data: time.Now().Format("2006-01-02"), Versao: tag})
 	fmt.Printf("Atualizado de %s para %s. Reabra o prisma para usar a versão nova.\n", Versao, tag)
 	return nil
@@ -227,6 +233,55 @@ func ultimaRelease(timeout time.Duration) (tag, url string, err error) {
 		return "", "", fmt.Errorf("release sem tag")
 	}
 	return r.Tag, r.URL, nil
+}
+
+// atualizaApp tira o prisma-app do mesmo pacote do prisma, confere o SHA256 e
+// troca o binário instalado em caminho.
+func atualizaApp(caminho string, pacote, somas []byte, arquivo, binInterno string) error {
+	interno := nomeAppDe(binInterno)
+	bin, err := extrai(pacote, arquivo, interno)
+	if err != nil {
+		return err
+	}
+	if err := confere(bin, somas, interno); err != nil {
+		return err
+	}
+	return trocaEm(caminho, bin)
+}
+
+// nomeAppDe dá o nome do app desktop que acompanha um binário do prisma:
+// prisma-linux-amd64 → prisma-app-linux-amd64, prisma.exe → prisma-app.exe.
+func nomeAppDe(prisma string) string {
+	return strings.Replace(prisma, "prisma", "prisma-app", 1)
+}
+
+// AppAoLado acha o app desktop (prisma-app) instalado na mesma pasta deste
+// executável — com o nome curto ou com o mesmo sufixo do prisma, como vem no
+// pacote do release (prisma-windows-amd64.exe ao lado de
+// prisma-app-windows-amd64.exe).
+func AppAoLado() (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	if resolvido, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolvido
+	}
+	curto := "prisma-app"
+	if runtime.GOOS == "windows" {
+		curto += ".exe"
+	}
+	dir := filepath.Dir(exe)
+	for _, nome := range []string{curto, nomeAppDe(filepath.Base(exe))} {
+		p := filepath.Join(dir, nome)
+		if p == exe {
+			continue
+		}
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p, true
+		}
+	}
+	return "", false
 }
 
 // nomeAsset mapeia o SO/arquitetura atual no pacote publicado no release e no
@@ -339,6 +394,12 @@ func troca(novo []byte) error {
 	if resolvido, err := filepath.EvalSymlinks(alvo); err == nil {
 		alvo = resolvido
 	}
+	return trocaEm(alvo, novo)
+}
+
+// trocaEm substitui o binário em alvo pelo novo, via arquivo temporário na
+// mesma pasta e rename (atômico). No Windows, o .exe em uso é movido antes.
+func trocaEm(alvo string, novo []byte) error {
 	dir := filepath.Dir(alvo)
 	tmp, err := os.CreateTemp(dir, ".prisma-novo-*")
 	if err != nil {

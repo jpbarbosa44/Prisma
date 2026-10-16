@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"prisma/internal/app"
+	"prisma/internal/db"
+	"prisma/internal/remote"
 	"prisma/internal/update"
 )
 
@@ -28,24 +30,162 @@ import (
 //go:embed web.html
 var paginaWeb []byte
 
-// servidorWeb expõe as telas numa API JSON. O mutex serializa as execuções:
+// Os modos da interface web: o banco pessoal, o da empresa (prisma --empresa)
+// e o Analytics (o pessoal em somente leitura, prisma --analytics). A página
+// escolhe o modo pela query "modo" de cada requisição — sem ela vale o modo em
+// que o servidor subiu —, e o seletor no topo troca entre eles sem reiniciar.
+const (
+	webPessoal   = "pessoal"
+	webEmpresa   = "empresa"
+	webAnalytics = "analytics"
+)
+
+var ordemModos = []string{webPessoal, webEmpresa, webAnalytics}
+
+// modoWeb é um modo já aberto: o banco e as telas sobre ele.
+type modoWeb struct {
+	conn  *sql.DB
+	telas []tela
+	dono  bool // escreve no banco: repete a manutenção periódica
+}
+
+// servidorWeb expõe as telas numa API JSON. O mutex mu serializa as execuções:
 // captura() troca o os.Stdout do processo inteiro, então dois comandos não
 // podem rodar ao mesmo tempo.
 type servidorWeb struct {
-	conn          *sql.DB
-	telas         []tela
-	modoEmpresa   bool // true em `prisma --empresa --web`: a página mostra o selo CORP
-	modoAnalytics bool // true em `prisma --analytics --web`: a página mostra o selo ANALYTICS
-	mu            sync.Mutex
+	inicial string
+	// abrir abre o banco de outro modo na primeira vez que a página o pede;
+	// nil deixa só o modo inicial (os testes usam assim)
+	abrir   func(modo string) (conn *sql.DB, dono bool, err error)
+	aoFocar func() // só no app desktop: liga POST /api/focar
+	muModos sync.Mutex
+	modos   map[string]*modoWeb
+	extras  []*sql.DB // bancos abertos pela troca de modo, fechados no Shutdown
+	mu      sync.Mutex
+}
+
+// novoServidorWeb monta o servidor já com o modo inicial aberto sobre conn.
+func novoServidorWeb(modo string, conn *sql.DB) *servidorWeb {
+	return &servidorWeb{
+		inicial: modo,
+		modos:   map[string]*modoWeb{modo: {conn: conn, telas: telasDoModo(modo, conn), dono: modo != webAnalytics}},
+	}
+}
+
+// telasDoModo monta as telas de cada modo, as mesmas da TUI de terminal.
+func telasDoModo(modo string, conn *sql.DB) []tela {
+	switch modo {
+	case webEmpresa:
+		return novasTelas(conn, true)
+	case webAnalytics:
+		return novasTelasAnalytics(conn)
+	}
+	return novasTelas(conn, false)
+}
+
+func modoValido(m string) bool {
+	return m == webPessoal || m == webEmpresa || m == webAnalytics
+}
+
+// nomeModo é o modo pedido na requisição (ou o inicial), sem abrir nada.
+func (s *servidorWeb) nomeModo(r *http.Request) string {
+	if m := r.URL.Query().Get("modo"); m != "" {
+		return m
+	}
+	return s.inicial
+}
+
+// modo devolve o modo pedido na requisição, abrindo o banco dele na primeira vez.
+func (s *servidorWeb) modo(r *http.Request) (*modoWeb, error) {
+	nome := s.nomeModo(r)
+	s.muModos.Lock()
+	defer s.muModos.Unlock()
+	if m, ok := s.modos[nome]; ok {
+		return m, nil
+	}
+	if !modoValido(nome) {
+		return nil, fmt.Errorf("modo inválido: %q", nome)
+	}
+	if s.abrir == nil {
+		return nil, fmt.Errorf("o modo %s não está disponível aqui", nome)
+	}
+	// abrir materializa recorrências: segura mu para não cruzar com uma captura
+	s.mu.Lock()
+	conn, dono, err := s.abrir(nome)
+	s.mu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("abrindo o modo %s: %w", nome, err)
+	}
+	m := &modoWeb{conn: conn, telas: telasDoModo(nome, conn), dono: dono}
+	s.modos[nome] = m
+	s.extras = append(s.extras, conn)
+	return m, nil
+}
+
+// fechaExtras fecha os bancos abertos pela troca de modo (o inicial é de quem
+// chamou).
+func (s *servidorWeb) fechaExtras() {
+	s.muModos.Lock()
+	defer s.muModos.Unlock()
+	for _, c := range s.extras {
+		c.Close()
+	}
+	s.extras = nil
+}
+
+// abreModo abre o banco de um modo como o prisma faz ao abrir nele: a empresa
+// no arquivo dela, o Analytics em somente leitura e o pessoal local ou no
+// servidor da rede (modo cliente). Quem é dono do banco já materializa as
+// recorrências e quita os vencidos.
+func abreModo(modo string) (*sql.DB, bool, error) {
+	if modo == webAnalytics {
+		conn, err := db.AbrirAnalytics()
+		return conn, false, err
+	}
+	var conn *sql.DB
+	dono := true
+	if modo == webEmpresa {
+		c, err := db.OpenEmpresa()
+		if err != nil {
+			return nil, false, err
+		}
+		conn = c
+	} else {
+		cfg, err := remote.Carrega()
+		if err != nil {
+			return nil, false, fmt.Errorf("configuração: %w", err)
+		}
+		if conn, err = db.Abrir(cfg); err != nil {
+			return nil, false, err
+		}
+		dono = cfg.Modo != remote.ModoCliente
+	}
+	if dono {
+		if _, err := app.GerarRecorrencias(conn); err != nil {
+			conn.Close()
+			return nil, false, fmt.Errorf("recorrências: %w", err)
+		}
+		if _, err := app.QuitarVencidos(conn); err != nil {
+			conn.Close()
+			return nil, false, fmt.Errorf("quitar vencidos: %w", err)
+		}
+	}
+	return conn, dono, nil
 }
 
 // RunWeb sobe um servidor local e abre a interface no navegador. Escuta só
 // em 127.0.0.1 — as finanças não ficam expostas na rede. Opções: --porta N
-// e --sem-abrir (não chama o navegador). modoEmpresa (true em
-// `prisma --empresa --web`) acrescenta as telas de sócios/capital/imposto/
-// investimento/lucro, igual na TUI de terminal.
-func RunWeb(conn *sql.DB, args []string, modoEmpresa bool) error {
-	s := &servidorWeb{conn: conn, telas: novasTelas(conn, modoEmpresa), modoEmpresa: modoEmpresa}
+// e --sem-abrir (não chama o navegador). empresa (true em
+// `prisma --empresa --web`) começa nas telas da empresa (sócios/capital/
+// imposto/investimento/lucro, igual na TUI de terminal); o seletor da página
+// troca para os outros modos.
+func RunWeb(conn *sql.DB, args []string, empresa bool) error {
+	modo := webPessoal
+	if empresa {
+		modo = webEmpresa
+	}
+	s := novoServidorWeb(modo, conn)
+	s.abrir = abreModo
 	return rodaWeb(s, args)
 }
 
@@ -53,7 +193,8 @@ func RunWeb(conn *sql.DB, args []string, modoEmpresa bool) error {
 // (`prisma --analytics --web`): as mesmas telas de análise da TUI exclusiva,
 // só leitura, com o selo ANALYTICS na página. Mesmas opções de RunWeb.
 func RunWebAnalytics(conn *sql.DB, args []string) error {
-	s := &servidorWeb{conn: conn, telas: novasTelasAnalytics(conn), modoAnalytics: true}
+	s := novoServidorWeb(webAnalytics, conn)
+	s.abrir = abreModo
 	return rodaWeb(s, args)
 }
 
@@ -82,33 +223,69 @@ func rodaWeb(s *servidorWeb, args []string) error {
 		}
 	}
 
+	ouvinte, srv, err := s.prepara(porta)
+	if err != nil {
+		return err
+	}
+	url := "http://" + ouvinte.Addr().String()
+	fmt.Printf("prisma web em %s — ctrl+c encerra\n", url)
+	if abrir {
+		AbreNavegador(url)
+	}
+	return srv.Serve(ouvinte)
+}
+
+// IniciarApp sobe a interface web para o app desktop (prisma-app) numa porta
+// livre de 127.0.0.1 e a serve em segundo plano. aoFocar liga a rota POST
+// /api/focar, que uma segunda cópia do app usa para trazer a janela já
+// aberta para a frente. Devolve o servidor (para o Shutdown ao fechar a
+// janela) e a porta escolhida.
+func IniciarApp(conn *sql.DB, aoFocar func()) (*http.Server, int, error) {
+	s := novoServidorWeb(webPessoal, conn)
+	s.abrir = abreModo
+	s.aoFocar = aoFocar
+	ouvinte, srv, err := s.prepara(0)
+	if err != nil {
+		return nil, 0, err
+	}
+	go srv.Serve(ouvinte) // termina com ErrServerClosed no Shutdown
+	return srv, ouvinte.Addr().(*net.TCPAddr).Port, nil
+}
+
+// prepara escuta em 127.0.0.1 (porta 0 escolhe uma livre), liga a manutenção
+// periódica e monta o servidor HTTP — falta só o Serve.
+func (s *servidorWeb) prepara(porta int) (net.Listener, *http.Server, error) {
 	endereco := fmt.Sprintf("127.0.0.1:%d", porta)
 	ouvinte, err := net.Listen("tcp", endereco)
 	if err != nil {
-		return fmt.Errorf("não deu para escutar em %s: %w", endereco, err)
+		return nil, nil, fmt.Errorf("não deu para escutar em %s: %w", endereco, err)
 	}
 	// o main só materializa recorrências e auto-quita na abertura; um servidor
-	// web que fica dias no ar precisa repetir essa manutenção (é idempotente).
-	// O Analytics fica de fora: é somente leitura.
-	if !s.modoAnalytics && s.conn != nil {
-		go func() {
-			t := time.NewTicker(6 * time.Hour)
-			defer t.Stop()
-			for range t.C {
-				if _, err := app.GerarRecorrencias(s.conn); err != nil {
+	// web que fica dias no ar precisa repetir essa manutenção (é idempotente)
+	// em cada banco aberto do qual é dono. O Analytics fica de fora: é somente
+	// leitura.
+	go func() {
+		t := time.NewTicker(6 * time.Hour)
+		defer t.Stop()
+		for range t.C {
+			s.muModos.Lock()
+			var bancos []*sql.DB
+			for _, m := range s.modos {
+				if m.dono && m.conn != nil {
+					bancos = append(bancos, m.conn)
+				}
+			}
+			s.muModos.Unlock()
+			for _, c := range bancos {
+				if _, err := app.GerarRecorrencias(c); err != nil {
 					fmt.Fprintf(os.Stderr, "aviso: recorrências: %v\n", err)
 				}
-				if _, err := app.QuitarVencidos(s.conn); err != nil {
+				if _, err := app.QuitarVencidos(c); err != nil {
 					fmt.Fprintf(os.Stderr, "aviso: auto-quitar: %v\n", err)
 				}
 			}
-		}()
-	}
-	url := "http://" + endereco
-	fmt.Printf("prisma web em %s — ctrl+c encerra\n", url)
-	if abrir {
-		abreNavegador(url)
-	}
+		}
+	}()
 	// mesmo escutando só em 127.0.0.1, timeouts e teto de cabeçalho evitam que um
 	// cliente local mal-comportado prenda uma conexão indefinidamente.
 	srv := &http.Server{
@@ -119,7 +296,8 @@ func rodaWeb(s *servidorWeb, args []string) error {
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1 << 16, // 64 KiB
 	}
-	return srv.Serve(ouvinte)
+	srv.RegisterOnShutdown(s.fechaExtras)
+	return ouvinte, srv, nil
 }
 
 func (s *servidorWeb) rotas() http.Handler {
@@ -131,6 +309,9 @@ func (s *servidorWeb) rotas() http.Handler {
 	mux.HandleFunc("/api/graficos", s.apiGraficos)
 	mux.HandleFunc("/api/form", s.apiForm)
 	mux.HandleFunc("/api/executar", s.apiExecutar)
+	if s.aoFocar != nil {
+		mux.HandleFunc("POST /api/focar", s.apiFocar)
+	}
 	return protegeLocal(mux)
 }
 
@@ -188,15 +369,23 @@ func respondeErro(w http.ResponseWriter, status int, err error) {
 }
 
 // apiVersao informa, para o banner da página, se há uma versão mais nova (do
-// cache; não toca na rede) e se este servidor está em modoEmpresa (pro selo
-// CORP no cabeçalho). aviso vazio = nada a mostrar.
+// cache; não toca na rede), o modo pedido (pros selos CORP e ANALYTICS no
+// cabeçalho) e os modos que o seletor oferece. aviso vazio = nada a mostrar.
 func (s *servidorWeb) apiVersao(w http.ResponseWriter, r *http.Request) {
 	aviso, url := update.Aviso()
+	modos := []string{s.inicial}
+	if s.abrir != nil {
+		modos = ordemModos
+	}
+	modo := s.nomeModo(r)
 	responde(w, map[string]any{
 		"aviso":         aviso,
 		"url":           url,
-		"modoEmpresa":   s.modoEmpresa,
-		"modoAnalytics": s.modoAnalytics,
+		"modo":          modo,
+		"modoInicial":   s.inicial,
+		"modos":         modos,
+		"modoEmpresa":   modo == webEmpresa,
+		"modoAnalytics": modo == webAnalytics,
 	})
 }
 
@@ -217,8 +406,13 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 		ListaMensal bool       `json:"listaMensal"`    // ←/→ muda o mês, t alterna pagar/receber
 		Acoes       []acaoJSON `json:"acoes"`
 	}
-	saida := make([]telaJSON, len(s.telas))
-	for i, t := range s.telas {
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	saida := make([]telaJSON, len(m.telas))
+	for i, t := range m.telas {
 		tj := telaJSON{Titulo: t.titulo, Resumo: t.resumo, Padrao: t.padrao, ListaMensal: t.listaMensal}
 		for _, ab := range t.abas {
 			tj.Abas = append(tj.Abas, ab.nome)
@@ -236,12 +430,17 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 // tem estado de navegação. Para telas com abas, "aba" escolhe a visão (igual
 // ao ←/→ da TUI); ausente ou inválida cai na primeira.
 func (s *servidorWeb) apiConteudo(w http.ResponseWriter, r *http.Request) {
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
 	i, err := strconv.Atoi(r.URL.Query().Get("tela"))
-	if err != nil || i < 0 || i >= len(s.telas) {
+	if err != nil || i < 0 || i >= len(m.telas) {
 		respondeErro(w, http.StatusBadRequest, fmt.Errorf("tela inválida"))
 		return
 	}
-	t := s.telas[i]
+	t := m.telas[i]
 	gera := t.conteudo
 	if len(t.abas) > 0 {
 		aba := 0
@@ -276,8 +475,13 @@ func (s *servidorWeb) apiGraficos(w http.ResponseWriter, r *http.Request) {
 	if m, err := strconv.Atoi(r.URL.Query().Get("meses")); err == nil {
 		meses = m
 	}
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
 	s.mu.Lock()
-	dados, err := app.GraficosDados(s.conn, meses)
+	dados, err := app.GraficosDados(m.conn, meses)
 	s.mu.Unlock()
 	if err != nil {
 		respondeErro(w, http.StatusInternalServerError, err)
@@ -289,7 +493,12 @@ func (s *servidorWeb) apiGraficos(w http.ResponseWriter, r *http.Request) {
 // apiForm devolve os campos de uma ação, com os seletores resolvidos na
 // hora — uma conta recém-criada já aparece nas opções.
 func (s *servidorWeb) apiForm(w http.ResponseWriter, r *http.Request) {
-	a, err := s.acaoDe(r.URL.Query().Get("tela"), r.URL.Query().Get("acao"))
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	a, err := acaoDe(m.telas, r.URL.Query().Get("tela"), r.URL.Query().Get("acao"))
 	if err != nil {
 		respondeErro(w, http.StatusBadRequest, err)
 		return
@@ -335,7 +544,12 @@ func (s *servidorWeb) apiExecutar(w http.ResponseWriter, r *http.Request) {
 		respondeErro(w, http.StatusBadRequest, fmt.Errorf("corpo inválido: %v", err))
 		return
 	}
-	a, err := s.acaoDe(strconv.Itoa(req.Tela), strconv.Itoa(req.Acao))
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	a, err := acaoDe(m.telas, strconv.Itoa(req.Tela), strconv.Itoa(req.Acao))
 	if err != nil {
 		respondeErro(w, http.StatusBadRequest, err)
 		return
@@ -365,17 +579,25 @@ func (s *servidorWeb) apiExecutar(w http.ResponseWriter, r *http.Request) {
 }
 
 // acaoDe localiza uma ação a partir dos índices (em texto) de tela e ação.
-func (s *servidorWeb) acaoDe(telaStr, acaoStr string) (*acao, error) {
+func acaoDe(telas []tela, telaStr, acaoStr string) (*acao, error) {
 	i, err1 := strconv.Atoi(telaStr)
 	j, err2 := strconv.Atoi(acaoStr)
-	if err1 != nil || err2 != nil || i < 0 || i >= len(s.telas) || j < 0 || j >= len(s.telas[i].acoes) {
+	if err1 != nil || err2 != nil || i < 0 || i >= len(telas) || j < 0 || j >= len(telas[i].acoes) {
 		return nil, fmt.Errorf("tela ou ação inválida")
 	}
-	return &s.telas[i].acoes[j], nil
+	return &telas[i].acoes[j], nil
 }
 
-// abreNavegador tenta abrir a URL no navegador padrão do sistema.
-func abreNavegador(url string) {
+// apiFocar traz a janela do app desktop para a frente: é o que uma segunda
+// cópia do prisma-app pede antes de desistir de abrir outra janela.
+func (s *servidorWeb) apiFocar(w http.ResponseWriter, r *http.Request) {
+	s.aoFocar()
+	responde(w, map[string]bool{"ok": true})
+}
+
+// AbreNavegador tenta abrir a URL no navegador padrão do sistema. O app
+// desktop também a usa para os links externos da página.
+func AbreNavegador(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":

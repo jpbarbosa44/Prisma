@@ -1,6 +1,7 @@
 # Publica um Release no GitHub quando uma tag vX.Y.Z é enviada.
 # Builda os 5 binários, empacota (.tar.gz / .zip), gera o SHA256SUMS e anexa
-# tudo ao release. A versão é embutida no binário a partir da própria tag, então
+# tudo ao release. Cada pacote leva o prisma e o app desktop (prisma-app), que
+# também é Go puro (o WebView é carregado sem CGO) e compila daqui mesmo. A versão é embutida no binário a partir da própria tag, então
 # o `prisma versao` e o verificador de atualização ficam consistentes.
 name: release
 
@@ -33,6 +34,11 @@ jobs:
           mkdir -p dist
           build() { # $1=GOOS  $2=GOARCH  $3=nome do binário
             CGO_ENABLED=0 GOOS="$1" GOARCH="$2" go build -trimpath -ldflags "$LD" -o "dist/$3" ./cmd/prisma
+            # o app desktop vai junto, com o mesmo sufixo (prisma-app-linux-amd64...);
+            # no Windows, -H=windowsgui evita a janela de console por trás
+            LDAPP="$LD"
+            if [ "$1" = windows ]; then LDAPP="$LD -H=windowsgui"; fi
+            CGO_ENABLED=0 GOOS="$1" GOARCH="$2" go build -trimpath -ldflags "$LDAPP" -o "dist/${3/prisma/prisma-app}" ./cmd/prisma-app
           }
           build linux   amd64 prisma-linux-amd64
           build darwin  arm64 prisma-mac-arm64
@@ -41,17 +47,19 @@ jobs:
           build windows arm64 prisma-windows-arm64.exe
 
           cd dist
-          tar czf prisma-linux-amd64.tar.gz prisma-linux-amd64
-          tar czf prisma-mac-arm64.tar.gz   prisma-mac-arm64
-          tar czf prisma-mac-intel.tar.gz   prisma-mac-intel
-          zip -q  prisma-windows-amd64.zip  prisma-windows-amd64.exe
-          zip -q  prisma-windows-arm64.zip  prisma-windows-arm64.exe
+          tar czf prisma-linux-amd64.tar.gz prisma-linux-amd64 prisma-app-linux-amd64
+          tar czf prisma-mac-arm64.tar.gz   prisma-mac-arm64   prisma-app-mac-arm64
+          tar czf prisma-mac-intel.tar.gz   prisma-mac-intel   prisma-app-mac-intel
+          zip -q  prisma-windows-amd64.zip  prisma-windows-amd64.exe prisma-app-windows-amd64.exe
+          zip -q  prisma-windows-arm64.zip  prisma-windows-arm64.exe prisma-app-windows-arm64.exe
 
           # o SHA256SUMS cobre os binários crus E os pacotes (o auto-update
           # confere o pacote baixado e o binário extraído de dentro dele)
           sha256sum \
             prisma-linux-amd64 prisma-mac-arm64 prisma-mac-intel \
             prisma-windows-amd64.exe prisma-windows-arm64.exe \
+            prisma-app-linux-amd64 prisma-app-mac-arm64 prisma-app-mac-intel \
+            prisma-app-windows-amd64.exe prisma-app-windows-arm64.exe \
             prisma-linux-amd64.tar.gz prisma-mac-arm64.tar.gz prisma-mac-intel.tar.gz \
             prisma-windows-amd64.zip prisma-windows-arm64.zip > SHA256SUMS
 

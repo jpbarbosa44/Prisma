@@ -10,24 +10,31 @@ LDFLAGS := -trimpath -ldflags "-s -w $(VER_LD)"
 
 build:
 	$(GO) build -ldflags "$(VER_LD)" -o bin/$(BIN) ./cmd/prisma
+	$(GO) build -ldflags "$(VER_LD)" -o bin/$(BIN)-app ./cmd/prisma-app
 
 # Binário Linux estático (sem dependências de sistema)
 linux:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/$(BIN)-linux-amd64 ./cmd/prisma
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/$(BIN)-app-linux-amd64 ./cmd/prisma-app
 
 mac:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o dist/$(BIN)-mac-arm64 ./cmd/prisma
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/$(BIN)-mac-intel ./cmd/prisma
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o dist/$(BIN)-app-mac-arm64 ./cmd/prisma-app
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/$(BIN)-app-mac-intel ./cmd/prisma-app
 
 windows:
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o dist/$(BIN)-windows-amd64.exe ./cmd/prisma
 	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 $(GO) build $(LDFLAGS) -o dist/$(BIN)-windows-arm64.exe ./cmd/prisma
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -trimpath -ldflags "-s -w -H=windowsgui $(VER_LD)" -o dist/$(BIN)-app-windows-amd64.exe ./cmd/prisma-app
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 $(GO) build -trimpath -ldflags "-s -w -H=windowsgui $(VER_LD)" -o dist/$(BIN)-app-windows-arm64.exe ./cmd/prisma-app
 
 release: linux mac windows
 
 install: linux
 	mkdir -p $(HOME)/.local/bin
 	cp dist/$(BIN)-linux-amd64 $(HOME)/.local/bin/$(BIN)
+	cp dist/$(BIN)-app-linux-amd64 $(HOME)/.local/bin/$(BIN)-app
 	$(MAKE) desktop
 
 # Instala o atalho (.desktop) e o ícone no menu de aplicativos (estilo htop/btop)
@@ -41,7 +48,7 @@ desktop:
 	-gtk-update-icon-cache -f -t $(HOME)/.local/share/icons/hicolor 2>/dev/null
 
 uninstall:
-	rm -f $(HOME)/.local/bin/$(BIN)
+	rm -f $(HOME)/.local/bin/$(BIN) $(HOME)/.local/bin/$(BIN)-app
 	rm -f $(HOME)/.local/share/applications/prisma.desktop
 	rm -f $(HOME)/.local/share/icons/hicolor/scalable/apps/prisma.svg
 	-update-desktop-database $(HOME)/.local/share/applications 2>/dev/null

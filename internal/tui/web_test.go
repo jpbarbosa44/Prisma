@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -21,7 +22,7 @@ func servidorTeste(t *testing.T) *httptest.Server {
 		t.Fatalf("abrindo banco: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	srv := httptest.NewServer((&servidorWeb{telas: novasTelas(conn, false)}).rotas())
+	srv := httptest.NewServer(novoServidorWeb(webPessoal, conn).rotas())
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -228,7 +229,7 @@ func TestWebAnalytics(t *testing.T) {
 		t.Fatalf("abrindo banco: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	srv := httptest.NewServer((&servidorWeb{conn: conn, telas: novasTelasAnalytics(conn), modoAnalytics: true}).rotas())
+	srv := httptest.NewServer(novoServidorWeb(webAnalytics, conn).rotas())
 	t.Cleanup(srv.Close)
 
 	t.Run("versão marca modoAnalytics", func(t *testing.T) {
@@ -313,5 +314,141 @@ func TestSemANSI(t *testing.T) {
 	}
 	if strings.ContainsRune(got, '\x1b') {
 		t.Fatalf("sobrou ESC em %q", got)
+	}
+}
+
+// TestIniciarApp sobe a web do app desktop numa porta livre e confere a rota
+// POST /api/focar, que só existe no app: é por ela que uma segunda cópia traz
+// a janela aberta para a frente.
+func TestIniciarApp(t *testing.T) {
+	t.Setenv("PRISMA_DB", filepath.Join(t.TempDir(), "teste.db"))
+	conn, err := db.Open()
+	if err != nil {
+		t.Fatalf("abrindo banco: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	focou := make(chan struct{}, 1)
+	srv, porta, err := IniciarApp(conn, func() { focou <- struct{}{} })
+	if err != nil {
+		t.Fatalf("IniciarApp: %v", err)
+	}
+	t.Cleanup(func() { srv.Close() })
+	if porta == 0 {
+		t.Fatal("a porta escolhida devia vir preenchida")
+	}
+
+	resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/api/focar", porta), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /api/focar: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /api/focar: status %d", resp.StatusCode)
+	}
+	select {
+	case <-focou:
+	default:
+		t.Error("POST /api/focar devia chamar aoFocar")
+	}
+
+	// fora do app (prisma --web) a rota não existe
+	web := servidorTeste(t)
+	resp, err = http.Post(web.URL+"/api/focar", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("sem app, POST /api/focar devia dar 404, veio %d", resp.StatusCode)
+	}
+}
+
+// TestWebTrocaDeModo cobre o seletor da página: o mesmo servidor atende o
+// pessoal, a empresa e o Analytics pela query "modo", abrindo o banco de cada
+// um só na primeira vez que é pedido.
+func TestWebTrocaDeModo(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PRISMA_DB", filepath.Join(dir, "pessoal.db"))
+	conn, err := db.Open()
+	if err != nil {
+		t.Fatalf("abrindo banco: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	s := novoServidorWeb(webPessoal, conn)
+	aberturas := map[string]int{}
+	s.abrir = func(modo string) (*sql.DB, bool, error) {
+		aberturas[modo]++
+		c, err := db.Open() // um banco qualquer serve: o que muda são as telas
+		return c, modo != webAnalytics, err
+	}
+	srv := httptest.NewServer(s.rotas())
+	t.Cleanup(srv.Close)
+	t.Cleanup(s.fechaExtras)
+
+	titulos := func(modo string) []string {
+		t.Helper()
+		var telas []struct {
+			Titulo string `json:"titulo"`
+		}
+		pega(t, srv.URL+"/api/telas?modo="+modo, &telas)
+		var out []string
+		for _, tl := range telas {
+			out = append(out, tl.Titulo)
+		}
+		return out
+	}
+	tem := func(lista []string, alvo string) bool {
+		for _, x := range lista {
+			if x == alvo {
+				return true
+			}
+		}
+		return false
+	}
+
+	if p := titulos(webPessoal); tem(p, "Sócios") {
+		t.Errorf("o modo pessoal não devia ter as telas da empresa: %v", p)
+	}
+	if e := titulos(webEmpresa); !tem(e, "Sócios") {
+		t.Errorf("o modo empresa devia ter a tela Sócios: %v", e)
+	}
+	titulos(webEmpresa)
+	if aberturas[webEmpresa] != 1 {
+		t.Errorf("o banco da empresa devia abrir uma vez só, abriu %d", aberturas[webEmpresa])
+	}
+	if a, p := titulos(webAnalytics), titulos(webPessoal); fmt.Sprint(a) == fmt.Sprint(p) {
+		t.Errorf("o Analytics devia ter as telas próprias, veio %v", a)
+	}
+
+	var v struct {
+		Modo        string   `json:"modo"`
+		Modos       []string `json:"modos"`
+		ModoEmpresa bool     `json:"modoEmpresa"`
+	}
+	pega(t, srv.URL+"/api/versao?modo=empresa", &v)
+	if v.Modo != webEmpresa || !v.ModoEmpresa || len(v.Modos) != 3 {
+		t.Errorf("api/versao no modo empresa veio %+v", v)
+	}
+
+	resp, err := http.Get(srv.URL + "/api/telas?modo=xyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("modo inválido devia dar 400, veio %d", resp.StatusCode)
+	}
+
+	// sem quem abra outros modos (o caso do servidorTeste), só o inicial existe
+	so := servidorTeste(t)
+	resp, err = http.Get(so.URL + "/api/telas?modo=empresa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("sem abrir, o modo empresa devia dar 400, veio %d", resp.StatusCode)
 	}
 }
