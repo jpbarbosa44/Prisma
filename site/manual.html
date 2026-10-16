@@ -177,13 +177,14 @@ Guia completo de todas as funcionalidades. Para instalar, veja [INSTALL.md](INST
 1. [Conceitos](#conceitos)
 2. [Formatos aceitos](#formatos-aceitos)
 3. [A interface de terminal (TUI)](#a-interface-de-terminal-tui)
-4. [A interface web (--web)](#a-interface-web---web)
+4. [A interface web (--web)](#a-interface-web---web) e o [app desktop](#o-app-desktop-prisma-app)
 5. [Comandos](#comandos)
 6. [Empresa (`prisma --empresa`)](#empresa-prisma---empresa)
 7. [Analytics (`prisma --analytics`)](#analytics-prisma---analytics)
-8. [Receitas prontas](#receitas-prontas)
-9. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
-10. [Dados e backup](#dados-e-backup)
+8. [Conversar com o Claude (`prisma mcp`)](#conversar-com-o-claude-prisma-mcp)
+9. [Receitas prontas](#receitas-prontas)
+10. [Compartilhamento (cliente/servidor)](#compartilhamento-entre-dispositivos-clienteservidor)
+11. [Dados e backup](#dados-e-backup)
 
 ---
 
@@ -278,6 +279,23 @@ A navegação espelha a TUI:
 - Nas telas com abas (Estatísticas, Gráficos), `←/→` ou um clique na régua trocam a visão. Em Pagar/Receber, `←/→` muda o mês e `t` alterna entre pagar, receber e todos.
 - Nos formulários, `enter` confirma e `esc` cancela; campos com `*` são obrigatórios; em edições, campos vazios mantêm o valor atual.
 - Remoções e o "zerar banco" pedem confirmação, como na TUI.
+- O seletor **Pessoal · Empresa · Analytics** no topo troca de modo sem reiniciar nada: o mesmo servidor atende o banco pessoal, o da empresa (como `prisma --empresa`) e o Analytics (como `prisma --analytics`, somente leitura). O banco de cada modo só é aberto na primeira vez que você o escolhe, e o modo fica na URL (`?modo=empresa`), então dá para guardar nos favoritos. `prisma --empresa --web` e `prisma --analytics --web` só mudam o modo em que a página abre.
+
+### O app desktop (prisma app)
+
+A mesma interface web numa janela própria, para usar o Prisma sem terminal. É o programa `prisma-app`, que vem em cada pacote do release e fica na mesma pasta do `prisma`:
+
+```sh
+prisma app                # abre a janela (o mesmo que dois cliques no prisma-app)
+prisma instalar-atalho    # Prisma no menu de aplicativos, com ícone
+prisma remover-atalho     # tira o atalho
+```
+
+- O servidor sobe numa porta livre de `127.0.0.1` e fecha junto com a janela.
+- Só existe uma janela: abrir o app de novo traz a que já está aberta para a frente.
+- Os links externos (como o "ver release" do aviso de versão nova) abrem no navegador do sistema.
+- Usa o banco pessoal, como o `prisma` sem argumentos, inclusive no modo cliente.
+- O atalho fica em `~/.local/share/applications` no Linux, no menu Iniciar no Windows e em `~/Applications/Prisma.app` no macOS.
 
 ## Comandos
 
@@ -321,11 +339,13 @@ Catálogo de categorias. É opcional gerenciá-lo à mão: ao usar uma categoria
 prisma categoria add --nome mercado
 prisma categoria listar                       # cada categoria + nº de lançamentos
 prisma categoria editar 3 --nome supermercado # renomeia e atualiza lançamentos e recorrências
+prisma categoria editar 7 --classe necessidade # classe usada pelo Analytics
 prisma categoria remover 5                    # tira do catálogo (os lançamentos ficam intactos)
 ```
 
 - A categoria no lançamento continua sendo **texto livre**; o catálogo é só um índice. Por isso remover do catálogo não afeta os lançamentos.
 - `editar` propaga o novo nome para os lançamentos e recorrências que usavam o nome antigo.
+- `--classe` diz ao Analytics como tratar a categoria: `necessidade`, `desejo`, `utilidade` (conta da casa: luz, água, internet…), `basica` (custo de vida básico: mercado, condomínio…) ou `auto`. Em `auto` (o padrão), a classe sai de palavras-chave no nome. `listar` mostra a classe de cada uma. Na TUI e na web, é a ação `c` da tela Categorias.
 
 ### cartao / fatura
 
@@ -742,19 +762,72 @@ Não combina com `--empresa` (lê sempre o banco pessoal) nem com o modo cliente
 
 ### As análises
 
+- **Hoje** — a primeira tela: até 5 alertas das demais análises, em ordem de prioridade (saldo negativo previsto, ritmo do mês acima do normal, mês com 80%+ da renda comprometida, maior anomalia, assinatura que surgiu nos últimos 2 meses, tendência de alta mais forte), cada um indicando a tela do detalhe. Sem alertas, mostra a nota de saúde e o ritmo do mês.
+- **Ritmo do Mês** — o gasto do mês até hoje contra o mesmo trecho (até o mesmo dia) dos meses anteriores e do mês passado. Projeta o fechamento somando ao gasto atual o maior entre o restante médio dos meses anteriores e as despesas já agendadas, compara com a renda do mês e lista as categorias que aceleraram com os maiores lançamentos de cada uma.
+- **Dia Mais Apertado** — o saldo dia a dia nos próximos 45 dias, a partir do saldo de hoje e das contas a pagar e a receber já lançadas (vencidas contam como hoje). Mostra o menor saldo, a data, as maiores saídas até lá e avisa se o saldo fica negativo, por exemplo quando a fatura vence antes do salário.
+- **Gastos Formiga** (tecla `l`) — despesas de até R$ 50 (ajustável) que se repetem 4+ vezes nos últimos 3 meses (ajustável), agrupando variações da descrição ("iFood", "IFOOD *1234"). Mostra frequência, média por mês e impacto anual. Recorrências cadastradas ficam de fora.
 - **Health Score** — índice 0–100 que combina a taxa de poupança média, o nível do fundo de emergência (saldo ÷ despesa média mensal) e a constância do fluxo de caixa livre (quanto menos o líquido mensal oscila, melhor).
-- **Modo Economia** — compara os gastos do mês corrente, por categoria, com a média e o desvio padrão dos meses anteriores, e alerta os comportamentos atípicos (ex.: "restaurante 275% acima do padrão").
+- **Modo Economia** — compara os gastos do mês corrente, por categoria, com a média e o desvio padrão dos meses anteriores, e alerta os comportamentos atípicos (ex.: "restaurante 275% acima do padrão"), com os maiores lançamentos do mês de cada categoria logo abaixo.
+- **Tendências** — ajusta uma reta ao gasto mensal de cada categoria (meses já fechados) e mostra as que sobem ou caem de forma consistente — o vazamento lento que a detecção de anomalia pontual não pega, com a projeção anual ("nesse ritmo, +R$ X em um ano").
 - **Sazonalidade** — mapeia os meses do calendário historicamente mais caros (precisa de histórico de mais de um ano para ficar útil) e avisa quando um deles está chegando.
 - **Runway** — projeta o saldo para 30/90/180 dias a partir das médias, mostra o *burn rate* (despesa média) e, se o fluxo é negativo, quantos meses faltam até o saldo zerar.
+- **Renda Comprometida** — para cada um dos próximos 6 meses, quanto da renda esperada já está tomado por parcelas, contas agendadas e recorrências — a régua para decidir se cabe parcelar algo novo e para ver quando vem o mês apertado.
 - **Metas** (tecla `m`) — informe um valor e um prazo em meses; calcula a parcela mensal necessária, cruza com o superávit médio e diz se é viável. Se não for, sugere categorias variáveis a cortar e estima em quanto tempo a meta caberia no ritmo atual.
 - **Assinaturas Ocultas** — varre o histórico atrás de despesas de mesmo valor repetidas em 3+ meses que não vêm de uma recorrência cadastrada, com o impacto anual de cada uma ("você gasta R$ X/ano neste serviço").
 - **Simulador** (tecla `s`) — sandbox *what-if*: informe uma perda de renda e/ou uma nova despesa fixa mensal e veja o fluxo livre e o runway recalculados. Tudo em memória — nada é gravado no banco.
 - **Inflação Pessoal** — compara o gasto com contas básicas (mercado, luz, água, condomínio) no trimestre atual com o mesmo trimestre do ano anterior, para medir o quanto o *seu* custo de vida subiu.
 - **Regra 50/30/20** — classifica o orçamento em necessidades, desejos e poupança/investimentos (o que sobra da renda) e compara com o padrão ideal de 50/30/20.
-- **Patrimônio Líquido** — ativos (saldo de contas + carteiras) menos dívidas (emergências ativas), com a evolução mês a mês. O histórico de dívidas não é rastreado, então a evolução aplica a dívida atual como referência.
+- **Aderência a Planos** — dos planos mensais (`prisma plano add`) de meses já encerrados, quantos foram respeitados, categoria a categoria, e o tamanho médio do estouro de quem passou do limite — fecha o ciclo planejar → medir.
+- **Patrimônio Líquido** — ativos (saldo de contas + carteiras) menos dívidas (emergências ativas, pelo saldo devedor estimado do plano de aportes), com a evolução mês a mês. O histórico de dívidas não é rastreado, então a evolução aplica a dívida de hoje como referência.
+- **Balanço dos Grupos** — por grupo de divisão de contas: a sua parte das despesas, os reembolsos gerados quando você adianta o total (`--recebe-pagamento`), quanto já voltou e quanto ainda devem.
 - **Eficiência** — acompanha as contas de utilidade da casa (luz, água, gás, internet), a proporção sobre a renda e detecta picos de consumo.
+- **Melhor Dia de Compra** — por cartão, o prazo entre comprar hoje e pagar a fatura, e o dia do ciclo (logo após o fechamento) que dá o prazo máximo — sem usar histórico, só o ciclo de cada cartão.
 
-A classificação de categorias (o que conta como "necessidade", "utilidade" ou "conta básica") é por **palavra-chave no nome da categoria** — quanto mais consistente o nome dos seus lançamentos, melhores os recortes das análises.
+**Período (tecla `p`):** Health Score, Ritmo do Mês, Modo Economia, Tendências, Renda Comprometida, Regra 50/30/20 e Eficiência aceitam a janela em meses (1 a 36). No MCP, é o parâmetro `meses` da ferramenta `analise`.
+
+**Classificação das categorias:** o que conta como "necessidade", "utilidade" ou "conta básica" vem da **classe** da categoria (`prisma categoria editar <id> --classe ...`, veja [categoria](#categoria)). Sem classe definida, vale a **palavra-chave no nome** (aluguel, mercado, luz…). As telas 50/30/20, Eficiência e Inflação dizem quais categorias consideraram, e a 50/30/20 aponta gastos relevantes sem classe para você conferir.
+
+## Conversar com o Claude (`prisma mcp`)
+
+`prisma mcp` liga o Prisma a assistentes de IA compatíveis com o **MCP** (Model Context Protocol), como o Claude Code e o Claude Desktop. Com isso, você pergunta sobre suas finanças em linguagem natural ("quanto gastei com mercado nos últimos 3 meses comparado à média?", "cabe parcelar uma TV de 4 mil em 10x?"), e o assistente consulta seus dados pelas mesmas funções da CLI.
+
+É **somente leitura**, como o Analytics: o banco pessoal é aberto em modo `query_only`, e o assistente não consegue lançar, editar nem apagar nada. Não combina com `--empresa` nem com o modo cliente/servidor.
+
+**Claude Code:**
+
+```sh
+claude mcp add prisma -- prisma mcp
+```
+
+**Claude Desktop:** em `claude_desktop_config.json`:
+
+```json
+{ "mcpServers": { "prisma": { "command": "prisma", "args": ["mcp"] } } }
+```
+
+(Se o `prisma` não estiver no `PATH` do aplicativo, use o caminho completo do binário.)
+
+Ferramentas disponíveis para o assistente: `saldo`, `lancamentos` (filtros por mês, período, categoria, tipo e pendentes), `relatorio`, `extrato`, `previsao`, `estatisticas`, `cartoes`, `fatura`, `simular` (não grava nada), `analise` (as análises do Analytics, com `meses` opcional), `categorias`, `schema`, `consulta_sql` (um `SELECT` livre, até 200 linhas, como último recurso) e `ler_extrato` (lê um CSV/OFX do disco para o assistente interpretar).
+
+### Importar extratos pelo assistente (`prisma mcp --escrita`)
+
+Com `--escrita`, o assistente também **cadastra**: você aponta o CSV ou OFX do banco ("importa ~/Downloads/extrato-outubro.csv na conta Nubank") e ele interpreta as colunas, escolhe ou cria categorias, separa compras de cartão de movimentos de conta e grava.
+
+```sh
+claude mcp add prisma -- prisma mcp --escrita
+```
+
+Ferramentas a mais nesse modo:
+
+- `importar_lancamentos` — sem `confirmar`, só mostra a **prévia** (o que entra, os duplicados que serão ignorados, categorias novas, totais por categoria). Com `confirmar=true`, grava tudo num **lote**. Reimportar um extrato que se sobrepõe ao anterior não duplica nada: lançamento com o mesmo tipo, descrição, valor e data é ignorado.
+- `desfazer_importacao` — apaga um lote inteiro (sem argumento, lista os lotes). O lote fica marcado na observação de cada lançamento (`[lote mcp-AAAAMMDD-HHMMSS]`).
+- `definir_categoria` — cria a categoria e define a classe do Analytics.
+- `criar_conta` — para um banco ainda não cadastrado.
+- `criar_recorrencia` — contas fixas e assinaturas que vão continuar, sempre começando de hoje em diante (o histórico já vem do extrato). Pode ligar os lançamentos passados à recorrência, para eles saírem das Assinaturas Ocultas.
+
+Segurança: antes da primeira gravação de cada sessão, o Prisma tira um snapshot do banco em `backups/mcp-antes-*.db` (ficam os 10 mais recentes; volte com `prisma restaurar`). As consultas seguem numa conexão somente leitura, e a `consulta_sql` nunca roda na conexão que grava. No modo cliente/servidor, a escrita vai para o servidor, e a `consulta_sql` fica desligada.
+
+> **Privacidade:** o que o assistente consulta é enviado ao provedor do modelo (no caso do Claude, a Anthropic) para gerar a resposta. O Prisma em si não fala com a internet nesse modo: ele só responde ao programa que o iniciou.
 
 ## Receitas prontas
 
@@ -859,7 +932,6 @@ Um único arquivo SQLite:
 - O backup protege contra erro e corrupção local, mas mora no mesmo disco — para proteção real contra perda da máquina, copie a pasta de vez em quando para um pendrive ou nuvem.
 - A variável `PRISMA_DB` aponta para outro arquivo — útil para testar sem mexer nos seus dados: `PRISMA_DB=/tmp/teste.db prisma`.
 - O Prisma funciona offline por padrão; nada sai da sua máquina — a menos que você ative o [compartilhamento](#compartilhamento-entre-dispositivos-clienteservidor), e mesmo aí os dados só trafegam na sua rede local, criptografados.
-
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>

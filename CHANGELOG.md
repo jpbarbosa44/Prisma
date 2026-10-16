@@ -7,6 +7,33 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.4.0] - 2026-10-16
+
+### Adicionado
+- **App desktop (`prisma app`).** O Prisma numa janela própria, sem
+  terminal: o novo programa `prisma-app`, que vem em cada pacote do
+  release ao lado do `prisma`, mostra a interface web num WebView do
+  sistema (WebKitGTK no Linux, WebView2 no Windows, WKWebView no macOS).
+  O servidor sobe numa porta livre de `127.0.0.1` e fecha junto com a
+  janela; abrir o app de novo traz a janela aberta para a frente, e os
+  links externos abrem no navegador. Como o `prisma`, é Go puro (o WebView
+  é carregado sem CGO).
+- **Atalho no menu de aplicativos.** `prisma instalar-atalho` cria o
+  atalho com ícone no menu do Linux, no menu Iniciar do Windows e em
+  `~/Applications/Prisma.app` no macOS; `prisma remover-atalho` desfaz.
+- **Seletor de modo na web e no app.** Os botões Pessoal · Empresa ·
+  Analytics no topo da página trocam entre as finanças pessoais, as da
+  empresa e o Analytics sem reiniciar o servidor. O banco de cada modo só
+  abre na primeira vez que é escolhido, e o modo fica na URL
+  (`?modo=empresa`).
+- Ícone do Prisma em PNG, ICO e ICNS, gerados do SVG original.
+
+### Alterado
+- `prisma atualizar` também troca o `prisma-app` quando ele está na mesma
+  pasta do `prisma`, com a mesma conferência de SHA256.
+- A confirmação das ações na página usa um diálogo próprio em vez do
+  `confirm()` do navegador, que a janela do app no macOS não mostra.
+
 ## [1.3.0] - 2026-10-13
 
 ### Adicionado
@@ -366,7 +393,8 @@ em uso desde a série 0.10.
 - Bot de Telegram: registra e consulta lançamentos por mensagem.
 - Primeira versão do projeto (CLI de finanças em Go + SQLite).
 
-[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v1.3.0...HEAD
+[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.2.0...v1.3.0
 [0.10.1]: https://github.com/jpbarbosa44/Prisma/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/jpbarbosa44/Prisma/compare/v0.9.1...v0.10.0
