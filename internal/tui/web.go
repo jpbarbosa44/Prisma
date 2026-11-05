@@ -397,6 +397,7 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 		Rotulo   string `json:"rotulo"`
 		Confirma bool   `json:"confirma"`
 		TemForm  bool   `json:"temForm"`
+		Multi    bool   `json:"multi"` // o campo id aceita as linhas marcadas
 	}
 	type telaJSON struct {
 		Titulo      string     `json:"titulo"`
@@ -418,7 +419,7 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 			tj.Abas = append(tj.Abas, ab.nome)
 		}
 		for _, a := range t.acoes {
-			tj.Acoes = append(tj.Acoes, acaoJSON{a.tecla, a.rotulo, a.confirma, len(a.campos) > 0})
+			tj.Acoes = append(tj.Acoes, acaoJSON{a.tecla, a.rotulo, a.confirma, len(a.campos) > 0, a.multi})
 		}
 		saida[i] = tj
 	}

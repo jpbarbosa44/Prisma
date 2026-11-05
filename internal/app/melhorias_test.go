@@ -98,6 +98,45 @@ func TestQuitarVencidos(t *testing.T) {
 	}
 }
 
+func TestQuitarVarios(t *testing.T) {
+	conn := abreDB(t)
+	var ids []string
+	for _, d := range []string{"Luz", "Água", "Net", "Gás"} {
+		criados, _, _, err := CriarLancamentos(conn, LancamentoParams{
+			Tipo: "pagar", Desc: d, Valor: 5000, Venc: "2026-06-10",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, fmt.Sprint(criados[0].ID))
+	}
+	silencia(t, func() error { return Quitar(conn, []string{ids[3]}) })
+
+	// espaço e vírgula; um inexistente e um já quitado no meio não derrubam os outros
+	saida := capturaSaida(t, func() error {
+		return Quitar(conn, []string{ids[0], ids[1] + ",999," + ids[3], ids[2], "--data", "2026-06-05"})
+	})
+	if !strings.Contains(saida, "3 lançamentos quitados em 05/06/2026") || !strings.Contains(saida, "#999, #"+ids[3]) {
+		t.Fatalf("saída inesperada:\n%s", saida)
+	}
+	var n int
+	conn.QueryRow(`SELECT COUNT(*) FROM lancamentos WHERE status = 'quitado' AND quitado_em = '2026-06-05'`).Scan(&n)
+	if n != 3 {
+		t.Fatalf("quitados em 05/06: %d, queria 3", n)
+	}
+
+	// nenhum quitável: erro
+	if err := Quitar(conn, []string{ids[0], "999"}); err == nil {
+		t.Fatal("esperava erro quitando só ids já quitados/inexistentes")
+	}
+	if err := Quitar(conn, []string{"12a"}); err == nil {
+		t.Fatal("esperava erro com id inválido")
+	}
+	if err := Quitar(conn, nil); err == nil {
+		t.Fatal("esperava erro sem ids")
+	}
+}
+
 func TestCategoriaAutoCadastro(t *testing.T) {
 	conn := abreDB(t)
 	if _, _, _, err := CriarLancamentos(conn, LancamentoParams{

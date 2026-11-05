@@ -45,7 +45,7 @@ COMANDOS
   pagar        Contas a pagar              add | listar
   receber      Valores a receber           add | listar
   lancamentos  Lista tudo                  [--pendentes] [--tipo] [--mes] [--de] [--ate] [--cat] | editar | remover
-  quitar       Marca como pago/recebido    quitar <id> [--data]
+  quitar       Marca como pago/recebido    quitar <id> [id...] [--data]
   transferir   Move entre conta/carteira   --de conta:1 --para carteira:2 --valor 100
   recorrencia  Regras automáticas          add | listar | editar | remover <id> [--limpar]
   assinatura   Assinaturas (recorrência)   listar | add | editar | remover

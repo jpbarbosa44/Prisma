@@ -18,7 +18,15 @@ var (
 	reReceber  = regexp.MustCompile(`\breceber\b`)
 	rePendente = regexp.MustCompile(`\bpendentes?\b`)
 	reQuitado  = regexp.MustCompile(`\bquitad[oa]s?\b`)
+	// linha de tabela de um lançamento quitado (coluna STATUS "quitado em DD/MM/AAAA")
+	reLinhaQuitada = regexp.MustCompile(`\bquitado em \d`)
+
+	// lançamento quitado: riscado e apagado, como item concluído de uma lista
+	corQuitada = lipgloss.NewStyle().Strikethrough(true).Faint(true)
 )
+
+// linhaQuitada diz se a linha da tabela é de um lançamento já quitado.
+func linhaQuitada(l string) bool { return reLinhaQuitada.MatchString(l) }
 
 // colorir aplica o esquema de cores a uma linha da saída da CLI.
 func colorir(l string) string {

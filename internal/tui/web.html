@@ -373,6 +373,41 @@
       box-shadow: inset 2px 0 0 var(--cy);
     }
 
+    /* lançamento quitado: riscado e apagado, como item concluído de uma lista */
+    #saida .linha.quitada {
+      text-decoration: line-through;
+      opacity: .55;
+    }
+
+    #saida .linha.quitada.sel {
+      opacity: .8;
+    }
+
+    /* telas com ação multi (quitar várias): checkbox numa calha à esquerda */
+    #saida.multi .linha {
+      position: relative;
+      padding-left: 24px;
+    }
+
+    #saida .marca-linha:disabled {
+      visibility: hidden;
+    }
+
+    #saida .marca-linha {
+      position: absolute;
+      left: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      margin: 0;
+      accent-color: var(--amar);
+      cursor: pointer;
+    }
+
+    #acoes .acao .conta {
+      color: var(--amar);
+      margin-left: 4px;
+    }
+
     .grafico {
       margin: 0 0 26px;
     }
@@ -769,6 +804,10 @@
 
     /* ---- estado: telas do menu, parâmetros, linha selecionada e aba por tela ---- */
     let telas = [], atual = -1, params = [], selecionado = [], abaSel = [], formCampos = [];
+    /* ids marcados no checkbox (ou com espaço) para ações multi, como "quitar"
+       várias; limpos a cada recarga do conteúdo, como na TUI */
+    let marcados = new Set();
+    const temMulti = t => (t.acoes || []).some(a => a.multi);
     let prefixoNum = "", prefixoTimer = null; // atalho numérico de dois dígitos (10..14)
 
     /* banner de versão nova, no mesmo espírito da TUI e do oh-my-zsh; e o
@@ -854,7 +893,8 @@
       document.querySelectorAll("#menu .item").forEach((b, j) => b.classList.toggle("ativo", j === i));
       $("#titulo").textContent = telas[i].titulo;
       $("#acoes").innerHTML = (telas[i].acoes || []).map((a, j) =>
-        `<button class="acao" data-j="${j}"><kbd>${esc(a.tecla)}</kbd>${esc(a.rotulo)}</button>`).join("") +
+        `<button class="acao" data-j="${j}"><kbd>${esc(a.tecla)}</kbd>${esc(a.rotulo)}` +
+        `${a.multi ? '<span class="conta"></span>' : ""}</button>`).join("") +
         `<button class="acao" id="atualiza"><kbd>↻</kbd>atualizar</button>`;
       document.querySelectorAll("#acoes .acao[data-j]").forEach(b => b.onclick = () => dispara(+b.dataset.j));
       $("#atualiza").onclick = recarrega;
@@ -889,6 +929,7 @@
       if (t.abas && t.abas.length) partes.push("←/→ trocam de visão");
       if (t.listaMensal) partes.push("←/→ mês", "t pagar/receber");
       partes.push("teclas dos botões disparam ações", "↑/↓ ou clique selecionam a linha");
+      if (temMulti(t)) partes.push("espaço ou ☐ marcam várias linhas");
       $("#dicas").textContent = partes.join(" · ");
     }
 
@@ -1183,17 +1224,47 @@
        como na TUI — a seleção pré-preenche o campo "id" dos formulários */
     function renderSaida(texto) {
       const linhas = texto.replace(/\s+$/, "").split("\n");
-      const ids = [];
+      const ids = [], multi = temMulti(telas[atual]);
+      marcados = new Set();
+      $("#saida").classList.toggle("multi", multi);
       $("#saida").innerHTML = linhas.map(l => {
         const primeiro = l.trim().split(/\s+/)[0];
         const id = /^\d+$/.test(primeiro) ? primeiro : null;
         if (id) ids.push(id);
-        return `<div class="linha${id ? " clic" : ""}"${id ? ` data-id="${id}"` : ""}>${colorir(l) || " "}</div>`;
+        let cls = "linha";
+        if (id) cls += " clic";
+        const quitada = id && /\bquitado em \d/.test(l);
+        if (quitada) cls += " quitada";
+        // já quitada não se marca: não há o que quitar de novo
+        const caixa = id && multi ? `<input type="checkbox" class="marca-linha" tabindex="-1" aria-label="marcar #${id}"${quitada ? " disabled" : ""}>` : "";
+        return `<div class="${cls}"${id ? ` data-id="${id}"` : ""}>${caixa}${colorir(l) || " "}</div>`;
       }).join("");
       if (!ids.includes(selecionado[atual])) selecionado[atual] = ids[0] || null;
       document.querySelectorAll("#saida .clic").forEach(d =>
         d.onclick = () => { selecionado[atual] = d.dataset.id; marcaSelecao(); });
+      document.querySelectorAll("#saida .marca-linha").forEach(c => {
+        c.onclick = ev => ev.stopPropagation();
+        c.onchange = () => alternaMarca(c.closest(".clic").dataset.id, c.checked);
+      });
       marcaSelecao();
+      contaMarcados();
+    }
+    function alternaMarca(id, marcar) {
+      const c = document.querySelector(`#saida .clic[data-id="${id}"] .marca-linha`);
+      if (!c || c.disabled) return;
+      if (marcar === undefined) marcar = !marcados.has(id);
+      if (marcar) marcados.add(id); else marcados.delete(id);
+      c.checked = marcar;
+      contaMarcados();
+    }
+    /* o botão da ação multi mostra quantas linhas estão marcadas: "quitar (3)" */
+    function contaMarcados() {
+      document.querySelectorAll("#acoes .acao .conta").forEach(s =>
+        s.textContent = marcados.size ? `(${marcados.size})` : "");
+    }
+    /* ids marcados na ordem da tabela */
+    function idsMarcados() {
+      return [...document.querySelectorAll("#saida .clic")].map(d => d.dataset.id).filter(id => marcados.has(id));
     }
     function marcaSelecao() {
       document.querySelectorAll("#saida .clic").forEach(d =>
@@ -1234,9 +1305,11 @@
             `</select></label>`;
         return `<label>${rotulo}<input data-i="${i}" placeholder="${escAttr(c.dica || "")}" autocomplete="off"></label>`;
       }).join("");
-      if (campos.length && campos[0].rotulo === "id" && selecionado[atual]) {
+      if (campos.length && campos[0].rotulo === "id") {
         const el = $('#campos [data-i="0"]');
-        if (el && el.tagName === "INPUT") el.value = selecionado[atual];
+        const multi = telas[atual].acoes[j].multi && marcados.size;
+        const valor = multi ? idsMarcados().join(" ") : selecionado[atual];
+        if (el && el.tagName === "INPUT" && valor) el.value = valor;
       }
       $("#form-msg").textContent = "";
       $("#form").dataset.j = j;
@@ -1327,6 +1400,13 @@
       const t = telas[atual];
       if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
         moveSelecao(ev.key === "ArrowUp" ? -1 : 1);
+        ev.preventDefault();
+        return;
+      }
+      // espaço marca/desmarca a linha selecionada e desce, como na TUI
+      if (ev.key === " " && temMulti(t) && selecionado[atual]) {
+        alternaMarca(selecionado[atual]);
+        moveSelecao(1);
         ev.preventDefault();
         return;
       }

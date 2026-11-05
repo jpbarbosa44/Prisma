@@ -2,8 +2,10 @@ package app
 
 import (
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"prisma/internal/money"
@@ -867,31 +869,76 @@ func QuitarVencidos(conn *sql.DB) (int, error) {
 	return int(n), nil
 }
 
-// Quitar marca um lançamento como pago/recebido: `prisma quitar <id> [--data AAAA-MM-DD]`.
+// Quitar marca um ou vários lançamentos como pagos/recebidos:
+// `prisma quitar <id> [id...] [--data AAAA-MM-DD]` (ids por espaço ou vírgula).
+// Com vários, os não encontrados ou já quitados viram aviso e os demais são
+// quitados; só dá erro se nenhum for.
 func Quitar(conn *sql.DB, args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("uso: prisma quitar <id> [--data AAAA-MM-DD]")
+	const uso = "uso: prisma quitar <id> [id...] [--data AAAA-MM-DD]"
+	var ids []string
+	i := 0
+	for ; i < len(args) && !strings.HasPrefix(args[i], "-"); i++ {
+		for _, id := range strings.FieldsFunc(args[i], func(r rune) bool { return r == ',' || r == ' ' }) {
+			if _, err := strconv.ParseInt(id, 10, 64); err != nil {
+				return fmt.Errorf("id inválido: %q (%s)", id, uso)
+			}
+			ids = append(ids, id)
+		}
 	}
-	id := args[0]
+	if len(ids) == 0 {
+		return errors.New(uso)
+	}
 	fs := flag.NewFlagSet("quitar", flag.ContinueOnError)
 	data := fs.String("data", "hoje", "data do pagamento/recebimento")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := fs.Parse(args[i:]); err != nil {
 		return err
 	}
 	d, err := parseData(*data)
 	if err != nil {
 		return err
 	}
-	res, err := conn.Exec(
-		`UPDATE lancamentos SET status = 'quitado', quitado_em = ? WHERE id = ? AND status = 'pendente'`,
-		d, id,
-	)
+
+	tx, err := conn.Begin()
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("lançamento #%s não encontrado ou já quitado", id)
+	defer tx.Rollback()
+	var quitados, falhas []string
+	vistos := map[string]bool{}
+	for _, id := range ids {
+		if vistos[id] {
+			continue
+		}
+		vistos[id] = true
+		res, err := tx.Exec(
+			`UPDATE lancamentos SET status = 'quitado', quitado_em = ? WHERE id = ? AND status = 'pendente'`,
+			d, id,
+		)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			falhas = append(falhas, "#"+id)
+		} else {
+			quitados = append(quitados, "#"+id)
+		}
 	}
-	fmt.Printf("Lançamento #%s quitado em %s.\n", id, dataBR(d))
+	if len(quitados) == 0 {
+		if len(falhas) == 1 {
+			return fmt.Errorf("lançamento %s não encontrado ou já quitado", falhas[0])
+		}
+		return fmt.Errorf("lançamentos %s não encontrados ou já quitados", strings.Join(falhas, ", "))
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if len(quitados) == 1 {
+		fmt.Printf("Lançamento %s quitado em %s.\n", quitados[0], dataBR(d))
+	} else {
+		fmt.Printf("%d lançamentos quitados em %s (%s).\n", len(quitados), dataBR(d), strings.Join(quitados, ", "))
+	}
+	if len(falhas) > 0 {
+		fmt.Printf("⚠ não encontrados ou já quitados: %s\n", strings.Join(falhas, ", "))
+	}
 	return nil
 }

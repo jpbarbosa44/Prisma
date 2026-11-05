@@ -769,13 +769,13 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 					},
 				},
 				{
-					tecla: "u", rotulo: "quitar",
+					tecla: "u", rotulo: "quitar", multi: true,
 					campos: []campo{
-						{rotulo: "id", dica: "número do lançamento", obrigatorio: true},
+						{rotulo: "id", dica: "um ou vários: 12 13 14 (espaço marca linhas)", obrigatorio: true},
 						{rotulo: "data", dica: "opcional (padrão: hoje)"},
 					},
 					executar: func(v []string) (string, error) {
-						args := []string{v[0]}
+						args := strings.Fields(strings.ReplaceAll(v[0], ",", " "))
 						args = append(args, par("--data", v[1])...)
 						return exec(func() error { return app.Quitar(conn, args) })
 					},

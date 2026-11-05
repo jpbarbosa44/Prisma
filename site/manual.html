@@ -230,6 +230,7 @@ Dentro das telas, os atalhos aparecem no rodapé. Convenções:
 
 - `a` adiciona, `e` edita, `x` remove (com confirmação `s/n`), `l` volta à lista.
 - Nas tabelas, a linha selecionada (destacada) fornece o **id automaticamente** para ações como quitar, editar e remover — o campo já vem preenchido no formulário.
+- Em Pagar/Receber, `espaço` **marca várias linhas** (aparece um `●`); o `u` quitar abre com todos os ids marcados e quita de uma vez. Lançamentos quitados ficam **riscados** na tabela.
 - Nos formulários: `enter` avança/confirma, `tab` próximo campo, `esc` cancela. **Em edições, os campos já abrem com os valores atuais do registro** (vindos do banco) — é só ajustar o que quiser; apagar um campo de texto mantém o valor anterior.
 - Campos de escolha (conta, carteira, tipo, período, sim/não) são **seletores**: `←/→` percorre as opções — as contas e carteiras aparecem **listadas pelo nome**, sem precisar saber o id.
 - O campo **categoria** é um combo: digite para criar uma nova ou use `←/→` para navegar pelas já existentes (do catálogo).
@@ -276,6 +277,7 @@ A navegação espelha a TUI:
 - O menu lateral lista as mesmas telas (`1`-`9` trocam de tela pelo teclado; as demais por clique).
 - As teclas dos botões de ação funcionam como atalhos (`a` adiciona, `e` edita, `x` remove...).
 - `↑/↓` ou um clique selecionam a linha da tabela, e o id selecionado já vem preenchido nos formulários de quitar, editar e remover.
+- Em Pagar/Receber, cada linha tem uma caixa de marcar (ou use `espaço`): marque várias contas e clique em **quitar** — o botão mostra quantas estão marcadas, e o formulário já vem com todos os ids. As contas quitadas aparecem riscadas.
 - Nas telas com abas (Estatísticas, Gráficos), `←/→` ou um clique na régua trocam a visão. Em Pagar/Receber, `←/→` muda o mês e `t` alterna entre pagar, receber e todos.
 - Nos formulários, `enter` confirma e `esc` cancela; campos com `*` são obrigatórios; em edições, campos vazios mantêm o valor atual.
 - Remoções e o "zerar banco" pedem confirmação, como na TUI.
@@ -413,9 +415,10 @@ Os filtros se combinam. A lista mostra ao final os totais pendentes a pagar e a 
 ```sh
 prisma quitar 4                 # hoje
 prisma quitar 4 --data 10/06/2026
+prisma quitar 4 5 7,9           # várias de uma vez
 ```
 
-Ao quitar, o lançamento entra no saldo da conta/carteira vinculada e nos relatórios.
+Ao quitar, o lançamento entra no saldo da conta/carteira vinculada e nos relatórios. Com vários ids, os que não existem ou já estavam quitados viram aviso e os demais são quitados normalmente. Na listagem (e na TUI/web), os quitados aparecem **riscados**, como itens concluídos.
 
 ### transferir
 

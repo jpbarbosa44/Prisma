@@ -60,6 +60,9 @@ type acao struct {
 	rotulo   string
 	campos   []campo
 	confirma bool
+	// multi: o campo "id" aceita vários ids, e as linhas marcadas com espaço
+	// (TUI) ou no checkbox (web) entram nele de uma vez
+	multi    bool
 	executar func(vals []string) (string, error)
 	params   func(vals []string) []string
 	// variante troca a ação inteira conforme a visão atual da tela (seus params):
@@ -124,9 +127,11 @@ type model struct {
 	linhas []string // conteúdo da tela, linha a linha (texto puro)
 	seleta []selecionavel
 	selPos int // posição na seleta (-1 = nenhuma)
-	msg    string
-	msgErr bool
-	msgGen int // invalida ticks de auto-dismiss antigos
+	// marcados: ids marcados com espaço, para ações multi (limpos a cada recarga)
+	marcados map[string]bool
+	msg      string
+	msgErr   bool
+	msgGen   int // invalida ticks de auto-dismiss antigos
 
 	formAcao   *acao
 	inputs     []textinput.Model
@@ -370,6 +375,7 @@ func (m *model) recarrega() {
 			m.seleta = append(m.seleta, selecionavel{i, campos[0]})
 		}
 	}
+	m.marcados = nil
 	m.selPos = -1
 	if len(m.seleta) > 0 {
 		m.selPos = 0
@@ -391,12 +397,29 @@ func (m *model) renderConteudo() {
 		return
 	}
 	alvo := m.seleta[m.selPos].linha
+	marcadas := map[int]bool{}
+	for _, s := range m.seleta {
+		if m.marcados[s.id] {
+			marcadas[s.linha] = true
+		}
+	}
 	saida := make([]string, len(m.linhas))
 	for i, l := range m.linhas {
-		if i == alvo {
-			saida[i] = corSelec.Render("▸ " + l)
-		} else {
-			saida[i] = "  " + colorir(l)
+		// prefixo de 2 colunas: cursor (▸) e marca (●)
+		marca := " "
+		if marcadas[i] {
+			marca = "●"
+		}
+		quitada := linhaQuitada(l)
+		switch {
+		case i == alvo && quitada:
+			saida[i] = corSelec.Render("▸"+marca) + corSelec.Strikethrough(true).Render(l)
+		case i == alvo:
+			saida[i] = corSelec.Render("▸" + marca + l)
+		case quitada:
+			saida[i] = " " + corAmar.Render(marca) + corQuitada.Render(l)
+		default:
+			saida[i] = " " + corAmar.Render(marca) + colorir(l)
 		}
 	}
 	m.vp.SetContent(strings.Join(saida, "\n"))
@@ -408,6 +431,49 @@ func (m model) idSelecionado() string {
 		return m.seleta[m.selPos].id
 	}
 	return ""
+}
+
+// temMulti diz se a tela tem uma ação que aceita vários ids (marcação com espaço).
+func (t tela) temMulti() bool {
+	for _, a := range t.acoes {
+		if a.multi {
+			return true
+		}
+	}
+	return false
+}
+
+// alternaMarca marca ou desmarca a linha sob o cursor e desce para a próxima.
+// Linha já quitada não se marca (não há o que quitar de novo).
+func (m *model) alternaMarca() {
+	s := m.seleta[m.selPos]
+	switch {
+	case linhaQuitada(m.linhas[s.linha]):
+		// nada a marcar: só desce
+	case m.marcados[s.id]:
+		delete(m.marcados, s.id)
+	default:
+		if m.marcados == nil {
+			m.marcados = map[string]bool{}
+		}
+		m.marcados[s.id] = true
+	}
+	if m.selPos < len(m.seleta)-1 {
+		m.moveSelecao(1)
+	} else {
+		m.renderConteudo()
+	}
+}
+
+// idsMarcados devolve os ids marcados na ordem da tabela.
+func (m model) idsMarcados() []string {
+	var ids []string
+	for _, s := range m.seleta {
+		if m.marcados[s.id] {
+			ids = append(ids, s.id)
+		}
+	}
+	return ids
 }
 
 func (m *model) moveSelecao(delta int) {
@@ -469,6 +535,11 @@ func (m model) teclaTela(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if m.selPos >= 0 {
 			m.moveSelecao(1)
+			return m, nil
+		}
+	case " ", "space":
+		if m.selPos >= 0 && m.telas[m.atual].temMulti() {
+			m.alternaMarca()
 			return m, nil
 		}
 	}
@@ -557,6 +628,9 @@ func (m *model) abreForm(a *acao) {
 		ti := textinput.New()
 		ti.Placeholder = c.dica
 		ti.CharLimit = 80
+		if a.multi && i == 0 {
+			ti.CharLimit = 0 // vários ids
+		}
 		ti.Width = 42
 		if i == 0 {
 			ti.Focus()
@@ -564,7 +638,10 @@ func (m *model) abreForm(a *acao) {
 		m.inputs[i] = ti
 	}
 	// pré-preenche o campo "id" com a linha selecionada na tabela
-	if a.campos[0].rotulo == "id" {
+	if a.campos[0].rotulo == "id" && a.multi && len(m.marcados) > 0 {
+		m.inputs[0].SetValue(strings.Join(m.idsMarcados(), " "))
+		m.inputs[0].CursorEnd()
+	} else if a.campos[0].rotulo == "id" {
 		if id := m.idSelecionado(); id != "" {
 			m.inputs[0].SetValue(id)
 			m.inputs[0].CursorEnd()
@@ -920,6 +997,9 @@ func (m model) viewTela() string {
 	}
 	if t.listaMensal {
 		teclas = append(teclas, "←/→ mês", "t pagar/receber")
+	}
+	if m.selPos >= 0 && t.temMulti() {
+		teclas = append(teclas, "espaço marcar")
 	}
 	if m.selPos >= 0 {
 		teclas = append(teclas, "↑/↓ selecionar")
