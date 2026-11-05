@@ -296,6 +296,48 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* botão (e tecla [) que encolhe a sidebar para só os números das telas */
+    #encolhe {
+      align-self: flex-end;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      color: var(--dim);
+      font: inherit;
+      padding: 2px 9px;
+      margin-bottom: 2px;
+      cursor: pointer;
+      transition: color var(--tempo), border-color var(--tempo), background var(--tempo);
+    }
+
+    #encolhe:hover {
+      color: var(--cy);
+      background: var(--painel);
+      border-color: var(--borda);
+    }
+
+    #menu.encolhido {
+      min-width: 0;
+    }
+
+    #menu.encolhido #encolhe {
+      align-self: center;
+    }
+
+    #menu.encolhido .item {
+      text-align: center;
+      padding: 7px 0;
+      min-width: 44px;
+    }
+
+    #menu.encolhido .item .num {
+      margin-right: 0;
+    }
+
+    #menu.encolhido .item .texto {
+      display: none;
+    }
+
     #painel {
       flex: 1;
       min-width: 0;
@@ -660,6 +702,10 @@
         flex-wrap: wrap;
         min-width: 0;
       }
+
+      #encolhe {
+        align-self: center;
+      }
     }
   </style>
 </head>
@@ -871,10 +917,14 @@
       params = telas.map(t => t.padrao || []);
       selecionado = telas.map(() => null);
       abaSel = telas.map(() => 0);
-      $("#menu").innerHTML = telas.map((t, i) =>
-        `<button class="item" data-i="${i}"><span class="num">${i + 1}</span>${esc(t.titulo)}<br>` +
-        `<span class="dim">${esc(t.resumo)}</span></button>`).join("");
+      $("#menu").innerHTML = `<button id="encolhe" type="button"></button>` + telas.map((t, i) =>
+        `<button class="item" data-i="${i}" title="${escAttr(t.titulo)}"><span class="num">${i + 1}</span>` +
+        `<span class="texto">${esc(t.titulo)}<br><span class="dim">${esc(t.resumo)}</span></span></button>`).join("");
       document.querySelectorAll("#menu .item").forEach(b => b.onclick = () => abre(+b.dataset.i));
+      $("#encolhe").onclick = () => encolheMenu(!$("#menu").classList.contains("encolhido"));
+      let guardado = false;
+      try { guardado = localStorage.getItem("prisma.menuEncolhido") === "1"; } catch (e) { }
+      encolheMenu(guardado);
       // deep-link: #t=N&a=M abre direto na tela N (1-based), visão M (0-based)
       const h = new URLSearchParams(location.hash.slice(1));
       const t = +h.get("t"), a = +h.get("a");
@@ -884,6 +934,17 @@
         renderAbas();
         recarrega();
       }
+    }
+
+    /* sidebar encolhida: só os números das telas (o nome fica no tooltip);
+       a escolha fica guardada neste navegador */
+    function encolheMenu(sim) {
+      $("#menu").classList.toggle("encolhido", sim);
+      const b = $("#encolhe");
+      b.textContent = sim ? "»" : "« encolher";
+      b.title = (sim ? "expandir" : "encolher") + " o menu ( [ )";
+      b.setAttribute("aria-expanded", String(!sim));
+      try { localStorage.setItem("prisma.menuEncolhido", sim ? "1" : "0"); } catch (e) { }
     }
 
     function abre(i) {
@@ -930,6 +991,7 @@
       if (t.listaMensal) partes.push("←/→ mês", "t pagar/receber");
       partes.push("teclas dos botões disparam ações", "↑/↓ ou clique selecionam a linha");
       if (temMulti(t)) partes.push("espaço ou ☐ marcam várias linhas");
+      partes.push("[ encolhe o menu");
       $("#dicas").textContent = partes.join(" · ");
     }
 
@@ -1394,6 +1456,11 @@
         } else if (d >= 1 && d <= telas.length) {
           abre(d - 1);
         }
+        return;
+      }
+      if (ev.key === "[" && $("#encolhe")) {
+        encolheMenu(!$("#menu").classList.contains("encolhido"));
+        ev.preventDefault();
         return;
       }
       if (atual < 0) return;

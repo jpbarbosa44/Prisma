@@ -1,6 +1,6 @@
 module prisma
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/abemedia/go-webview v0.0.0-20250327021345-7b06ad397f16
