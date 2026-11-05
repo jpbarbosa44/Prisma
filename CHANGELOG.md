@@ -7,6 +7,34 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Tela Início** (a primeira, no modo pessoal): saldo, o que falta pagar e receber no mês, as contas dos próximos 7 dias e as faturas dos cartões. Na web e no app, em cards, com o botão **✓ pago** em cada conta; no terminal, `prisma inicio`. Compras no cartão aparecem agrupadas por fatura. As demais telas descem uma posição nos atalhos numéricos (Saldo passa a ser a 2).
+- **Primeiros passos**: com o banco vazio, a tela Início guia o cadastro da conta, da primeira conta a pagar e do salário.
+- **Atalho automático**: o app desktop cria o atalho no menu de aplicativos na primeira vez que abre.
+- **Importar extrato pela web e pelo app** (Pagar/Receber, tecla `i`): OFX ou CSV, com prévia (duplicados riscados), backup antes de gravar e **desfazer** por importação. **Exportar CSV** (tecla `c`): no navegador baixa o arquivo; no app, salva na pasta Downloads.
+- **Botões na própria linha** das tabelas da web (✓ quitar, ✎ editar, ✕ remover).
+- **Quitar várias contas de uma vez** (`prisma quitar 4 5 7,9`; na TUI, `espaço` marca linhas; na web, caixas de marcar) e **contas quitadas riscadas** nas tabelas.
+- **Sidebar encolhível** na web (botão « encolher ou tecla `[`).
+- **Regras de categoria** (`prisma regra add ifood delivery`; tela Categorias, tecla `r`): lançamentos sem categoria — cadastro, bot, boleto/Pix e importação de extrato — recebem a categoria pela descrição, por palavra inteira e sem diferenciar acentos. Trocar a categoria à mão sugere a regra.
+- **Boleto e Pix** (`prisma pagar boleto "<código>"`; Pagar/Receber, tecla `b`; no bot, basta colar o código): lê a linha digitável do boleto, das contas de consumo e tributos, o código de barras e o Pix copia-e-cola, confere os dígitos verificadores/CRC e cria a conta a pagar com valor, vencimento e o código guardado na observação. Entende o fator de vencimento reiniciado em 2025.
+- **Metas (cofrinhos)** (`prisma meta`; tela Metas): valor, prazo, aportes e retiradas, com progresso e quanto guardar por mês. O Analytics mostra se o superávit cobre as metas.
+- **Lembretes no computador** (app desktop): às 9h, notificação do sistema com as contas atrasadas, de hoje e de amanhã. Liga e desliga na tela Início.
+- **Atualizar pelo app**: o aviso de versão nova ganha o botão **atualizar agora**, que instala a versão (app e `prisma` ao lado) e reabre a janela.
+- **Fechamento do mês em PDF** (`prisma relatorio --html arq.html --mes AAAA-MM`; tela Relatório, tecla `p`): página A4 com receitas × despesas de 6 meses, gastos por categoria comparados à média, maiores gastos, pendências e metas, para imprimir ou salvar em PDF.
+- Bot: `quitar` aceita vários ids.
+
+### Corrigido
+
+- "Zerar banco" no modo empresa salvava o backup com o nome do banco pessoal (`prisma.db.bak-*`), e o `restaurar --empresa` não o encontrava.
+- O backup diário do banco da empresa nunca era feito quando o pessoal já tinha feito o do dia (os dois disputavam o mesmo `backups/prisma-<data>.db`).
+- O `restaurar` listava as cópias dos dois bancos misturadas; agora cada um vê só as próprias.
+- Lembretes do bot passam a mostrar a sua parte nas despesas divididas e as compras no cartão agrupadas por fatura.
+
+### Alterado
+
+- Go 1.26.10 (corrige GO-2026-6809 em `crypto/x509`).
+
 ## [1.4.0] - 2026-10-16
 
 ### Adicionado

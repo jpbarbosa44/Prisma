@@ -38,6 +38,7 @@ var janela struct {
 }
 
 func main() {
+	limpaAntigo()
 	url, fechar, err := preparar(func() {
 		janela.Lock()
 		defer janela.Unlock()
@@ -58,6 +59,7 @@ func main() {
 	if err != nil {
 		w.SetHtml(paginaDeErro(err))
 	} else {
+		go garanteAtalho()
 		// links de fora (release no GitHub) vão para o navegador do sistema
 		w.Bind("abrirExterno", func(u string) {
 			if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
@@ -110,14 +112,24 @@ func preparar(aoFocar func()) (url string, fechar func(), err error) {
 	// aviso no topo da página
 	go update.AtualizaCache()
 
-	srv, porta, err := tui.IniciarApp(conn, aoFocar)
+	srv, porta, err := tui.IniciarAppCom(conn, tui.OpcoesApp{
+		AoFocar: aoFocar, Lembretes: lembretesLigados, LigaLembretes: ligaLembretes,
+		Atualizar: atualizarEReabrir,
+	})
 	if err != nil {
 		conn.Close()
 		return "", nil, err
 	}
 	os.WriteFile(lock, []byte(strconv.Itoa(porta)), 0o600)
+	pare := make(chan struct{})
+	go vigiaLembretes(conn, pare)
+	minha := strconv.Itoa(porta)
 	fechar = func() {
-		os.Remove(lock)
+		close(pare)
+		// a trava pode já ser da cópia nova (depois do "atualizar agora")
+		if b, err := os.ReadFile(lock); err == nil && strings.TrimSpace(string(b)) == minha {
+			os.Remove(lock)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		srv.Shutdown(ctx)

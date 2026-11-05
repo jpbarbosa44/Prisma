@@ -44,6 +44,7 @@ type campo struct {
 	obrigatorio bool
 	opcoes      func() []opcao  // nil = texto livre
 	sugestoes   func() []string // texto livre com sugestões navegáveis por ←/→ (ex.: categorias)
+	longo       bool            // sem o limite de 80 caracteres (ex.: Pix copia-e-cola)
 	// auto, quando devolve um texto não-vazio (em função dos valores atuais do
 	// formulário), trava o campo como somente-leitura exibindo esse texto — útil
 	// para sugerir um valor calculado (ex.: o vencimento da fatura ao escolher um
@@ -62,7 +63,10 @@ type acao struct {
 	confirma bool
 	// multi: o campo "id" aceita vários ids, e as linhas marcadas com espaço
 	// (TUI) ou no checkbox (web) entram nele de uma vez
-	multi    bool
+	multi bool
+	// abre: na web, a ação abre este endereço da API numa aba (no app, no
+	// navegador do sistema) em vez do formulário; a TUI segue com executar
+	abre     string
 	executar func(vals []string) (string, error)
 	params   func(vals []string) []string
 	// variante troca a ação inteira conforme a visão atual da tela (seus params):
@@ -98,6 +102,9 @@ type tela struct {
 	// listaMensal liga a navegação rápida por mês (←/→) e o atalho de tipo
 	// (t alterna pagar/receber/todos) sobre uma listagem com filtro --mes/--tipo.
 	listaMensal bool
+	// visual: na web, a tela tem um desenho próprio em vez do texto da CLI
+	// ("inicio" = cards de /api/inicio); a TUI usa o conteudo de sempre.
+	visual string
 }
 
 // selecionavel é uma linha de tabela cujo primeiro campo é um ID numérico.
@@ -628,8 +635,8 @@ func (m *model) abreForm(a *acao) {
 		ti := textinput.New()
 		ti.Placeholder = c.dica
 		ti.CharLimit = 80
-		if a.multi && i == 0 {
-			ti.CharLimit = 0 // vários ids
+		if (a.multi && i == 0) || c.longo {
+			ti.CharLimit = 0 // vários ids, códigos longos
 		}
 		ti.Width = 42
 		if i == 0 {

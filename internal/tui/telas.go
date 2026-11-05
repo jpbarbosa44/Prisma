@@ -284,7 +284,7 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 						if strings.ToLower(strings.TrimSpace(v[0])) != "apagar" {
 							return "", fmt.Errorf("digite \"apagar\" no campo para confirmar")
 						}
-						return exec(func() error { return app.Resetar(conn, []string{"--sim"}) })
+						return exec(func() error { return app.Resetar(conn, []string{"--sim"}, modoEmpresa) })
 					},
 				},
 			},
@@ -499,9 +499,17 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 		},
 		{
 			titulo: "Categorias",
-			resumo: "catálogo de categorias",
+			resumo: "catálogo e regras automáticas",
 			conteudo: func(_ []string) (string, error) {
-				return captura(func() error { return app.Categoria(conn, []string{"listar"}) })
+				return captura(func() error {
+					if err := app.Categoria(conn, []string{"listar"}); err != nil {
+						return err
+					}
+					fmt.Println()
+					fmt.Println("REGRAS — lançamentos sem categoria cuja descrição tem a palavra vão para a categoria")
+					fmt.Println()
+					return app.Regra(conn, []string{"listar"})
+				})
 			},
 			acoes: []acao{
 				{
@@ -559,6 +567,23 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 					campos: []campo{{rotulo: "id", dica: "número da categoria", obrigatorio: true}},
 					executar: func(v []string) (string, error) {
 						return exec(func() error { return app.Categoria(conn, []string{"remover", v[0]}) })
+					},
+				},
+				{
+					tecla: "r", rotulo: "nova regra",
+					campos: []campo{
+						{rotulo: "descrição com", dica: "palavra(s): ifood, uber eats, netflix", obrigatorio: true},
+						{rotulo: "categoria", dica: "ex.: delivery", obrigatorio: true, sugestoes: func() []string { return app.ListaCategorias(conn) }},
+					},
+					executar: func(v []string) (string, error) {
+						return exec(func() error { return app.Regra(conn, []string{"add", v[0], v[1]}) })
+					},
+				},
+				{
+					tecla: "d", rotulo: "apagar regra", confirma: true,
+					campos: []campo{{rotulo: "regra", dica: "número da regra (r3 ou 3)", obrigatorio: true}},
+					executar: func(v []string) (string, error) {
+						return exec(func() error { return app.Regra(conn, []string{"remover", v[0]}) })
 					},
 				},
 			},
@@ -768,16 +793,23 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 						return exec(func() error { return app.NovoLancamento(conn, "receber", argsLancamento(v, "receber")) })
 					},
 				},
+				acaoQuitar(conn),
 				{
-					tecla: "u", rotulo: "quitar", multi: true,
+					tecla: "b", rotulo: "colar boleto/Pix",
 					campos: []campo{
-						{rotulo: "id", dica: "um ou vários: 12 13 14 (espaço marca linhas)", obrigatorio: true},
-						{rotulo: "data", dica: "opcional (padrão: hoje)"},
+						{rotulo: "código", dica: "linha digitável do boleto ou Pix copia-e-cola", obrigatorio: true, longo: true},
+						{rotulo: "descrição", dica: "opcional (padrão: banco ou recebedor)"},
+						{rotulo: "categoria", dica: "opcional (padrão: regra ou geral)", sugestoes: func() []string { return app.ListaCategorias(conn) }},
+						{rotulo: "vencimento", dica: "só se o código não trouxer (padrão: hoje)"},
+						{rotulo: "valor", dica: "só se o código não trouxer (Pix sem valor)"},
 					},
 					executar: func(v []string) (string, error) {
-						args := strings.Fields(strings.ReplaceAll(v[0], ",", " "))
-						args = append(args, par("--data", v[1])...)
-						return exec(func() error { return app.Quitar(conn, args) })
+						args := []string{v[0]}
+						args = append(args, par("--desc", v[1])...)
+						args = append(args, par("--cat", v[2])...)
+						args = append(args, par("--venc", v[3])...)
+						args = append(args, par("--valor", v[4])...)
+						return exec(func() error { return app.PagarCodigo(conn, args) })
 					},
 				},
 				acaoEditarLancamento(conn),
@@ -1208,6 +1240,17 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 					campos: []campo{{rotulo: "meses", dica: "1 a 36", obrigatorio: true}},
 					params: func(v []string) []string { return []string{"--meses", v[0]} },
 				},
+				{
+					tecla: "p", rotulo: "fechamento do mês (PDF)", abre: "api/relatorio",
+					campos: []campo{{rotulo: "mês", dica: "AAAA-MM (padrão: o atual)"}},
+					executar: func(v []string) (string, error) {
+						arq, err := SalvaRelatorio(conn, strings.TrimSpace(v[0]))
+						if err != nil {
+							return "", err
+						}
+						return "Fechamento salvo em " + arq + " — abra no navegador e use Imprimir → Salvar como PDF", nil
+					},
+				},
 			},
 		},
 		{
@@ -1326,6 +1369,23 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 
 	if modoEmpresa {
 		telas = append(telas, telasEmpresa(conn, exec, nenhuma)...)
+	}
+	// Início abre o modo pessoal: o que pede atenção hoje (na web, em cards);
+	// Metas (cofrinhos) entra antes do Planejamento
+	if !modoEmpresa {
+		for i := range telas {
+			if telas[i].titulo == "Planejamento" {
+				telas = append(telas[:i], append([]tela{telaMetas(conn)}, telas[i:]...)...)
+				break
+			}
+		}
+		telas = append([]tela{{
+			titulo:   "Início",
+			resumo:   "o que vence e pede atenção",
+			visual:   "inicio",
+			conteudo: func(_ []string) (string, error) { return captura(func() error { return app.InicioTexto(conn, nil) }) },
+			acoes:    []acao{acaoQuitar(conn)},
+		}}, telas...)
 	}
 	// "Como usar" fica sempre por último, em qualquer modo.
 	telas = append(telas, tela{
@@ -1596,4 +1656,101 @@ func argsLancamento(v []string, tipo string) []string {
 		args = append(args, "--recebe-pagamento")
 	}
 	return args
+}
+
+// acaoQuitar é o "u quitar" das listas de lançamentos: um ou vários ids (as
+// linhas marcadas com espaço/checkbox entram de uma vez).
+func acaoQuitar(conn *sql.DB) acao {
+	return acao{
+		tecla: "u", rotulo: "quitar", multi: true,
+		campos: []campo{
+			{rotulo: "id", dica: "um ou vários: 12 13 14 (espaço marca linhas)", obrigatorio: true},
+			{rotulo: "data", dica: "opcional (padrão: hoje)"},
+		},
+		executar: func(v []string) (string, error) {
+			args := strings.Fields(strings.ReplaceAll(v[0], ",", " "))
+			args = append(args, par("--data", v[1])...)
+			return captura(func() error { return app.Quitar(conn, args) })
+		},
+	}
+}
+
+// telaMetas é a tela dos cofrinhos: progresso de cada meta e os aportes.
+func telaMetas(conn *sql.DB) tela {
+	exec := func(f func() error) (string, error) { return captura(f) }
+	idMeta := campo{rotulo: "id", dica: "número da meta", obrigatorio: true}
+	return tela{
+		titulo: "Metas",
+		resumo: "cofrinhos: viagem, reserva, carro...",
+		conteudo: func(_ []string) (string, error) {
+			return captura(func() error { return app.MetaCmd(conn, []string{"listar"}) })
+		},
+		acoes: []acao{
+			{
+				tecla: "a", rotulo: "nova meta",
+				campos: []campo{
+					{rotulo: "nome", dica: "ex.: Viagem", obrigatorio: true},
+					{rotulo: "valor", dica: "quanto juntar, ex.: 5.000,00", obrigatorio: true},
+					{rotulo: "prazo", dica: "opcional: AAAA-MM ou DD/MM/AAAA"},
+				},
+				executar: func(v []string) (string, error) {
+					args := append([]string{"add"}, par("--nome", v[0])...)
+					args = append(args, par("--valor", v[1])...)
+					args = append(args, par("--prazo", v[2])...)
+					return exec(func() error { return app.MetaCmd(conn, args) })
+				},
+			},
+			{
+				tecla: "g", rotulo: "guardar",
+				campos: []campo{idMeta, {rotulo: "valor", dica: "quanto guardou", obrigatorio: true}, {rotulo: "data", dica: "opcional (padrão: hoje)"}},
+				executar: func(v []string) (string, error) {
+					args := append([]string{"aportar", v[0]}, par("--valor", v[1])...)
+					args = append(args, par("--data", v[2])...)
+					return exec(func() error { return app.MetaCmd(conn, args) })
+				},
+			},
+			{
+				tecla: "t", rotulo: "retirar",
+				campos: []campo{idMeta, {rotulo: "valor", dica: "quanto tirou", obrigatorio: true}},
+				executar: func(v []string) (string, error) {
+					return exec(func() error { return app.MetaCmd(conn, append([]string{"retirar", v[0]}, par("--valor", v[1])...)) })
+				},
+			},
+			{
+				tecla: "e", rotulo: "editar",
+				campos: []campo{idMeta, {rotulo: "nome"}, {rotulo: "valor", dica: "novo alvo"}, {rotulo: "prazo", dica: `AAAA-MM ou "-" para tirar`}},
+				carregar: func(id string) ([]string, error) {
+					var nome, prazo string
+					var alvo int64
+					if err := conn.QueryRow(`SELECT nome, alvo, prazo FROM metas WHERE id = ?`, id).Scan(&nome, &alvo, &prazo); err != nil {
+						return nil, err
+					}
+					if prazo != "" {
+						prazo = prazo[:7]
+					}
+					return []string{nome, valorForm(alvo), prazo}, nil
+				},
+				executar: func(v []string) (string, error) {
+					args := append([]string{"editar", v[0]}, par("--nome", v[1])...)
+					args = append(args, par("--valor", v[2])...)
+					args = append(args, par("--prazo", v[3])...)
+					return exec(func() error { return app.MetaCmd(conn, args) })
+				},
+			},
+			{
+				tecla: "c", rotulo: "concluir",
+				campos: []campo{idMeta},
+				executar: func(v []string) (string, error) {
+					return exec(func() error { return app.MetaCmd(conn, []string{"concluir", v[0]}) })
+				},
+			},
+			{
+				tecla: "x", rotulo: "remover", confirma: true,
+				campos: []campo{idMeta},
+				executar: func(v []string) (string, error) {
+					return exec(func() error { return app.MetaCmd(conn, []string{"remover", v[0]}) })
+				},
+			},
+		},
+	}
 }

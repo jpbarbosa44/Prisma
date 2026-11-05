@@ -37,12 +37,21 @@ type backupInfo struct {
 
 // listarBackups reúne as cópias disponíveis ao lado do banco: os backups diários
 // em backups/ e as cópias .bak-*/.pre-restauracao-* feitas antes de reset e
-// restauração, da mais nova para a mais velha.
+// restauração, da mais nova para a mais velha. Só entram as cópias DESTE banco
+// (pessoal e empresa dividem a pasta backups/); os snapshots de importação
+// (mcp-antes-*, web-antes-*) são do banco pessoal.
 func listarBackups(dbPath string) []backupInfo {
 	dir := filepath.Dir(dbPath)
+	base := filepath.Base(dbPath)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
 	padroes := []string{
-		filepath.Join(dir, "backups", "*.db"),
-		filepath.Join(dir, filepath.Base(dbPath)+".bak-*"),
+		filepath.Join(dir, "backups", stem+"-*.db"),
+		filepath.Join(dir, "backups", base+".pre-restauracao-*"),
+		filepath.Join(dir, base+".bak-*"),
+	}
+	if emp, err := db.PathEmpresa(); err != nil || filepath.Base(emp) != base {
+		padroes = append(padroes, filepath.Join(dir, "backups", "mcp-antes-*.db"),
+			filepath.Join(dir, "backups", "web-antes-*.db"))
 	}
 	visto := map[string]bool{}
 	var out []backupInfo

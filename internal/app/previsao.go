@@ -306,17 +306,7 @@ func Saldo(conn *sql.DB, args []string) error {
 	// materializadas com meses de antecedência, então somar todos os pendentes
 	// inflaria o total (pareceria a soma de vários meses). O recorte casa com a
 	// tela Pagar/Receber, que também abre no mês corrente.
-	mesAtual := time.Now().Format("2006-01")
-	p, err := periodoMes(mesAtual)
-	if err != nil {
-		return err
-	}
-	var pendPagar, pendReceber int64
-	err = conn.QueryRow(`
-		SELECT COALESCE(SUM(CASE tipo WHEN 'pagar' THEN `+valEf("lancamentos")+` ELSE 0 END), 0),
-		       COALESCE(SUM(CASE tipo WHEN 'receber' THEN `+valEf("lancamentos")+` ELSE 0 END), 0)
-		FROM lancamentos WHERE status = 'pendente' AND vencimento >= ? AND vencimento < ?`,
-		p.Inicio, p.Fim).Scan(&pendPagar, &pendReceber)
+	pendPagar, pendReceber, err := pendentesDoMes(conn, time.Now().Format("2006-01"))
 	if err != nil {
 		return err
 	}

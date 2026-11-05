@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -289,5 +290,62 @@ func TestAtualizaApp(t *testing.T) {
 
 	if err := atualizaApp(instalado, pacote, []byte("00  prisma-app-linux-amd64\n"), "prisma-linux-amd64.tar.gz", "prisma-linux-amd64"); err == nil {
 		t.Error("SHA256 errado devia impedir a troca")
+	}
+}
+
+// TestInstalaPacote: o par prisma + prisma-app é trocado a partir do mesmo
+// pacote; "" pula o que não está instalado; SHA256 errado não troca nada.
+func TestInstalaPacote(t *testing.T) {
+	cliNovo, appNovo := []byte("\x7fELF prisma novo"), []byte("\x7fELF app novo")
+	arquivos := map[string][]byte{"prisma-linux-amd64": cliNovo, "prisma-app-linux-amd64": appNovo}
+	pacote := fazTarGz(t, arquivos)
+	var somas strings.Builder
+	for nome, b := range map[string][]byte{"prisma-linux-amd64.tar.gz": pacote, "prisma-linux-amd64": cliNovo, "prisma-app-linux-amd64": appNovo} {
+		h := sha256.Sum256(b)
+		somas.WriteString(hex.EncodeToString(h[:]) + "  " + nome + "\n")
+	}
+	dir := t.TempDir()
+	cli, app := filepath.Join(dir, "prisma"), filepath.Join(dir, "prisma-app")
+	os.WriteFile(cli, []byte("velho"), 0o755)
+	os.WriteFile(app, []byte("velho"), 0o755)
+
+	if err := instalaPacote(pacote, []byte(somas.String()), "prisma-linux-amd64.tar.gz", "prisma-linux-amd64", cli, app, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(cli); !bytes.Equal(got, cliNovo) {
+		t.Errorf("prisma = %q", got)
+	}
+	if got, _ := os.ReadFile(app); !bytes.Equal(got, appNovo) {
+		t.Errorf("prisma-app = %q", got)
+	}
+
+	// só o app (quem instalou só o prisma-app)
+	os.WriteFile(app, []byte("velho"), 0o755)
+	if err := instalaPacote(pacote, []byte(somas.String()), "prisma-linux-amd64.tar.gz", "prisma-linux-amd64", "", app, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(app); !bytes.Equal(got, appNovo) {
+		t.Errorf("só o app: prisma-app = %q", got)
+	}
+
+	os.WriteFile(cli, []byte("velho"), 0o755)
+	if err := instalaPacote(pacote, []byte("00  prisma-linux-amd64.tar.gz\n"), "prisma-linux-amd64.tar.gz", "prisma-linux-amd64", cli, app, io.Discard); err == nil {
+		t.Error("SHA256 errado do pacote devia impedir a troca")
+	}
+	if got, _ := os.ReadFile(cli); string(got) != "velho" {
+		t.Error("com SHA256 errado nada pode ser trocado")
+	}
+}
+
+func TestCliAoLado(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "prisma-app-linux-amd64")
+	os.WriteFile(app, []byte("x"), 0o755)
+	if got := CliAoLado(app); got != "" {
+		t.Errorf("sem o prisma ao lado: %q", got)
+	}
+	os.WriteFile(filepath.Join(dir, "prisma-linux-amd64"), []byte("x"), 0o755)
+	if got := CliAoLado(app); got != filepath.Join(dir, "prisma-linux-amd64") {
+		t.Errorf("CliAoLado = %q", got)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"prisma/internal/app"
 	"prisma/internal/bot"
@@ -35,6 +36,7 @@ COMANDOS
   carteira     Carteiras (dinheiro etc.)   add | listar | editar | remover
   grupo        Pessoas que dividem gastos  add | listar | editar | remover
   categoria    Catálogo de categorias      add | listar | editar [--nome] [--classe] | remover
+  regra        Categoria automática        add "ifood" delivery | listar | remover <id> | testar "descrição"
   cartao       Cartões de crédito          add | listar | editar | remover
   fatura       Fatura do cartão            --cartao N [--ref AAAA-MM] | pagar --cartao N
   socio        Sócios da empresa           add | listar | editar | remover  (com --empresa)
@@ -42,7 +44,7 @@ COMANDOS
   imposto      Impostos da empresa         add [--recorrente --dia N] | listar
   investimento Investimentos da empresa    add | listar
   lucro        Lucro da empresa            calcular | distribuir --valor V | listar
-  pagar        Contas a pagar              add | listar
+  pagar        Contas a pagar              add | listar | boleto "<linha digitável ou Pix>"
   receber      Valores a receber           add | listar
   lancamentos  Lista tudo                  [--pendentes] [--tipo] [--mes] [--de] [--ate] [--cat] | editar | remover
   quitar       Marca como pago/recebido    quitar <id> [id...] [--data]
@@ -50,13 +52,16 @@ COMANDOS
   recorrencia  Regras automáticas          add | listar | editar | remover <id> [--limpar]
   assinatura   Assinaturas (recorrência)   listar | add | editar | remover
   emergencia   Plano de ação p/ dívidas    add | listar | plano | editar | quitar | remover
+  meta         Metas (cofrinhos)           add --nome --valor [--prazo] | listar | aportar <id> --valor | retirar | concluir | remover
   plano        Planejamento de gastos      add | listar | status | editar | remover  (semana ou mês)
   relatorio    Análise do passado          [--meses N]  (categorias, mês a mês)
+                                           --html arq.html [--mes AAAA-MM]  fechamento do mês para imprimir em PDF
   estatisticas Análises estatísticas        [--meses N]  (tendência, top gastos, saúde financeira)
   graficos     Gráficos em ASCII           [--meses N]  (categorias, saldo, receitas×despesas, grupos)
   extrato      Movimentação com saldo      --conta 1 | --carteira 1  [--meses N]
   previsao     Projeção de saldo futuro    [--meses N]
   simular      E se eu comprar isto?       --valor 4000 --parcelas 12 [--juros N] [--entrada N]
+  inicio       O que vence nos próximos dias
   saldo        Posição geral consolidada
   exportar     Lançamentos em CSV          [--saida arq.csv] [--mes AAAA-MM]
   importar     Extrato bancário OFX/CSV    --arquivo extrato.ofx --conta 1
@@ -334,6 +339,8 @@ func despacha(conn *sql.DB, modoEmpresa bool, cmd string, args []string) error {
 		return app.Carteira(conn, args)
 	case "grupo", "grupos":
 		return app.Grupo(conn, args)
+	case "regra", "regras":
+		return app.Regra(conn, args)
 	case "categoria", "categorias":
 		return app.Categoria(conn, args)
 	case "socio", "socios":
@@ -364,11 +371,16 @@ func despacha(conn *sql.DB, modoEmpresa bool, cmd string, args []string) error {
 		return app.Recorrencia(conn, args)
 	case "assinatura", "assinaturas":
 		return app.Assinaturas(conn, args)
+	case "meta", "metas":
+		return app.MetaCmd(conn, args)
 	case "emergencia":
 		return app.Emergencia(conn, args)
 	case "plano", "planejamento":
 		return app.Plano(conn, args)
 	case "relatorio":
+		if saida, mes, ok := argsRelatorioHTML(args); ok {
+			return relatorioHTML(conn, saida, mes)
+		}
 		return app.Relatorio(conn, args)
 	case "estatisticas", "estatistica", "estatísticas":
 		return app.Estatisticas(conn, args)
@@ -380,6 +392,8 @@ func despacha(conn *sql.DB, modoEmpresa bool, cmd string, args []string) error {
 		return app.Previsao(conn, args)
 	case "simular", "simulacao", "simulação":
 		return app.Simular(conn, args)
+	case "inicio", "início", "hoje":
+		return app.InicioTexto(conn, args)
 	case "saldo":
 		return app.Saldo(conn, args)
 	case "exportar":
@@ -389,10 +403,46 @@ func despacha(conn *sql.DB, modoEmpresa bool, cmd string, args []string) error {
 	case "bot":
 		return bot.Run(conn, args)
 	case "resetar":
-		return app.Resetar(conn, args)
+		return app.Resetar(conn, args, modoEmpresa)
 	case "verificar", "verify":
 		return app.Verificar(conn, modoEmpresa)
 	default:
 		return fmt.Errorf("%w: %q", errComandoDesconhecido, cmd)
 	}
+}
+
+// argsRelatorioHTML reconhece `prisma relatorio --html arq.html [--mes AAAA-MM]`.
+func argsRelatorioHTML(args []string) (saida, mes string, ok bool) {
+	for i := 0; i < len(args); i++ {
+		a, v, temValor := strings.Cut(args[i], "=")
+		if !temValor && i+1 < len(args) && (a == "--html" || a == "--mes") {
+			v = args[i+1]
+			i++
+		}
+		switch a {
+		case "--html":
+			saida, ok = v, true
+		case "--mes":
+			mes = v
+		}
+	}
+	return saida, mes, ok && saida != ""
+}
+
+// relatorioHTML grava o fechamento do mês num arquivo HTML para imprimir.
+func relatorioHTML(conn *sql.DB, saida, mes string) error {
+	f, err := os.Create(saida)
+	if err != nil {
+		return err
+	}
+	link := func(m string) string { return "prisma-fechamento-" + m + ".html" }
+	if err := tui.RelatorioHTML(conn, mes, link, f); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	fmt.Printf("Fechamento salvo em %s — abra no navegador e use Imprimir → Salvar como PDF.\n", saida)
+	return nil
 }

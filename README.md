@@ -56,6 +56,8 @@ prisma instalar-atalho    # Prisma no menu de aplicativos, com ícone
 prisma remover-atalho
 ```
 
+O app cria o atalho sozinho na primeira abertura. A tela **Início** mostra o que vence na semana com botões de pagar, e com o banco vazio guia os primeiros passos; o extrato do banco (OFX/CSV) se importa pela própria janela, com prévia e desfazer.
+
 O servidor sobe numa porta livre de `127.0.0.1` e fecha junto com a janela. Abrir o app de novo traz a janela que já está aberta para a frente, e os links externos abrem no navegador. O atalho fica em `~/.local/share/applications` no Linux, no menu Iniciar no Windows e em `~/Applications/Prisma.app` no macOS. Requisitos: no Linux, o WebKitGTK (`libwebkit2gtk-4.1-0` no Debian/Ubuntu, `webkit2gtk4.1` no Fedora); no Windows, o WebView2, que já vem no Windows 10 e 11; no macOS 11 ou mais novo, nada além do sistema.
 
 **Documentação:** [MANUAL.md](MANUAL.md) tem o guia de uso completo (todas as telas, comandos, filtros e receitas prontas); [INSTALL.md](INSTALL.md) cobre a instalação em cada sistema.
@@ -112,6 +114,8 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o di
 - **Assinatura** — serviço recorrente (Netflix, Spotify, academia...), em geral pago no cartão. É uma recorrência de despesa com visão e total mensal próprios.
 - **Emergência** — uma dívida com plano de ação mês a mês para quitá-la.
 - **Plano** — limite de gasto por categoria, por semana ou por mês.
+- **Meta** — um cofrinho: quanto juntar e até quando, com os aportes e quanto guardar por mês.
+- **Regra de categoria** — "descrição com IFOOD é delivery": põe a categoria sozinha nos lançamentos que chegam sem uma (cadastro, bot, boleto/Pix, extrato importado).
 - **Relatório** — análise do passado: gastos por categoria e balanço mês a mês.
 - **Estatísticas** — análise estatística mais profunda: média/mediana por categoria, tendência e variação, top gastos e recorrentes, projeção e saúde financeira.
 - **Previsão** — projeção do saldo nos próximos meses.
@@ -141,6 +145,10 @@ prisma pagar add --desc "IPTU" --valor 600 --venc 10/03 --auto-quitar --obs "cot
 prisma receber add --desc "Freela" --valor 800 --venc 01/07/2026 --conta 1
 prisma lancamentos --pendentes     # filtros: --tipo, --mes, --de, --ate, --cat, --grupo
 prisma quitar 4                    # marca como pago/recebido (aceita --data)
+prisma quitar 4 5 7,9              # várias de uma vez
+prisma pagar boleto "<linha digitável ou Pix copia-e-cola>"   # valor e vencimento vêm do código
+prisma regra add ifood delivery    # categoria automática pela descrição
+prisma meta add --nome "Viagem" --valor 5000 --prazo 2027-07  # cofrinho; meta aportar 1 --valor 300
 prisma lancamentos editar 7 --valor 1.250,00 --cat moradia   # altera só o que for passado
 prisma lancamentos remover 7       # se for a parcela raiz, remove TODAS as parcelas
 ```
@@ -306,7 +314,7 @@ prisma bot                                # depois, é só rodar
 prisma bot --token X --instalar-servico   # roda em segundo plano (systemd)
 ```
 
-Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita; `300 #mercado feira grupo:1` divide a despesa com o grupo (só a sua parte conta). Dá para quitar (`quitar 142`), corrigir o último lançamento (`corrigir 27,90`), transferir entre conta e carteira, e guardar comprovante mandando a foto. Também responde consultas (`/saldo`, `/pendentes`, `/relatorio`, `/previsao`, `/grupos`, `#categoria maio`...) e avisa sozinho: vencimentos às 9h (com botão de quitar) e resumo do dia às 20h. Só o chat autorizado tem acesso. Detalhes no [MANUAL.md](MANUAL.md#bot-telegram).
+Anote gastos pelo celular mandando mensagem ao seu bot: `25,50 #mercado pão e leite !` registra um gasto quitado de hoje; `+3500 #salario @05/07` registra uma receita; `300 #mercado feira grupo:1` divide a despesa com o grupo (só a sua parte conta). Dá para quitar (`quitar 142 143`), colar um boleto ou Pix para virar conta a pagar, corrigir o último lançamento (`corrigir 27,90`), transferir entre conta e carteira, e guardar comprovante mandando a foto. Também responde consultas (`/saldo`, `/pendentes`, `/relatorio`, `/previsao`, `/grupos`, `#categoria maio`...) e avisa sozinho: vencimentos às 9h (com botão de quitar) e resumo do dia às 20h. Só o chat autorizado tem acesso. Detalhes no [MANUAL.md](MANUAL.md#bot-telegram).
 
 ## Empresa (`prisma --empresa`)
 

@@ -450,6 +450,245 @@
       margin-left: 4px;
     }
 
+    /* ---- tela Início: cards sobre o painel de /api/inicio ---- */
+    #saida .inicio {
+      white-space: normal;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--painel2);
+      border: 1px solid var(--borda);
+      border-radius: var(--r);
+      padding: 12px 14px;
+    }
+
+    .card .rot {
+      color: var(--dim);
+      font-size: 12px;
+    }
+
+    .card .val {
+      font-size: 20px;
+      font-weight: 600;
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card .sub {
+      color: var(--dim);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .inicio h3 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--cy);
+    }
+
+    .vencs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .venc {
+      display: grid;
+      grid-template-columns: 92px 1fr auto auto auto;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      background: var(--painel2);
+      border: 1px solid var(--borda);
+      border-radius: var(--r-sm);
+    }
+
+    .venc.atrasada {
+      border-color: color-mix(in srgb, var(--err) 55%, var(--borda));
+    }
+
+    .venc.hoje {
+      border-color: color-mix(in srgb, var(--amar) 55%, var(--borda));
+    }
+
+    .venc .data {
+      color: var(--dim);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .venc .desc {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .venc .valor {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .selo {
+      font-size: 11px;
+      border-radius: 999px;
+      padding: 1px 8px;
+      border: 1px solid var(--borda-forte);
+      color: var(--dim);
+      white-space: nowrap;
+    }
+
+    .selo.atrasada {
+      color: var(--err);
+      border-color: var(--err);
+    }
+
+    .selo.hoje {
+      color: var(--amar);
+      border-color: var(--amar);
+    }
+
+    .botao-mini {
+      background: none;
+      border: 1px solid var(--borda-forte);
+      border-radius: var(--r-sm);
+      color: var(--fg);
+      font: inherit;
+      font-size: 12px;
+      padding: 3px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color var(--tempo), border-color var(--tempo), background var(--tempo);
+    }
+
+    .botao-mini:hover {
+      color: var(--cy);
+      border-color: var(--cy);
+      background: var(--painel);
+    }
+
+    .botao-mini.ok:hover {
+      color: var(--ok);
+      border-color: var(--ok);
+    }
+
+    .barra-uso {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--borda);
+      margin-top: 8px;
+      overflow: hidden;
+    }
+
+    .barra-uso i {
+      display: block;
+      height: 100%;
+      border-radius: 3px;
+      background: var(--s1);
+    }
+
+    .passos {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 640px;
+    }
+
+    .passo {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--painel2);
+      border: 1px solid var(--borda);
+      border-radius: var(--r);
+    }
+
+    .passo .n {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1px solid var(--cy);
+      color: var(--cy);
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 640px) {
+      .venc {
+        grid-template-columns: 1fr auto;
+      }
+
+      .venc .data,
+      .venc .selo {
+        grid-column: 1;
+      }
+    }
+
+    /* ---- botões de ação na própria linha da tabela (✓ ✎ ✕) ---- */
+    /* logo depois do texto da linha (nunca por cima dele) */
+    #saida .acoes-linha {
+      display: inline-flex;
+      vertical-align: middle;
+      margin-left: 14px;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity var(--tempo);
+      text-decoration: none;
+    }
+
+    #saida .clic:hover .acoes-linha,
+    #saida .clic.sel .acoes-linha,
+    #saida .acoes-linha:focus-within {
+      opacity: 1;
+    }
+
+    @media (hover: none) {
+      #saida .acoes-linha {
+        opacity: 1;
+      }
+    }
+
+    #saida .acoes-linha button {
+      background: var(--painel2);
+      border: 1px solid var(--borda-forte);
+      border-radius: var(--r-sm);
+      color: var(--fg);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+      padding: 3px 7px;
+      cursor: pointer;
+    }
+
+    #saida .acoes-linha button:hover {
+      color: var(--cy);
+      border-color: var(--cy);
+    }
+
+    #saida .acoes-linha button.u:hover {
+      color: var(--ok);
+      border-color: var(--ok);
+    }
+
+    #saida .acoes-linha button.x:hover {
+      color: var(--err);
+      border-color: var(--err);
+    }
+
+    #saida .linha.quitada .acoes-linha {
+      text-decoration: none;
+    }
+
     .grafico {
       margin: 0 0 26px;
     }
@@ -682,6 +921,111 @@
       border-color: var(--cy);
     }
 
+    /* ---- diálogo de importação de extrato ---- */
+    #importar {
+      width: min(860px, calc(100vw - 32px));
+    }
+
+    #importar h3 {
+      margin: 0 0 6px;
+      color: var(--cy);
+      font-size: 15px;
+    }
+
+    #imp-campos {
+      display: grid;
+      grid-template-columns: 12ch 1fr;
+      align-items: center;
+      gap: 8px 10px;
+      margin: 14px 0 6px;
+    }
+
+    #imp-campos input,
+    #imp-campos select {
+      background: var(--bg);
+      color: var(--fg);
+      font: inherit;
+      border: 1px solid var(--borda);
+      border-radius: var(--r-sm);
+      padding: 6px 9px;
+      min-width: 0;
+    }
+
+    #imp-campos input[type=file] {
+      padding: 4px;
+    }
+
+    #imp-campos input:focus,
+    #imp-campos select:focus {
+      outline: none;
+      border-color: var(--cy);
+      box-shadow: 0 0 0 3px rgba(77, 216, 230, .15);
+    }
+
+    #imp-resumo {
+      margin: 10px 0 6px;
+    }
+
+    #imp-tabela {
+      max-height: 42vh;
+      overflow: auto;
+      border: 1px solid var(--borda);
+      border-radius: var(--r-sm);
+    }
+
+    #imp-tabela table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    #imp-tabela th,
+    #imp-tabela td {
+      padding: 4px 10px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    #imp-tabela th {
+      position: sticky;
+      top: 0;
+      background: var(--painel2);
+      color: var(--dim);
+      font-weight: 500;
+    }
+
+    #imp-tabela td.valor {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #imp-tabela tr.dup td {
+      text-decoration: line-through;
+      opacity: .5;
+    }
+
+    #imp-lotes {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--borda);
+      font-size: 13px;
+    }
+
+    #imp-lotes:empty {
+      display: none;
+    }
+
+    #imp-lotes .lote {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 3px 0;
+    }
+
+    #imp-lotes .lote span:first-child {
+      flex: 1;
+    }
+
     /* campos têm anel próprio (box-shadow); dispensa o outline global */
     #campos input:focus-visible,
     #campos select:focus-visible {
@@ -754,6 +1098,28 @@
       </div>
     </form>
     <p class="dim" style="margin:10px 0 0">enter confirma · esc cancela</p>
+  </dialog>
+  <dialog id="importar">
+    <h3>Importar extrato do banco</h3>
+    <p class="dim" style="margin:0">Baixe o extrato no app ou site do banco em <b>OFX</b> (melhor) ou CSV. Os movimentos
+      entram como já pagos/recebidos na conta escolhida; os que já existem são ignorados.</p>
+    <div id="imp-campos">
+      <label for="imp-arquivo">arquivo</label>
+      <input id="imp-arquivo" type="file" accept=".ofx,.csv,.txt,.tsv">
+      <label for="imp-destino">entra em</label>
+      <select id="imp-destino"></select>
+      <label for="imp-categoria">categoria</label>
+      <input id="imp-categoria" placeholder="importado" autocomplete="off">
+    </div>
+    <div id="imp-resumo"></div>
+    <div id="imp-tabela" hidden></div>
+    <div id="imp-msg" class="err"></div>
+    <div class="botoes">
+      <button type="button" id="imp-fecha">fechar</button>
+      <button type="button" id="imp-previa">ver prévia</button>
+      <button type="button" id="imp-grava" class="principal" hidden>importar</button>
+    </div>
+    <div id="imp-lotes"></div>
   </dialog>
   <div id="tip" role="tooltip"></div>
 
@@ -897,9 +1263,20 @@
         if (!v.aviso) return;
         let html = esc(v.aviso).replace("prisma atualizar", "<code>prisma atualizar</code>");
         if (v.url) html += ` · <a href="${escAttr(v.url)}" target="_blank" rel="noopener">ver release</a>`;
+        // no app, sem terminal: um botão faz o "prisma atualizar" e reabre a janela
+        if (v.podeAtualizar) html += ` <button class="botao-mini" id="atualizarAgora">atualizar agora</button>`;
         const el = $("#aviso");
         el.innerHTML = "↑ " + html;
         el.style.display = "block";
+        const b = $("#atualizarAgora");
+        if (b) b.onclick = async () => {
+          b.disabled = true;
+          b.textContent = "atualizando…";
+          const resp = await fetch(api("api/atualizar"), { method: "POST" });
+          const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
+          if (!resp.ok) { b.disabled = false; b.textContent = "tentar de novo"; }
+          mensagem(resp.ok ? r.msg : "erro ao atualizar: " + (r.erro || resp.status), !resp.ok);
+        };
       } catch (e) { /* sem rede ou sem aviso: silêncio */ }
     }
 
@@ -953,12 +1330,19 @@
       history.replaceState(null, "", "#t=" + (i + 1)); // link direto para a tela
       document.querySelectorAll("#menu .item").forEach((b, j) => b.classList.toggle("ativo", j === i));
       $("#titulo").textContent = telas[i].titulo;
-      $("#acoes").innerHTML = (telas[i].acoes || []).map((a, j) =>
+      // telas com desenho próprio (Início) têm os botões nos cards
+      $("#acoes").innerHTML = (telas[i].visual ? [] : telas[i].acoes || []).map((a, j) =>
         `<button class="acao" data-j="${j}"><kbd>${esc(a.tecla)}</kbd>${esc(a.rotulo)}` +
         `${a.multi ? '<span class="conta"></span>' : ""}</button>`).join("") +
+        (telas[i].listaMensal ? `<button class="acao" id="btImportar"><kbd>i</kbd>importar extrato</button>` +
+          `<button class="acao" id="btExportar"><kbd>c</kbd>exportar CSV</button>` : "") +
         `<button class="acao" id="atualiza"><kbd>↻</kbd>atualizar</button>`;
       document.querySelectorAll("#acoes .acao[data-j]").forEach(b => b.onclick = () => dispara(+b.dataset.j));
       $("#atualiza").onclick = recarrega;
+      if ($("#btImportar")) {
+        $("#btImportar").onclick = abreImportar;
+        $("#btExportar").onclick = exportarCSV;
+      }
       renderAbas();
       renderDicas();
       mensagem("", false);
@@ -990,7 +1374,7 @@
       if (t.abas && t.abas.length) partes.push("←/→ trocam de visão");
       if (t.listaMensal) partes.push("←/→ mês", "t pagar/receber");
       partes.push("teclas dos botões disparam ações", "↑/↓ ou clique selecionam a linha");
-      if (temMulti(t)) partes.push("espaço ou ☐ marcam várias linhas");
+      if (temMulti(t) && !t.visual) partes.push("espaço ou ☐ marcam várias linhas");
       partes.push("[ encolhe o menu");
       $("#dicas").textContent = partes.join(" · ");
     }
@@ -1031,10 +1415,114 @@
     async function recarrega() {
       const t = telas[atual];
       if (t.titulo === "Gráficos") return renderGraficos();
+      if (t.visual === "inicio") return renderInicio();
       const q = new URLSearchParams([["tela", atual], ...params[atual].map(p => ["p", p])]);
       if (t.abas && t.abas.length) q.set("aba", abaSel[atual]); // visão escolhida pelas abas
       const r = await (await fetch(api("api/conteudo?" + q))).json();
       renderSaida(r.texto || "");
+    }
+
+    /* ---- tela Início: cards com o que pede atenção (dados de /api/inicio) ---- */
+    const dataBR = d => d.slice(8, 10) + "/" + d.slice(5, 7);
+    /* irPara abre uma tela pelo título e, com tecla, já dispara a ação dela */
+    function irPara(titulo, tecla) {
+      const i = telas.findIndex(t => t.titulo === titulo);
+      if (i < 0) return;
+      abre(i);
+      if (tecla) {
+        const j = (telas[i].acoes || []).findIndex(a => a.tecla === tecla);
+        if (j >= 0) dispara(j);
+      }
+    }
+    async function renderInicio() {
+      const resp = await fetch(api("api/inicio"));
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        $("#saida").textContent = "erro: " + (d.erro || resp.status);
+        return;
+      }
+      selecionado[atual] = null;
+      if (d.vazio) {
+        const passos = [
+          ["Cadastre a conta do seu banco", "Contas", "a", "criar conta"],
+          ["Lance a primeira conta a pagar (luz, aluguel...)", "Pagar/Receber", "p", "lançar conta"],
+          ["Cadastre o salário como recorrência — entra todo mês sozinho", "Recorrências", "a", "cadastrar"],
+          ["Ou traga o histórico: importe o extrato do banco (depois do passo 1)", "Pagar/Receber", "i", "importar"],
+        ];
+        $("#saida").innerHTML = `<div class="inicio"><div><h3>Bem-vindo ao Prisma!</h3>` +
+          `<p class="dim" style="margin:0">Três passos para começar. Dá para mudar tudo depois.</p></div>` +
+          `<div class="passos">` + passos.map(([txt, tela, tecla, rot], i) =>
+            `<div class="passo"><span class="n">${i + 1}</span><span>${esc(txt)}</span>` +
+            `<button class="botao-mini" data-tela="${escAttr(tela)}" data-tecla="${tecla}">${esc(rot)}</button></div>`).join("") +
+          `</div></div>`;
+        $("#saida").querySelectorAll("[data-tela]").forEach(b => b.onclick = () => {
+          if (b.dataset.tecla === "i") { irPara(b.dataset.tela); abreImportar(); return; }
+          irPara(b.dataset.tela, b.dataset.tecla);
+        });
+        return;
+      }
+
+      const mes = mesBR(d.mes);
+      const card = (rot, val, cls, sub) =>
+        `<div class="card"><div class="rot">${esc(rot)}</div><div class="val ${cls || ""}">${brl(val)}</div>` +
+        (sub ? `<div class="sub">${sub}</div>` : "") + `</div>`;
+      let h = `<div class="inicio"><div class="cards">` +
+        card("Saldo total", d.saldo, d.saldo < 0 ? "err" : "") +
+        card("A pagar no mês", d.pendPagar, "err", mes) +
+        card("A receber no mês", d.pendReceber, "ok", mes) +
+        card("Posição no fim do mês", d.saldo - d.pendPagar + d.pendReceber, "", "saldo − a pagar + a receber") +
+        `</div>`;
+
+      const sit = { atrasada: "atrasada", hoje: "vence hoje", proxima: "" };
+      h += `<div><h3>Próximos 7 dias</h3>`;
+      if (!d.avisos.length) {
+        h += `<p class="dim" style="margin:0">Nada vencendo nos próximos 7 dias. ✓</p>`;
+      } else {
+        h += `<div class="vencs">` + d.avisos.map(a => {
+          const cor = a.tipo === "receber" ? "ok" : "err";
+          const selo = sit[a.situacao] ? `<span class="selo ${a.situacao}">${sit[a.situacao]}</span>` : `<span></span>`;
+          const botao = a.tipo === "fatura"
+            ? `<button class="botao-mini" data-fatura="1">ver fatura</button>`
+            : `<button class="botao-mini ok" data-quitar="${a.id}">✓ ${a.tipo === "receber" ? "recebido" : "pago"}</button>`;
+          return `<div class="venc ${a.situacao}"><span class="data">${dataBR(a.vencimento)}</span>` +
+            `<span class="desc" title="${escAttr(a.descricao)}">${esc(a.descricao)}</span>` +
+            `<span class="valor ${cor}">${brl(a.valor)}</span>${selo}${botao}</div>`;
+        }).join("") + `</div>`;
+      }
+      h += `</div>`;
+
+      if (d.faturas.length) {
+        h += `<div><h3>Faturas</h3><div class="cards">` + d.faturas.map(f => {
+          const uso = f.limite > 0 ? Math.min(100, Math.round(f.aberto * 100 / f.limite)) : 0;
+          const sub = `${f.fechada ? "fechada" : "aberta"} · vence ${dataBR(f.vencimento)}` +
+            (f.limite > 0 ? ` · ${uso}% do limite` : "");
+          return `<div class="card"><div class="rot">${esc(f.nome)}</div><div class="val err">${brl(f.aberto)}</div>` +
+            `<div class="sub">${sub}</div>` + (f.limite > 0 ? `<div class="barra-uso"><i style="width:${uso}%"></i></div>` : "") + `</div>`;
+        }).join("") + `</div></div>`;
+      }
+      // só no app desktop: o interruptor dos lembretes no computador
+      const v = await (await fetch(api("api/versao"))).json().catch(() => ({}));
+      if (typeof v.lembretes === "boolean") {
+        h += `<p class="dim" style="margin:0">🔔 Lembretes no computador (às 9h: contas atrasadas, de hoje e de amanhã): ` +
+          `<b>${v.lembretes ? "ligados" : "desligados"}</b> ` +
+          `<button class="botao-mini" data-lembretes="${v.lembretes ? "0" : "1"}">${v.lembretes ? "desligar" : "ligar"}</button></p>`;
+      }
+      h += `</div>`;
+      $("#saida").innerHTML = h;
+      const bl = $("#saida").querySelector("[data-lembretes]");
+      if (bl) bl.onclick = async () => {
+        const resp = await fetch(api("api/lembretes"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ligado: bl.dataset.lembretes === "1" }),
+        });
+        const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
+        mensagem(resp.ok ? r.msg : "erro: " + (r.erro || resp.status), !resp.ok);
+        renderInicio();
+      };
+
+      const jQuitar = (telas[atual].acoes || []).findIndex(a => a.tecla === "u");
+      $("#saida").querySelectorAll("[data-quitar]").forEach(b => b.onclick = () => executa(jQuitar, [b.dataset.quitar, ""]));
+      $("#saida").querySelectorAll("[data-fatura]").forEach(b => b.onclick = () => irPara("Cartões"));
     }
 
     /* ---- gráficos em SVG (espelham a tela ASCII "Gráficos") ----
@@ -1299,17 +1787,35 @@
         if (quitada) cls += " quitada";
         // já quitada não se marca: não há o que quitar de novo
         const caixa = id && multi ? `<input type="checkbox" class="marca-linha" tabindex="-1" aria-label="marcar #${id}"${quitada ? " disabled" : ""}>` : "";
-        return `<div class="${cls}"${id ? ` data-id="${id}"` : ""}>${caixa}${colorir(l) || " "}</div>`;
+        return `<div class="${cls}"${id ? ` data-id="${id}"` : ""}>${caixa}${colorir(l) || " "}${id ? botoesLinha(quitada) : ""}</div>`;
       }).join("");
       if (!ids.includes(selecionado[atual])) selecionado[atual] = ids[0] || null;
       document.querySelectorAll("#saida .clic").forEach(d =>
         d.onclick = () => { selecionado[atual] = d.dataset.id; marcaSelecao(); });
+      document.querySelectorAll("#saida .acoes-linha button").forEach(b =>
+        b.onclick = ev => {
+          ev.stopPropagation();
+          const id = b.closest(".clic").dataset.id;
+          selecionado[atual] = id;
+          marcaSelecao();
+          dispara(+b.dataset.j, id);
+        });
       document.querySelectorAll("#saida .marca-linha").forEach(c => {
         c.onclick = ev => ev.stopPropagation();
         c.onchange = () => alternaMarca(c.closest(".clic").dataset.id, c.checked);
       });
       marcaSelecao();
       contaMarcados();
+    }
+    /* ✓ quitar, ✎ editar, ✕ remover: as ações da tela cujo 1º campo é o id
+       viram botões na própria linha (aparecem ao passar o mouse) */
+    const iconesLinha = { u: "✓", e: "✎", x: "✕" };
+    function botoesLinha(quitada) {
+      const bts = (telas[atual].acoes || []).map((a, j) => ({ a, j }))
+        .filter(({ a }) => a.linha && iconesLinha[a.tecla] && !(quitada && a.tecla === "u"))
+        .map(({ a, j }) => `<button type="button" class="${a.tecla}" data-j="${j}" title="${escAttr(a.rotulo)}"` +
+          ` aria-label="${escAttr(a.rotulo)}">${iconesLinha[a.tecla]}</button>`);
+      return bts.length ? `<span class="acoes-linha">${bts.join("")}</span>` : "";
     }
     function alternaMarca(id, marcar) {
       const c = document.querySelector(`#saida .clic[data-id="${id}"] .marca-linha`);
@@ -1349,14 +1855,17 @@
     }
 
     /* ---- ações: sem campos executa direto; com campos abre o formulário ---- */
-    async function dispara(j) {
+    /* idLinha: a ação veio de um botão na linha — vale só aquele id, mesmo
+       com outras linhas marcadas */
+    async function dispara(j, idLinha) {
       const a = telas[atual].acoes[j];
+      if (a.abre) return abreEndereco(api(a.abre));
       if (!a.temForm) return executa(j, []);
       const r = await (await fetch(api(`api/form?tela=${atual}&acao=${j}`))).json();
-      abreForm(j, r.campos || []);
+      abreForm(j, r.campos || [], idLinha);
     }
 
-    function abreForm(j, campos) {
+    function abreForm(j, campos, idLinha) {
       formCampos = campos;
       $("#form-titulo").textContent = telas[atual].titulo + " › " + telas[atual].acoes[j].rotulo;
       $("#campos").innerHTML = campos.map((c, i) => {
@@ -1369,8 +1878,8 @@
       }).join("");
       if (campos.length && campos[0].rotulo === "id") {
         const el = $('#campos [data-i="0"]');
-        const multi = telas[atual].acoes[j].multi && marcados.size;
-        const valor = multi ? idsMarcados().join(" ") : selecionado[atual];
+        const multi = !idLinha && telas[atual].acoes[j].multi && marcados.size;
+        const valor = idLinha || (multi ? idsMarcados().join(" ") : selecionado[atual]);
         if (el && el.tagName === "INPUT" && valor) el.value = valor;
       }
       $("#form-msg").textContent = "";
@@ -1394,6 +1903,99 @@
       executa(j, vals); // o dialog fecha sozinho (method="dialog")
     });
     $("#form-cancela").onclick = () => $("#form").close();
+
+    /* ---- importar extrato e exportar CSV (Pagar/Receber) ---- */
+    const noApp = () => typeof window.abrirExterno === "function";
+    /* abre uma página da API (ex.: o fechamento do mês) numa aba; no app, no
+       navegador do sistema — é lá que se imprime em PDF */
+    function abreEndereco(u) {
+      const abs = new URL(u, location.href).href;
+      if (noApp()) window.abrirExterno(abs);
+      else window.open(abs, "_blank", "noopener");
+    }
+    async function abreImportar() {
+      const d = $("#importar");
+      $("#imp-msg").textContent = "";
+      $("#imp-resumo").textContent = "";
+      $("#imp-tabela").hidden = true;
+      $("#imp-grava").hidden = true;
+      $("#imp-arquivo").value = "";
+      const ops = await (await fetch(api("api/destinos"))).json().catch(() => []);
+      $("#imp-destino").innerHTML = (ops.length ? ops : [{ valor: "", rotulo: "cadastre uma conta antes (tela Contas)" }])
+        .map(o => `<option value="${escAttr(o.valor)}">${esc(o.rotulo)}</option>`).join("");
+      renderLotes();
+      d.showModal();
+    }
+    async function enviaExtrato(confirmar) {
+      const arq = $("#imp-arquivo").files[0];
+      if (!arq) { $("#imp-msg").textContent = "escolha o arquivo do extrato"; return null; }
+      const f = new FormData();
+      f.append("arquivo", arq);
+      f.append("destino", $("#imp-destino").value);
+      f.append("categoria", $("#imp-categoria").value.trim());
+      if (confirmar) f.append("confirmar", "1");
+      $("#imp-msg").textContent = "";
+      const resp = await fetch(api("api/importar"), { method: "POST", body: f });
+      const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
+      if (!resp.ok) { $("#imp-msg").textContent = r.erro || resp.status; return null; }
+      return r;
+    }
+    $("#imp-previa").onclick = async () => {
+      const p = await enviaExtrato(false);
+      if (!p) return;
+      $("#imp-resumo").innerHTML = `<b>${p.novos}</b> movimento(s) novo(s) para <b>${esc(p.destino)}</b>` +
+        ` — entradas <span class="ok">${brl(p.entradas)}</span>, saídas <span class="err">${brl(p.saidas)}</span>` +
+        (p.duplicados ? ` · <span class="dim">${p.duplicados} já existem (riscados) e serão ignorados</span>` : "") +
+        (p.codificacao !== "UTF-8" ? ` · <span class="dim">${esc(p.codificacao)}</span>` : "");
+      const linhas = p.itens.slice(0, 300).map(it =>
+        `<tr class="${it.duplicado ? "dup" : ""}"><td>${dataBR(it.data)}/${it.data.slice(2, 4)}</td>` +
+        `<td>${esc(it.descricao)}</td><td>${esc(it.categoria)}</td>` +
+        `<td class="valor ${it.tipo === "pagar" ? "err" : "ok"}">${it.tipo === "pagar" ? "-" : ""}${brl(it.valor)}</td></tr>`).join("");
+      $("#imp-tabela").innerHTML = `<table><thead><tr><th>data</th><th>descrição</th><th>categoria</th><th style="text-align:right">valor</th></tr></thead>` +
+        `<tbody>${linhas}</tbody></table>` + (p.itens.length > 300 ? `<p class="dim" style="margin:6px 10px">... e mais ${p.itens.length - 300}</p>` : "");
+      $("#imp-tabela").hidden = false;
+      $("#imp-grava").hidden = !p.novos;
+      $("#imp-grava").textContent = `importar ${p.novos}`;
+    };
+    $("#imp-grava").onclick = async () => {
+      const r = await enviaExtrato(true);
+      if (!r) return;
+      $("#importar").close();
+      mensagem(r.msg + " — dá para desfazer em importar extrato", false);
+      recarrega();
+    };
+    $("#imp-fecha").onclick = () => $("#importar").close();
+    ["#imp-arquivo", "#imp-destino", "#imp-categoria"].forEach(sel =>
+      $(sel).addEventListener("change", () => { $("#imp-grava").hidden = true; }));
+    async function renderLotes() {
+      const lotes = await (await fetch(api("api/lotes"))).json().catch(() => []);
+      if (!Array.isArray(lotes) || !lotes.length) { $("#imp-lotes").innerHTML = ""; return; }
+      const quando = l => { const m = /(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/.exec(l); return m ? `${m[3]}/${m[2]} ${m[4]}:${m[5]}` : l; };
+      $("#imp-lotes").innerHTML = `<div class="dim" style="margin-bottom:4px">Importações recentes</div>` +
+        lotes.slice(0, 5).map(l => `<div class="lote"><span>${quando(l.lote)} · ${l.itens} movimento(s) · ` +
+          `${l.lote.startsWith("mcp-") ? "pelo assistente" : "pelo app"}</span>` +
+          `<button class="botao-mini" data-lote="${escAttr(l.lote)}">desfazer</button></div>`).join("");
+      $("#imp-lotes").querySelectorAll("[data-lote]").forEach(b => b.onclick = async () => {
+        $("#importar").close();
+        if (!(await pedeConfirmacao(`Apagar os lançamentos da importação de ${quando(b.dataset.lote)}?`))) return;
+        const resp = await fetch(api("api/desfazer-lote"), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lote: b.dataset.lote }),
+        });
+        const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
+        mensagem(resp.ok ? r.msg : "erro: " + (r.erro || resp.status), !resp.ok);
+        recarrega();
+      });
+    }
+    /* no navegador baixa o arquivo; no app (a janela não baixa) o servidor
+       salva direto na pasta de downloads */
+    async function exportarCSV() {
+      const mes = getArg(params[atual], "--mes");
+      const q = mes ? "?mes=" + encodeURIComponent(mes) : "";
+      if (!noApp()) { location.href = api("api/exportar.csv" + q); return; }
+      const resp = await fetch(api("api/exportar" + q), { method: "POST" });
+      const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
+      mensagem(resp.ok ? r.msg : "erro: " + (r.erro || resp.status), !resp.ok);
+    }
 
     /* pedeConfirmacao é o confirm() da página: a janela do app desktop no macOS
        (WKWebView) não mostra os diálogos do navegador. */
@@ -1434,7 +2036,7 @@
 
     /* ---- atalhos de teclado, como na TUI ---- */
     document.addEventListener("keydown", ev => {
-      if ($("#form").open || $("#confirma").open || ev.target.matches("input, select, textarea")) return;
+      if ($("#form").open || $("#confirma").open || $("#importar").open || ev.target.matches("input, select, textarea")) return;
       if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
       if (ev.key >= "0" && ev.key <= "9") {
         if (prefixoTimer) { clearTimeout(prefixoTimer); prefixoTimer = null; }
@@ -1485,6 +2087,8 @@
       }
       // t: alterna pagar/receber/todos nas listagens mensais (antes das ações, como na TUI)
       if (t.listaMensal && ev.key === "t") { cicleTipo(); ev.preventDefault(); return; }
+      if (t.listaMensal && ev.key === "i") { abreImportar(); ev.preventDefault(); return; }
+      if (t.listaMensal && ev.key === "c") { exportarCSV(); ev.preventDefault(); return; }
       const j = (telas[atual].acoes || []).findIndex(a => a.tecla === ev.key);
       if (j >= 0) {
         dispara(j);

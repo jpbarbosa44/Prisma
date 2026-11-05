@@ -6,6 +6,7 @@ package desktop
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,17 +119,35 @@ func InstalarAtalho() error {
 		return err
 	}
 	app, temApp := BinarioApp()
+	return instalar(prisma, app, temApp, os.Stdout)
+}
+
+// InstalarAtalhoDoApp é o atalho criado pelo próprio prisma-app na primeira
+// abertura (quem só usa o app nunca roda `prisma instalar-atalho`). app é o
+// executável do prisma-app; o prisma do terminal, se estiver ao lado, ganha o
+// atalho "(terminal)" no Linux. As mensagens vão para w.
+func InstalarAtalhoDoApp(app string, w io.Writer) error {
+	prisma := filepath.Join(filepath.Dir(app), strings.Replace(filepath.Base(app), "prisma-app", "prisma", 1))
+	if _, err := os.Stat(prisma); err != nil || prisma == app {
+		prisma = ""
+	}
+	return instalar(prisma, app, true, w)
+}
+
+// instalar cria os atalhos: prisma é o binário do terminal ("" = sem atalho
+// de terminal) e app o do app desktop (temApp diz se existe).
+func instalar(prisma, app string, temApp bool, w io.Writer) error {
 	switch runtime.GOOS {
 	case "darwin":
 		if !temApp {
 			return errors.New(semApp)
 		}
-		return instalarMac(app)
+		return instalarMac(app, w)
 	case "windows":
 		if !temApp {
 			return errors.New(semApp)
 		}
-		return instalarWindows(app)
+		return instalarWindows(app, w)
 	}
 	dados, err := dadosUsuario()
 	if err != nil {
@@ -142,9 +161,11 @@ func InstalarAtalho() error {
 	if err := grava(filepath.Join(icones, "256x256", "apps", "prisma.png"), packaging.IconePNG, 0o644); err != nil {
 		return err
 	}
-	terminal := entradaDesktop("Prisma (terminal)", "O Prisma no terminal", prisma, true)
-	if err := grava(filepath.Join(aplicativos, "prisma.desktop"), []byte(terminal), 0o644); err != nil {
-		return err
+	if prisma != "" {
+		terminal := entradaDesktop("Prisma (terminal)", "O Prisma no terminal", prisma, true)
+		if err := grava(filepath.Join(aplicativos, "prisma.desktop"), []byte(terminal), 0o644); err != nil {
+			return err
+		}
 	}
 	if temApp {
 		janela := entradaDesktop("Prisma", "Suas finanças: contas, cartões, faturas e previsões", app, false)
@@ -152,12 +173,12 @@ func InstalarAtalho() error {
 			return err
 		}
 	} else {
-		fmt.Printf("aviso: %s\nSó o atalho do terminal foi criado.\n\n", semApp)
+		fmt.Fprintf(w, "aviso: %s\nSó o atalho do terminal foi criado.\n\n", semApp)
 	}
 	// atualizam o menu na hora; se não existirem, o menu se atualiza sozinho depois
 	exec.Command("update-desktop-database", aplicativos).Run()
 	exec.Command("gtk-update-icon-cache", "-f", "-t", icones).Run()
-	fmt.Printf("✔ Prisma no menu de aplicativos (%s).\n", aplicativos)
+	fmt.Fprintf(w, "✔ Prisma no menu de aplicativos (%s).\n", aplicativos)
 	return nil
 }
 
@@ -222,7 +243,7 @@ func menuIniciar() (string, error) {
 }
 
 // instalarWindows cria Prisma.lnk no menu Iniciar (via PowerShell, que já vem no Windows).
-func instalarWindows(app string) error {
+func instalarWindows(app string, w io.Writer) error {
 	dados, err := dadosUsuario()
 	if err != nil {
 		return err
@@ -241,10 +262,10 @@ func instalarWindows(app string) error {
 	script := fmt.Sprintf("$s = (New-Object -ComObject WScript.Shell).CreateShortcut('%s'); $s.TargetPath = '%s'; "+
 		"$s.WorkingDirectory = '%s'; $s.IconLocation = '%s'; $s.Description = 'Prisma: finanças pessoais'; $s.Save()",
 		q(atalho), q(app), q(filepath.Dir(app)), q(icone))
-	if err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).Run(); err != nil {
+	if err := SemJanela(exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)).Run(); err != nil {
 		return fmt.Errorf("o PowerShell não conseguiu criar o atalho: %w", err)
 	}
-	fmt.Printf("✔ Prisma no menu Iniciar (%s).\n", atalho)
+	fmt.Fprintf(w, "✔ Prisma no menu Iniciar (%s).\n", atalho)
 	return nil
 }
 
@@ -271,7 +292,7 @@ func infoPlist() string {
 }
 
 // instalarMac monta ~/Applications/Prisma.app, que chama o prisma-app instalado.
-func instalarMac(app string) error {
+func instalarMac(app string, w io.Writer) error {
 	casa, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("não achei a pasta do usuário: %w", err)
@@ -288,6 +309,6 @@ func instalarMac(app string) error {
 	if err := grava(filepath.Join(pacote, "MacOS", "Prisma"), []byte(lancador), 0o755); err != nil {
 		return err
 	}
-	fmt.Printf("✔ Prisma.app em %s (abra pelo Launchpad ou pelo Spotlight).\n", filepath.Join(casa, "Applications"))
+	fmt.Fprintf(w, "✔ Prisma.app em %s (abra pelo Launchpad ou pelo Spotlight).\n", filepath.Join(casa, "Applications"))
 	return nil
 }

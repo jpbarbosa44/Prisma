@@ -1299,7 +1299,19 @@ func AnalyticsMetas(conn *sql.DB, args []string) error {
 	fmt.Println("METAS — Planejamento por Engenharia Reversa")
 	fmt.Println()
 	if len(args) < 2 || strings.TrimSpace(args[0]) == "" || strings.TrimSpace(args[1]) == "" {
-		fmt.Println("Use a ação \"definir meta\" (tecla m) para informar o valor e o prazo (meses).")
+		// sem meta simulada: a viabilidade das metas salvas (prisma meta)
+		mediaRec, mediaDesp, err := mediasHistoricas(conn)
+		if err != nil {
+			return err
+		}
+		recMedia, despMedia, err := fluxoMensalEsperado(conn, mediaRec, mediaDesp)
+		if err != nil {
+			return err
+		}
+		if err := imprimeViabilidadeMetas(conn, recMedia-despMedia); err != nil {
+			return err
+		}
+		fmt.Println("Use a ação \"definir meta\" (tecla m) para simular um valor e um prazo (meses).")
 		fmt.Println("Ex.: R$ 50.000,00 em 24 meses → o módulo calcula a parcela e a viabilidade.")
 		return nil
 	}

@@ -88,3 +88,22 @@ func TestDespachaErroPropaga(t *testing.T) {
 		t.Fatalf("erro deveria ser de validação, não de comando desconhecido: %v", err)
 	}
 }
+
+func TestArgsRelatorioHTML(t *testing.T) {
+	casos := []struct {
+		args       []string
+		saida, mes string
+		ok         bool
+	}{
+		{[]string{"--html", "out.html", "--mes", "2026-10"}, "out.html", "2026-10", true},
+		{[]string{"--mes=2026-09", "--html=a.html"}, "a.html", "2026-09", true},
+		{[]string{"--meses", "6"}, "", "", false},
+		{[]string{"--html"}, "", "", false},
+	}
+	for _, c := range casos {
+		s, m, ok := argsRelatorioHTML(c.args)
+		if s != c.saida || m != c.mes || ok != c.ok {
+			t.Errorf("%v: %q %q %v", c.args, s, m, ok)
+		}
+	}
+}

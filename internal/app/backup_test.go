@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -74,5 +75,70 @@ func TestVerificar(t *testing.T) {
 	out := capturaSaida(t, func() error { return Verificar(conn, false) })
 	if !strings.Contains(out, "íntegro") || !strings.Contains(out, "sem violações") {
 		t.Errorf("verificar não reportou banco íntegro/sem violações:\n%s", out)
+	}
+}
+
+// TestResetarEmpresaBackup: zerar o banco da empresa faz o backup com o nome
+// dele (empresa.db.bak-*), e o `restaurar --empresa` o encontra; o pessoal não.
+func TestResetarEmpresaBackup(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PRISMA_DB", filepath.Join(dir, "prisma.db"))
+	t.Setenv("PRISMA_EMPRESA_DB", filepath.Join(dir, "empresa.db"))
+	conn, err := db.OpenEmpresa()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Exec(`INSERT INTO contas (nome) VALUES ('Caixa')`); err != nil {
+		t.Fatal(err)
+	}
+	silencia(t, func() error { return Resetar(conn, []string{"--sim"}, true) })
+
+	baks, _ := filepath.Glob(filepath.Join(dir, "empresa.db.bak-*"))
+	if len(baks) != 1 {
+		t.Fatalf("backup da empresa: %v, quer 1 arquivo empresa.db.bak-*", baks)
+	}
+	if outros, _ := filepath.Glob(filepath.Join(dir, "prisma.db.bak-*")); len(outros) != 0 {
+		t.Fatalf("não devia criar backup com o nome do banco pessoal: %v", outros)
+	}
+	achou := func(lista []backupInfo, alvo string) bool {
+		for _, b := range lista {
+			if b.caminho == alvo {
+				return true
+			}
+		}
+		return false
+	}
+	if !achou(listarBackups(filepath.Join(dir, "empresa.db")), baks[0]) {
+		t.Error("restaurar --empresa devia listar o backup da empresa")
+	}
+	if achou(listarBackups(filepath.Join(dir, "prisma.db")), baks[0]) {
+		t.Error("restaurar (pessoal) não devia listar o backup da empresa")
+	}
+}
+
+// TestListarBackupsSeparaBancos: na pasta backups/ compartilhada, cada banco só
+// vê as próprias cópias diárias; os snapshots do MCP são do pessoal.
+func TestListarBackupsSeparaBancos(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PRISMA_EMPRESA_DB", filepath.Join(dir, "empresa.db"))
+	bk := filepath.Join(dir, "backups")
+	os.MkdirAll(bk, 0o755)
+	for _, n := range []string{"prisma-2026-11-01.db", "empresa-2026-11-01.db", "mcp-antes-20261101-100000.db"} {
+		os.WriteFile(filepath.Join(bk, n), []byte("x"), 0o644)
+	}
+	nomes := func(dbPath string) string {
+		var out []string
+		for _, b := range listarBackups(dbPath) {
+			out = append(out, filepath.Base(b.caminho))
+		}
+		sort.Strings(out)
+		return strings.Join(out, " ")
+	}
+	if got := nomes(filepath.Join(dir, "prisma.db")); got != "mcp-antes-20261101-100000.db prisma-2026-11-01.db" {
+		t.Errorf("pessoal: %q", got)
+	}
+	if got := nomes(filepath.Join(dir, "empresa.db")); got != "empresa-2026-11-01.db" {
+		t.Errorf("empresa: %q", got)
 	}
 }

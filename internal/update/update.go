@@ -153,55 +153,117 @@ func AtualizaCache() {
 }
 
 // Atualizar baixa a versão mais nova do GitHub, confere o SHA256 e troca o
-// binário em execução. Imprime o progresso direto na saída.
+// binário em execução (e o prisma-app ao lado, se houver). Imprime o progresso
+// direto na saída.
 func Atualizar() error {
-	fmt.Println("Procurando atualizações no GitHub...")
-	tag, _, err := ultimaRelease(10 * time.Second)
-	if err != nil {
-		return fmt.Errorf("não consegui consultar o GitHub: %w", err)
-	}
-	if !maisNova(tag, Versao) {
-		fmt.Printf("Você já está na versão mais recente (%s).\n", Versao)
-		salva(cache{Data: time.Now().Format("2006-01-02"), Versao: tag})
-		return nil
-	}
-	arquivo, binInterno, err := nomeAsset()
+	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
+	if r, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = r
+	}
+	app, _ := AppAoLado()
+	tag, atualizou, err := AtualizarPar(exe, app, os.Stdout)
+	if err != nil || !atualizou {
+		return err
+	}
+	fmt.Printf("Atualizado de %s para %s. Reabra o prisma para usar a versão nova.\n", Versao, tag)
+	return nil
+}
+
+// AtualizarDoApp é o "atualizar agora" do app desktop: o executável em uso é
+// o prisma-app, e o prisma do terminal (se estiver ao lado) vai junto.
+// Devolve a versão instalada e se houve troca.
+func AtualizarDoApp(w io.Writer) (string, bool, error) {
+	app, err := os.Executable()
+	if err != nil {
+		return "", false, err
+	}
+	if r, err := filepath.EvalSymlinks(app); err == nil {
+		app = r
+	}
+	return AtualizarPar(CliAoLado(app), app, w)
+}
+
+// CliAoLado acha o prisma do terminal ao lado do prisma-app ("" se não há):
+// prisma-app → prisma, prisma-app-linux-amd64 → prisma-linux-amd64.
+func CliAoLado(app string) string {
+	cli := filepath.Join(filepath.Dir(app), strings.Replace(filepath.Base(app), "prisma-app", "prisma", 1))
+	if cli == app {
+		return ""
+	}
+	if info, err := os.Stat(cli); err != nil || info.IsDir() {
+		return ""
+	}
+	return cli
+}
+
+// AtualizarPar baixa a versão mais nova e troca os binários informados: cli
+// (o prisma) e app (o prisma-app); "" pula o que não está instalado. O
+// progresso vai para w. Devolve a versão mais nova e se houve troca.
+func AtualizarPar(cli, app string, w io.Writer) (string, bool, error) {
+	fmt.Fprintln(w, "Procurando atualizações no GitHub...")
+	tag, _, err := ultimaRelease(10 * time.Second)
+	if err != nil {
+		return "", false, fmt.Errorf("não consegui consultar o GitHub: %w", err)
+	}
+	if !maisNova(tag, Versao) {
+		fmt.Fprintf(w, "Você já está na versão mais recente (%s).\n", Versao)
+		salva(cache{Data: time.Now().Format("2006-01-02"), Versao: tag})
+		return tag, false, nil
+	}
+	arquivo, binInterno, err := nomeAsset()
+	if err != nil {
+		return "", false, err
+	}
 	base := fmt.Sprintf("https://github.com/%s/releases/download/%s/", repo, tag)
 
-	fmt.Printf("Baixando %s (%s)...\n", arquivo, tag)
+	fmt.Fprintf(w, "Baixando %s (%s)...\n", arquivo, tag)
 	pacote, err := baixa(base+arquivo, 60*time.Second)
 	if err != nil {
-		return fmt.Errorf("baixando o pacote: %w", err)
+		return "", false, fmt.Errorf("baixando o pacote: %w", err)
 	}
 	somas, err := baixa(base+"SHA256SUMS", 20*time.Second)
 	if err != nil {
-		return fmt.Errorf("baixando SHA256SUMS: %w", err)
+		return "", false, fmt.Errorf("baixando SHA256SUMS: %w", err)
 	}
+	if err := instalaPacote(pacote, somas, arquivo, binInterno, cli, app, w); err != nil {
+		return "", false, err
+	}
+	salva(cache{Data: time.Now().Format("2006-01-02"), Versao: tag})
+	return tag, true, nil
+}
+
+// instalaPacote confere o pacote baixado e troca os binários instalados em
+// cli e app ("" pula). Se o primeiro troca e o segundo falha, só avisa.
+func instalaPacote(pacote, somas []byte, arquivo, binInterno, cli, app string, w io.Writer) error {
 	// confere o pacote compactado e, depois de extrair, o binário de dentro
 	if err := confere(pacote, somas, arquivo); err != nil {
 		return err
 	}
-	bin, err := extrai(pacote, arquivo, binInterno)
-	if err != nil {
-		return err
+	trocouAlgum := false
+	if cli != "" {
+		bin, err := extrai(pacote, arquivo, binInterno)
+		if err != nil {
+			return err
+		}
+		if err := confere(bin, somas, binInterno); err != nil {
+			return err
+		}
+		if err := trocaEm(cli, bin); err != nil {
+			return err
+		}
+		trocouAlgum = true
 	}
-	if err := confere(bin, somas, binInterno); err != nil {
-		return err
-	}
-	if err := troca(bin); err != nil {
-		return err
-	}
-	// o app desktop, quando instalado ao lado, vai junto
-	if app, ok := AppAoLado(); ok {
+	if app != "" {
 		if err := atualizaApp(app, pacote, somas, arquivo, binInterno); err != nil {
-			fmt.Printf("aviso: o prisma foi atualizado, mas o prisma-app não: %v\n", err)
+			if !trocouAlgum {
+				return err
+			}
+			fmt.Fprintf(w, "aviso: o prisma foi atualizado, mas o prisma-app não: %v\n", err)
 		}
 	}
-	salva(cache{Data: time.Now().Format("2006-01-02"), Versao: tag})
-	fmt.Printf("Atualizado de %s para %s. Reabra o prisma para usar a versão nova.\n", Versao, tag)
 	return nil
 }
 
@@ -380,21 +442,6 @@ func confere(bin, somas []byte, asset string) error {
 		}
 	}
 	return fmt.Errorf("não encontrei %s no SHA256SUMS do release", asset)
-}
-
-// troca substitui o binário em execução pelo novo, escrevendo num arquivo
-// temporário no mesmo diretório e renomeando por cima (atômico). No Linux e no
-// macOS o rename funciona mesmo com o processo rodando; no Windows o binário em
-// uso é movido para .old antes.
-func troca(novo []byte) error {
-	alvo, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	if resolvido, err := filepath.EvalSymlinks(alvo); err == nil {
-		alvo = resolvido
-	}
-	return trocaEm(alvo, novo)
 }
 
 // trocaEm substitui o binário em alvo pelo novo, via arquivo temporário na

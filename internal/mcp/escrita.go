@@ -6,16 +6,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
-	"unicode/utf8"
 
 	"prisma/internal/app"
-	"prisma/internal/db"
 	"prisma/internal/money"
 )
 
@@ -23,16 +20,9 @@ import (
 // com `prisma mcp --escrita` (ferramenta.escreve). Todas montam os argumentos
 // das funções do app a partir de parâmetros validados, como as de leitura.
 
-const (
-	maxExtrato     = 2 << 20 // 2 MB
-	maxLancamentos = 2000    // por chamada de importar_lancamentos
-	maxSnapshots   = 10      // snapshots "mcp-antes-*" guardados
-)
-
-var reLote = regexp.MustCompile(`^mcp-\d{8}-\d{6}$`)
-
-// marcaLote é o sufixo da observação que identifica o lote de importação.
-func marcaLote(lote string) string { return "[lote " + lote + "]" }
+// maxLancamentos é o limite por chamada de importar_lancamentos. Lotes,
+// snapshots e deduplicação são os da importação do app (app/importacao.go).
+const maxLancamentos = 2000
 
 // ferramentasExtrato são ler_extrato e as de gravação; entram no fim da tabela
 // (ferramentas.go), que as filtra por sessão.
@@ -157,14 +147,14 @@ func lerExtrato(_ *Sessao, a argumentos) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if info.IsDir() || info.Size() > maxExtrato {
+	if info.IsDir() || info.Size() > app.MaxExtrato {
 		return "", errArg("caminho", "precisa ser um arquivo de até 2 MB")
 	}
 	bruto, err := os.ReadFile(caminho)
 	if err != nil {
 		return "", err
 	}
-	texto, codif := decodifica(bruto)
+	texto, codif := app.DecodificaExtrato(bruto)
 	desde, err := a.inteiro("desde_linha", 1, 1, math.MaxInt32)
 	if err != nil {
 		return "", err
@@ -231,20 +221,6 @@ func lerExtrato(_ *Sessao, a argumentos) (string, error) {
 	return b.String(), nil
 }
 
-// decodifica devolve o texto em UTF-8: arquivos de banco brasileiros muitas
-// vezes vêm em Latin-1/Windows-1252, que não é UTF-8 válido.
-func decodifica(b []byte) (string, string) {
-	b = []byte(strings.TrimPrefix(string(b), "\ufeff"))
-	if utf8.Valid(b) {
-		return string(b), "UTF-8"
-	}
-	r := make([]rune, len(b))
-	for i, c := range b {
-		r[i] = rune(c)
-	}
-	return string(r), "Latin-1 convertido para UTF-8"
-}
-
 func truncar(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -289,7 +265,7 @@ func importarLancamentos(s *Sessao, a argumentos) (string, error) {
 			return "", fmt.Errorf("lançamento %d (%v): %w", i+1, obj["descricao"], err)
 		}
 		it.categNova = !cats[it.Cat] && it.Cat != "geral"
-		if it.duplicado, err = jaExiste(conn, it.LancamentoParams); err != nil {
+		if it.duplicado, err = app.JaImportado(conn, it.LancamentoParams); err != nil {
 			return "", err
 		}
 		itens = append(itens, it)
@@ -374,19 +350,6 @@ func validaItem(conn *sql.DB, o argumentos, destinos map[string]string) (item, e
 		it.destino = "sem vínculo"
 	}
 	return it, nil
-}
-
-// jaExiste diz se um lançamento igual (tipo, descrição, valor e data — de
-// vencimento ou de compra) já está no banco: reimportar um extrato que se
-// sobrepõe ao anterior não duplica nada.
-func jaExiste(conn *sql.DB, p app.LancamentoParams) (bool, error) {
-	var n int
-	err := conn.QueryRow(`
-		SELECT COUNT(*) FROM lancamentos
-		WHERE tipo = ? AND valor = ? AND lower(trim(descricao)) = lower(?)
-		  AND (vencimento = ? OR data_compra = ?)`,
-		p.Tipo, p.Valor, p.Desc, p.Venc, p.Venc).Scan(&n)
-	return n > 0, err
 }
 
 // previa resume o que importar_lancamentos gravaria, sem gravar.
@@ -503,8 +466,8 @@ func grava(s *Sessao, itens []item) (string, error) {
 	if err := s.garanteSnapshot(); err != nil {
 		return "", fmt.Errorf("backup antes de gravar: %w", err)
 	}
-	lote := "mcp-" + time.Now().Format("20060102-150405")
-	marca := marcaLote(lote)
+	lote := app.NovoLote("mcp")
+	marca := app.MarcaLote(lote)
 	criados, primeiro, ultimo := 0, int64(0), int64(0)
 	for _, it := range novos {
 		p := it.LancamentoParams
@@ -548,21 +511,11 @@ func (s *Sessao) garanteSnapshot() error {
 	if s.snapshot != "" || s.banco == "" {
 		return nil
 	}
-	dir := filepath.Join(filepath.Dir(s.banco), "backups")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	alvo := filepath.Join(dir, "mcp-antes-"+time.Now().Format("20060102-150405")+".db")
-	if err := db.Snapshot(s.banco, alvo); err != nil {
+	alvo, err := app.SnapshotAntes(s.banco, "mcp")
+	if err != nil {
 		return err
 	}
 	s.snapshot = alvo
-	if nomes, err := filepath.Glob(filepath.Join(dir, "mcp-antes-*.db")); err == nil && len(nomes) > maxSnapshots {
-		sort.Strings(nomes)
-		for _, n := range nomes[:len(nomes)-maxSnapshots] {
-			os.Remove(n)
-		}
-	}
 	return nil
 }
 
@@ -573,53 +526,32 @@ func desfazerImportacao(s *Sessao, a argumentos) (string, error) {
 	if lote == "" {
 		return listaLotes(s.escrita)
 	}
-	if !reLote.MatchString(lote) {
-		return "", errArg("lote", "formato mcp-AAAAMMDD-HHMMSS")
+	if !app.ReLote.MatchString(lote) {
+		return "", errArg("lote", "formato mcp-AAAAMMDD-HHMMSS (ou web-..., dos importados pelo app)")
 	}
 	if err := s.garanteSnapshot(); err != nil {
 		return "", fmt.Errorf("backup antes de apagar: %w", err)
 	}
-	res, err := s.escrita.Exec(`DELETE FROM lancamentos WHERE observacao LIKE ?`, "%"+marcaLote(lote))
+	n, err := app.DesfazerLote(s.escrita, lote)
 	if err != nil {
 		return "", err
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return "", fmt.Errorf("nenhum lançamento do lote %s", lote)
 	}
 	return fmt.Sprintf("Lote %s desfeito: %d lançamento(s) apagado(s).", lote, n), nil
 }
 
 func listaLotes(conn *sql.DB) (string, error) {
-	rows, err := conn.Query(`
-		SELECT substr(observacao, instr(observacao, '[lote mcp-') + 6, 19) AS lote, COUNT(*),
-		       COALESCE(SUM(CASE tipo WHEN 'pagar' THEN valor ELSE 0 END), 0),
-		       MIN(vencimento), MAX(vencimento)
-		FROM lancamentos WHERE observacao LIKE '%[lote mcp-%'
-		GROUP BY lote ORDER BY lote DESC`)
+	lotes, err := app.Lotes(conn)
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
+	if len(lotes) == 0 {
+		return "Nenhum lote importado.", nil
+	}
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 2, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "LOTE\tLANÇAMENTOS\tDESPESAS\tPERÍODO")
-	achou := false
-	for rows.Next() {
-		var lote, de, ate string
-		var n int
-		var desp int64
-		if err := rows.Scan(&lote, &n, &desp, &de, &ate); err != nil {
-			return "", err
-		}
-		achou = true
-		fmt.Fprintf(w, "%s\t%d\t%s\t%s a %s\n", lote, n, money.Format(desp), de, ate)
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-	if !achou {
-		return "Nenhum lote importado pelo assistente.", nil
+	for _, l := range lotes {
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s a %s\n", l.Lote, l.Itens, money.Format(l.Despesas), l.De, l.Ate)
 	}
 	w.Flush()
 	return b.String(), nil

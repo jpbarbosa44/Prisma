@@ -58,10 +58,14 @@ type servidorWeb struct {
 	// nil deixa só o modo inicial (os testes usam assim)
 	abrir   func(modo string) (conn *sql.DB, dono bool, err error)
 	aoFocar func() // só no app desktop: liga POST /api/focar
-	muModos sync.Mutex
-	modos   map[string]*modoWeb
-	extras  []*sql.DB // bancos abertos pela troca de modo, fechados no Shutdown
-	mu      sync.Mutex
+	// só no app desktop: estado e interruptor dos lembretes no computador
+	lembretes     func() bool
+	ligaLembretes func(bool) error
+	atualizar     func() (string, error) // só no app: "atualizar agora"
+	muModos       sync.Mutex
+	modos         map[string]*modoWeb
+	extras        []*sql.DB // bancos abertos pela troca de modo, fechados no Shutdown
+	mu            sync.Mutex
 }
 
 // novoServidorWeb monta o servidor já com o modo inicial aberto sobre conn.
@@ -241,9 +245,28 @@ func rodaWeb(s *servidorWeb, args []string) error {
 // aberta para a frente. Devolve o servidor (para o Shutdown ao fechar a
 // janela) e a porta escolhida.
 func IniciarApp(conn *sql.DB, aoFocar func()) (*http.Server, int, error) {
+	return IniciarAppCom(conn, OpcoesApp{AoFocar: aoFocar})
+}
+
+// OpcoesApp são os ganchos do app desktop no servidor web.
+type OpcoesApp struct {
+	AoFocar func() // POST /api/focar: traz a janela para a frente
+	// Lembretes diz se os lembretes no computador estão ligados, e
+	// LigaLembretes muda isso (a página mostra o interruptor na tela Início)
+	Lembretes     func() bool
+	LigaLembretes func(bool) error
+	// Atualizar instala a versão nova e reabre o app; devolve a mensagem
+	// para a página (o app fecha logo depois de responder)
+	Atualizar func() (string, error)
+}
+
+// IniciarAppCom é o IniciarApp com todos os ganchos do app.
+func IniciarAppCom(conn *sql.DB, o OpcoesApp) (*http.Server, int, error) {
 	s := novoServidorWeb(webPessoal, conn)
 	s.abrir = abreModo
-	s.aoFocar = aoFocar
+	s.aoFocar = o.AoFocar
+	s.lembretes, s.ligaLembretes = o.Lembretes, o.LigaLembretes
+	s.atualizar = o.Atualizar
 	ouvinte, srv, err := s.prepara(0)
 	if err != nil {
 		return nil, 0, err
@@ -307,10 +330,25 @@ func (s *servidorWeb) rotas() http.Handler {
 	mux.HandleFunc("/api/telas", s.apiTelas)
 	mux.HandleFunc("/api/conteudo", s.apiConteudo)
 	mux.HandleFunc("/api/graficos", s.apiGraficos)
+	mux.HandleFunc("/api/inicio", s.apiInicio)
 	mux.HandleFunc("/api/form", s.apiForm)
 	mux.HandleFunc("/api/executar", s.apiExecutar)
+	mux.HandleFunc("GET /api/destinos", s.apiDestinos)
+	mux.HandleFunc("POST /api/importar", s.apiImportar)
+	mux.HandleFunc("GET /api/lotes", s.apiLotes)
+	mux.HandleFunc("POST /api/desfazer-lote", s.apiDesfazerLote)
+	mux.HandleFunc("GET /api/exportar.csv", s.apiExportar)
+	mux.HandleFunc("GET /api/relatorio", s.apiRelatorio)
 	if s.aoFocar != nil {
+		// só no app desktop: focar a janela e salvar a exportação em Downloads
 		mux.HandleFunc("POST /api/focar", s.apiFocar)
+		mux.HandleFunc("POST /api/exportar", s.apiSalvarExportacao)
+	}
+	if s.ligaLembretes != nil {
+		mux.HandleFunc("POST /api/lembretes", s.apiLembretes)
+	}
+	if s.atualizar != nil {
+		mux.HandleFunc("POST /api/atualizar", s.apiAtualizar)
 	}
 	return protegeLocal(mux)
 }
@@ -378,7 +416,7 @@ func (s *servidorWeb) apiVersao(w http.ResponseWriter, r *http.Request) {
 		modos = ordemModos
 	}
 	modo := s.nomeModo(r)
-	responde(w, map[string]any{
+	v := map[string]any{
 		"aviso":         aviso,
 		"url":           url,
 		"modo":          modo,
@@ -386,7 +424,14 @@ func (s *servidorWeb) apiVersao(w http.ResponseWriter, r *http.Request) {
 		"modos":         modos,
 		"modoEmpresa":   modo == webEmpresa,
 		"modoAnalytics": modo == webAnalytics,
-	})
+	}
+	if s.lembretes != nil { // só no app: a página mostra o interruptor
+		v["lembretes"] = s.lembretes()
+	}
+	if s.atualizar != nil { // só no app: o aviso de versão ganha o botão
+		v["podeAtualizar"] = true
+	}
+	responde(w, v)
 }
 
 // apiTelas devolve o menu: telas, parâmetros iniciais e ações (sem os
@@ -398,13 +443,16 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 		Confirma bool   `json:"confirma"`
 		TemForm  bool   `json:"temForm"`
 		Multi    bool   `json:"multi"` // o campo id aceita as linhas marcadas
+		Linha    bool   `json:"linha"` // 1º campo é o id: vira botão na própria linha
+		Abre     string `json:"abre,omitempty"`
 	}
 	type telaJSON struct {
 		Titulo      string     `json:"titulo"`
 		Resumo      string     `json:"resumo"`
 		Padrao      []string   `json:"padrao"`
-		Abas        []string   `json:"abas,omitempty"` // visões alternáveis por ←/→ (vazio = sem abas)
-		ListaMensal bool       `json:"listaMensal"`    // ←/→ muda o mês, t alterna pagar/receber
+		Abas        []string   `json:"abas,omitempty"`   // visões alternáveis por ←/→ (vazio = sem abas)
+		ListaMensal bool       `json:"listaMensal"`      // ←/→ muda o mês, t alterna pagar/receber
+		Visual      string     `json:"visual,omitempty"` // desenho próprio na web ("inicio")
 		Acoes       []acaoJSON `json:"acoes"`
 	}
 	m, err := s.modo(r)
@@ -414,12 +462,13 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 	}
 	saida := make([]telaJSON, len(m.telas))
 	for i, t := range m.telas {
-		tj := telaJSON{Titulo: t.titulo, Resumo: t.resumo, Padrao: t.padrao, ListaMensal: t.listaMensal}
+		tj := telaJSON{Titulo: t.titulo, Resumo: t.resumo, Padrao: t.padrao, ListaMensal: t.listaMensal, Visual: t.visual}
 		for _, ab := range t.abas {
 			tj.Abas = append(tj.Abas, ab.nome)
 		}
 		for _, a := range t.acoes {
-			tj.Acoes = append(tj.Acoes, acaoJSON{a.tecla, a.rotulo, a.confirma, len(a.campos) > 0, a.multi})
+			linha := len(a.campos) > 0 && a.campos[0].rotulo == "id"
+			tj.Acoes = append(tj.Acoes, acaoJSON{a.tecla, a.rotulo, a.confirma, len(a.campos) > 0, a.multi, linha, a.abre})
 		}
 		saida[i] = tj
 	}
@@ -489,6 +538,24 @@ func (s *servidorWeb) apiGraficos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responde(w, dados)
+}
+
+// apiInicio devolve o painel da tela Início (saldo, vencimentos da semana,
+// faturas e se o banco está vazio), para a página desenhar os cards.
+func (s *servidorWeb) apiInicio(w http.ResponseWriter, r *http.Request) {
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	s.mu.Lock()
+	painel, err := app.Inicio(m.conn)
+	s.mu.Unlock()
+	if err != nil {
+		respondeErro(w, http.StatusInternalServerError, err)
+		return
+	}
+	responde(w, painel)
 }
 
 // apiForm devolve os campos de uma ação, com os seletores resolvidos na

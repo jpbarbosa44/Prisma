@@ -43,7 +43,9 @@ Exemplos:
 1200 #eletronicos tv 10x cartao:1 @10/06
 
 Outras ações:
-quitar 142 — marca como pago/recebido
+quitar 142 — marca como pago/recebido (vários: quitar 142 143)
+boleto 23793... — cria a conta a pagar do boleto ou Pix
+  (ou só cole a linha digitável / o Pix copia-e-cola)
 corrigir 27,90 — conserta o último lançamento
   (aceita valor, #categoria, @data, ! e nova descrição)
 transferir 200 conta:1 cart:2 — move entre conta/carteira
@@ -264,8 +266,16 @@ func (s *sessao) trataMensagem(m *mensagem) {
 		return
 	}
 
+	// a linha digitável ou o Pix colados sozinhos já viram conta a pagar
+	if _, err := app.LerCodigoPagamento(texto); err == nil {
+		s.boleto(m.Chat.ID, texto)
+		return
+	}
+
 	palavra, resto, _ := strings.Cut(texto, " ")
 	switch strings.ToLower(palavra) {
+	case "boleto", "pix":
+		s.boleto(m.Chat.ID, resto)
 	case "quitar":
 		s.quitar(m.Chat.ID, strings.TrimSpace(resto))
 	case "corrigir":
@@ -394,14 +404,35 @@ func (s *sessao) avisoPlano(p app.LancamentoParams) string {
 	return b.String()
 }
 
-// quitar trata `quitar <id>`, reaproveitando o comando da CLI.
-func (s *sessao) quitar(chatID int64, resto string) {
-	id := strings.TrimPrefix(strings.TrimSpace(resto), "#")
-	if _, err := strconv.ParseInt(id, 10, 64); err != nil {
-		s.cli.enviar(chatID, "❌ uso: quitar <id> (veja os ids em /pendentes)")
+// boleto trata `boleto <linha digitável ou Pix>` (ou o código colado sozinho).
+func (s *sessao) boleto(chatID int64, codigo string) {
+	codigo = strings.TrimSpace(codigo)
+	if codigo == "" {
+		s.cli.enviar(chatID, "❌ uso: boleto <linha digitável ou Pix copia-e-cola>")
 		return
 	}
-	saida, err := captura(func() error { return app.Quitar(s.conn, []string{id}) })
+	saida, err := captura(func() error { return app.PagarCodigo(s.conn, []string{codigo}) })
+	if err != nil {
+		s.cli.enviar(chatID, "❌ "+err.Error())
+		return
+	}
+	s.cli.enviar(chatID, "🧾 "+strings.TrimSpace(saida))
+}
+
+// quitar trata `quitar <id> [id...]`, reaproveitando o comando da CLI.
+func (s *sessao) quitar(chatID int64, resto string) {
+	ids := strings.Fields(strings.NewReplacer("#", " ", ",", " ").Replace(resto))
+	for _, id := range ids {
+		if _, err := strconv.ParseInt(id, 10, 64); err != nil {
+			ids = nil
+			break
+		}
+	}
+	if len(ids) == 0 {
+		s.cli.enviar(chatID, "❌ uso: quitar <id> [id...] (veja os ids em /pendentes)")
+		return
+	}
+	saida, err := captura(func() error { return app.Quitar(s.conn, ids) })
 	if err != nil {
 		s.cli.enviar(chatID, "❌ "+err.Error())
 		return
@@ -691,42 +722,40 @@ func (s *sessao) enviaLembretes(hoje string) {
 	if _, err := app.QuitarVencidos(s.conn); err != nil {
 		fmt.Fprintf(os.Stderr, "aviso: auto-quitar: %v\n", err)
 	}
-	amanha := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
-	rows, err := s.conn.Query(`
-		SELECT id, tipo, descricao, valor, vencimento FROM lancamentos
-		WHERE status = 'pendente' AND vencimento <= ?
-		ORDER BY vencimento, id LIMIT 15`, amanha)
+	avisos, err := app.Vencimentos(s.conn, time.Now(), 1)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "aviso: lembretes: %v\n", err)
 		return
 	}
-	defer rows.Close()
 
 	var b strings.Builder
 	b.WriteString("🔔 Vencimentos\n")
 	var teclado tecladoInline
 	n := 0
-	for rows.Next() {
-		var id, valor int64
-		var tipo, desc, venc string
-		if err := rows.Scan(&id, &tipo, &desc, &valor, &venc); err != nil {
-			fmt.Fprintf(os.Stderr, "aviso: lembretes: %v\n", err)
-			return
+	for _, a := range avisos {
+		if n == 15 {
+			break
 		}
 		emoji := "🔴"
-		if tipo == "receber" {
+		if a.Tipo == "receber" {
 			emoji = "🟢"
 		}
 		quando := "vence hoje"
-		switch {
-		case venc < hoje:
-			quando = "ATRASADO desde " + dataBR(venc)
-		case venc > hoje:
+		switch a.Situacao {
+		case app.SituacaoAtrasada:
+			quando = "ATRASADO desde " + dataBR(a.Vencimento)
+		case app.SituacaoProxima:
 			quando = "vence amanhã"
 		}
-		fmt.Fprintf(&b, "\n%s #%d %s — %s — %s", emoji, id, desc, money.Format(valor), quando)
+		if a.Tipo == "fatura" {
+			// a fatura se paga inteira (prisma fatura pagar), não por item
+			fmt.Fprintf(&b, "\n💳 %s (%s) — %s — %s", a.Descricao, a.Ref, money.Format(a.Valor), quando)
+			n++
+			continue
+		}
+		fmt.Fprintf(&b, "\n%s #%d %s — %s — %s", emoji, a.ID, a.Descricao, money.Format(a.Valor), quando)
 		teclado.Linhas = append(teclado.Linhas, []botaoInline{
-			{Texto: fmt.Sprintf("✅ Quitar #%d", id), Dados: fmt.Sprintf("quitar:%d", id)},
+			{Texto: fmt.Sprintf("✅ Quitar #%d", a.ID), Dados: fmt.Sprintf("quitar:%d", a.ID)},
 		})
 		n++
 	}

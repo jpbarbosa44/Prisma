@@ -130,3 +130,29 @@ func TestOpenEmpresaIndependenteDoPessoal(t *testing.T) {
 		t.Errorf("arquivo do banco da empresa não foi criado em %s: %v", empresa, err)
 	}
 }
+
+// TestBackupDiarioEmpresa: o banco da empresa, na mesma pasta do pessoal, ganha
+// o próprio backup diário (antes os dois disputavam o mesmo prisma-<data>.db).
+func TestBackupDiarioEmpresa(t *testing.T) {
+	dir := t.TempDir()
+	hoje := time.Now().Format("2006-01-02")
+	for _, nome := range []string{"prisma.db", "empresa.db"} {
+		caminho := filepath.Join(dir, nome)
+		conn, err := sql.Open("sqlite", caminho)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Exec(`CREATE TABLE t (v TEXT)`); err != nil {
+			t.Fatal(err)
+		}
+		conn.Close()
+		if err := backupDiario(caminho); err != nil {
+			t.Fatalf("%s: %v", nome, err)
+		}
+	}
+	for _, n := range []string{"prisma-" + hoje + ".db", "empresa-" + hoje + ".db"} {
+		if _, err := os.Stat(filepath.Join(dir, "backups", n)); err != nil {
+			t.Errorf("faltou o backup %s", n)
+		}
+	}
+}

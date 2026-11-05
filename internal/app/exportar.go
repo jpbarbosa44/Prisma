@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -20,7 +21,25 @@ func Exportar(conn *sql.DB, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	f, err := os.Create(*saida)
+	if err != nil {
+		return err
+	}
+	n, err := ExportarCSV(conn, f, *mes)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%d lançamento(s) exportado(s) para %s.\n", n, *saida)
+	return nil
+}
 
+// ExportarCSV escreve os lançamentos (de um mês AAAA-MM, ou todos com "") em
+// CSV no formato do `prisma exportar`; devolve quantos. A web usa para o
+// download direto.
+func ExportarCSV(conn *sql.DB, out io.Writer, mes string) (int, error) {
 	query := `
 		SELECT l.id, l.tipo, l.descricao, l.valor, l.categoria, l.vencimento, l.status,
 		       COALESCE(l.quitado_em, ''), COALESCE(c.nome, ''), COALESCE(ca.nome, '')
@@ -29,10 +48,10 @@ func Exportar(conn *sql.DB, args []string) error {
 		LEFT JOIN carteiras ca ON ca.id = l.carteira_id
 		WHERE 1=1`
 	var params []any
-	if *mes != "" {
-		p, err := periodoMes(*mes)
+	if mes != "" {
+		p, err := periodoMes(mes)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		query += ` AND l.vencimento >= ? AND l.vencimento < ?`
 		params = append(params, p.Inicio, p.Fim)
@@ -41,42 +60,36 @@ func Exportar(conn *sql.DB, args []string) error {
 
 	rows, err := conn.Query(query, params...)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer rows.Close()
 
-	f, err := os.Create(*saida)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	w := csv.NewWriter(f)
+	w := csv.NewWriter(out)
 	w.Comma = ';'
 	if err := w.Write([]string{
 		"id", "tipo", "descricao", "valor", "categoria", "vencimento", "status", "quitado_em", "conta", "carteira",
 	}); err != nil {
-		return err
+		return 0, err
 	}
 	n := 0
 	for rows.Next() {
 		var id, valor int64
 		var tipo, desc, cat, venc, status, quitadoEm, conta, carteira string
 		if err := rows.Scan(&id, &tipo, &desc, &valor, &cat, &venc, &status, &quitadoEm, &conta, &carteira); err != nil {
-			return err
+			return n, err
 		}
 		if err := w.Write([]string{
 			fmt.Sprint(id), tipo, desc, valorCSV(valor), cat, venc, status, quitadoEm, conta, carteira,
 		}); err != nil {
-			return err
+			return n, err
 		}
 		n++
 	}
-	w.Flush()
-	if err := w.Error(); err != nil {
-		return err
+	if err := rows.Err(); err != nil {
+		return n, err
 	}
-	fmt.Printf("%d lançamento(s) exportado(s) para %s.\n", n, *saida)
-	return nil
+	w.Flush()
+	return n, w.Error()
 }
 
 // valorCSV formata centavos como "1234,56" (decimal com vírgula, sem milhar).
@@ -104,7 +117,7 @@ func Importar(conn *sql.DB, args []string) error {
 	arquivo := fs.String("arquivo", "", "extrato .ofx ou .csv (obrigatório)")
 	contaID := fs.Int64("conta", 0, "id da conta de destino")
 	cartID := fs.Int64("carteira", 0, "id da carteira de destino")
-	cat := fs.String("cat", "importado", "categoria dos lançamentos criados")
+	cat := fs.String("cat", "", "categoria dos lançamentos criados (padrão: a regra de categoria que casar, ou importado)")
 	colValor := fs.Int("coluna-valor", 0, "coluna do valor no CSV, contando de 1 (padrão: o último campo monetário — atenção a extratos com coluna de saldo)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -145,6 +158,10 @@ func Importar(conn *sql.DB, args []string) error {
 		return fmt.Errorf("nenhum movimento reconhecido em %s", *arquivo)
 	}
 
+	regras, err := listaRegras(conn)
+	if err != nil {
+		return err
+	}
 	// importação inteira numa transação: ou todos os movimentos entram, ou
 	// nenhum — um extrato não pode ficar pela metade se falhar no meio. O dedupe
 	// roda no mesmo tx para enxergar um estado consistente.
@@ -178,7 +195,7 @@ func Importar(conn *sql.DB, args []string) error {
 		_, err := tx.Exec(`
 			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id)
 			VALUES (?,?,?,?,?,'quitado',?,?,?)`,
-			tipo, m.desc, valor, strings.ToLower(*cat), m.data, m.data, conta, carteira,
+			tipo, m.desc, valor, categoriaImportada(regras, m.desc, *cat), m.data, m.data, conta, carteira,
 		)
 		if err != nil {
 			return err

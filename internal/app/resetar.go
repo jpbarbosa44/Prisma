@@ -8,14 +8,13 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"prisma/internal/db"
 )
 
 // Resetar apaga TODOS os dados do banco: `prisma resetar [--sim] [--sem-backup]`.
 // Sem --sim, mostra o que será perdido e exige digitar "apagar".
-// Antes de zerar, salva uma cópia do arquivo ao lado do original.
-func Resetar(conn *sql.DB, args []string) error {
+// Antes de zerar, salva uma cópia do arquivo ao lado do original (o da
+// empresa, com modoEmpresa — o backup leva o nome do banco zerado).
+func Resetar(conn *sql.DB, args []string, modoEmpresa bool) error {
 	fs := flag.NewFlagSet("resetar", flag.ContinueOnError)
 	sim := fs.Bool("sim", false, "não pede confirmação (cuidado!)")
 	semBackup := fs.Bool("sem-backup", false, "não cria a cópia de segurança")
@@ -37,6 +36,9 @@ func Resetar(conn *sql.DB, args []string) error {
 		{"transferencias", "transferência(s)"},
 		{"recorrencias", "recorrência(s)"},
 		{"emergencias", "emergência(s)"},
+		{"metas_aportes", "aporte(s) de meta"},
+		{"metas", "meta(s)"},
+		{"regras_categoria", "regra(s) de categoria"},
 		{"planejamentos", "plano(s)"},
 		{"grupos", "grupo(s)"},
 		{"cartoes", "cartão(ões)"},
@@ -75,7 +77,7 @@ func Resetar(conn *sql.DB, args []string) error {
 	}
 
 	if !*semBackup {
-		caminho, err := db.Path()
+		caminho, err := caminhoBanco(modoEmpresa)
 		if err != nil {
 			return err
 		}

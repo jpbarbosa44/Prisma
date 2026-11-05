@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"prisma/internal/remote"
@@ -176,13 +177,16 @@ func Backup() error {
 }
 
 // backupDiario copia o banco para backups/ ao lado dele, no máximo uma vez
-// por dia, e apaga as cópias além das maxBackups mais recentes.
+// por dia, e apaga as cópias além das maxBackups mais recentes. O nome leva a
+// base do arquivo (prisma-AAAA-MM-DD.db, empresa-AAAA-MM-DD.db): os bancos
+// pessoal e da empresa dividem a pasta sem um pular o backup do outro.
 func backupDiario(caminho string) error {
 	if _, err := os.Stat(caminho); err != nil {
 		return nil // banco ainda não existe (primeiro uso)
 	}
 	dir := filepath.Join(filepath.Dir(caminho), "backups")
-	alvo := filepath.Join(dir, "prisma-"+time.Now().Format("2006-01-02")+".db")
+	base := strings.TrimSuffix(filepath.Base(caminho), filepath.Ext(caminho))
+	alvo := filepath.Join(dir, base+"-"+time.Now().Format("2006-01-02")+".db")
 	if _, err := os.Stat(alvo); err == nil {
 		return nil // o de hoje já existe
 	}
@@ -200,7 +204,7 @@ func backupDiario(caminho string) error {
 	if _, err := src.Exec("VACUUM INTO ?", alvo); err != nil {
 		return err
 	}
-	nomes, err := filepath.Glob(filepath.Join(dir, "prisma-*.db"))
+	nomes, err := filepath.Glob(filepath.Join(dir, base+"-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].db"))
 	if err != nil || len(nomes) <= maxBackups {
 		return nil
 	}
@@ -359,6 +363,33 @@ CREATE TABLE IF NOT EXISTS distribuicoes_lucro (
 	lucro_total INTEGER NOT NULL, -- centavos; o valor que foi distribuído
 	observacao  TEXT NOT NULL DEFAULT '',
 	criado_em   TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
+-- regras de categoria: descrição com "padrao" (palavras inteiras, sem caixa
+-- nem acento) recebe "categoria" quando o lançamento chega sem categoria.
+CREATE TABLE IF NOT EXISTS regras_categoria (
+	id        INTEGER PRIMARY KEY AUTOINCREMENT,
+	padrao    TEXT NOT NULL,
+	categoria TEXT NOT NULL,
+	criada_em TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
+-- metas (cofrinhos): quanto juntar, até quando, e os aportes (retirada = negativo).
+CREATE TABLE IF NOT EXISTS metas (
+	id        INTEGER PRIMARY KEY AUTOINCREMENT,
+	nome      TEXT NOT NULL,
+	alvo      INTEGER NOT NULL CHECK (alvo > 0), -- centavos
+	prazo     TEXT NOT NULL DEFAULT '',          -- AAAA-MM-DD ('' = sem prazo)
+	status    TEXT NOT NULL DEFAULT 'ativa' CHECK (status IN ('ativa','concluida')),
+	criada_em TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS metas_aportes (
+	id      INTEGER PRIMARY KEY AUTOINCREMENT,
+	meta_id INTEGER NOT NULL REFERENCES metas(id) ON DELETE CASCADE,
+	valor   INTEGER NOT NULL, -- centavos; negativo = retirada
+	data    TEXT NOT NULL,
+	obs     TEXT NOT NULL DEFAULT ''
 );
 
 -- a parte de cada sócio numa distribuição; o valor fica no lançamento.

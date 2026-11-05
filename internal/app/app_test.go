@@ -449,7 +449,7 @@ func TestResetar(t *testing.T) {
 		return NovoLancamento(conn, "pagar", []string{"add", "--desc", "Conta", "--valor", "10"})
 	})
 	silencia(t, func() error {
-		return Resetar(conn, []string{"--sim"})
+		return Resetar(conn, []string{"--sim"}, false)
 	})
 	for _, tabela := range []string{"contas", "lancamentos", "transferencias", "recorrencias", "emergencias", "planejamentos", "carteiras", "categorias"} {
 		var n int

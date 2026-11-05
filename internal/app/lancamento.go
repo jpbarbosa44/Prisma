@@ -22,8 +22,13 @@ func NovoLancamento(conn *sql.DB, tipo string, args []string) error {
 		return lancamentoAdd(conn, tipo, args[1:])
 	case "listar", "ls":
 		return Lancamentos(conn, append([]string{"--tipo", tipo}, args[1:]...))
+	case "boleto", "pix":
+		if tipo != "pagar" {
+			return fmt.Errorf("boleto e Pix são contas a pagar: use prisma pagar boleto")
+		}
+		return PagarCodigo(conn, args[1:])
 	default:
-		return fmt.Errorf("subcomando inválido %q (use: add, listar)", args[0])
+		return fmt.Errorf("subcomando inválido %q (use: add, listar, boleto)", args[0])
 	}
 }
 
@@ -70,6 +75,9 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []L
 	}
 	if p.Parcelas < 1 {
 		p.Parcelas = 1
+	}
+	if p.Cat == "" {
+		p.Cat = CategoriaPorRegra(conn, p.Desc) // regra de categoria, se alguma casar
 	}
 	if p.Cat == "" {
 		p.Cat = "geral"
@@ -266,7 +274,7 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	desc := fs.String("desc", "", "descrição (obrigatório)")
 	valor := fs.String("valor", "", "valor (obrigatório, ex.: 1.200,00)")
 	venc := fs.String("venc", "hoje", "vencimento (AAAA-MM-DD ou DD/MM/AAAA)")
-	cat := fs.String("cat", "geral", "categoria (ex.: moradia, mercado, salario)")
+	cat := fs.String("cat", "", "categoria (ex.: moradia, mercado, salario); sem ela, vale a regra de categoria ou geral")
 	contaID := fs.Int64("conta", 0, "id da conta vinculada")
 	cartID := fs.Int64("carteira", 0, "id da carteira vinculada")
 	grupoID := fs.Int64("grupo", 0, "id do grupo que divide a despesa")
@@ -615,6 +623,7 @@ func lancamentoEditar(conn *sql.DB, args []string) error {
 		}
 		registraCategoria(conn, *cat)
 		sets, params = append(sets, "categoria = ?"), append(params, strings.ToLower(*cat))
+		defer sugereRegra(conn, id, strings.ToLower(*cat))
 	}
 	if informado["conta"] && informado["carteira"] && *contaID > 0 && *cartID > 0 {
 		return fmt.Errorf("vincule a uma conta OU a uma carteira, não ambas")

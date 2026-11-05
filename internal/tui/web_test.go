@@ -70,8 +70,8 @@ func TestWebAPI(t *testing.T) {
 	pega(t, srv.URL+"/api/telas", &telas)
 
 	t.Run("menu espelha as telas da TUI", func(t *testing.T) {
-		if len(telas) == 0 || telas[0].Titulo != "Saldo" {
-			t.Fatalf("esperava a tela Saldo em primeiro, veio %+v", telas)
+		if len(telas) < 2 || telas[0].Titulo != "Início" || telas[1].Titulo != "Saldo" {
+			t.Fatalf("esperava Início e depois Saldo, veio %+v", telas)
 		}
 	})
 

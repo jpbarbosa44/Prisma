@@ -146,7 +146,7 @@ func TestWebQuitarVarios(t *testing.T) {
 				if !a.Multi {
 					t.Error("a ação quitar devia vir com multi: true")
 				}
-			} else if a.Multi {
+			} else if a.Multi && a.Tecla != "u" {
 				t.Errorf("só quitar é multi; veio %s › %s", tl.Titulo, a.Tecla)
 			}
 		}

@@ -72,23 +72,25 @@ Telas e seus atalhos específicos:
 
 | Tela | Atalhos |
 |---|---|
-| 1 Saldo | `t` transferir, `z` zerar banco |
-| 2 Contas | `a` `e` `t` extrato `l` `x` |
-| 3 Carteiras | `a` `e` `t` extrato `l` `x` |
-| 4 Grupos | `a` `e` `v` ver despesas, `l` `x` |
-| 5 Categorias | `a` `e` renomear `x` |
-| 6 Cartões | `a` `e` `t` ver fatura, `p` pagar fatura, `l` `x` |
-| 7 Pagar/Receber | `p` a pagar, `r` a receber, `u` quitar, `e` editar, `x`, `f` filtrar |
-| 8 Recorrências | `a` `e` `f` filtrar `x` |
-| 9 Assinaturas | `a` `e` `x` |
-| 10 Emergência | `a`, `p` ver plano, `e`, `l`, `u` quitar, `x` |
-| 11 Planejamento | `a`, `e`, `s` status, `l`, `x` |
-| 12 Relatório | `m` meses |
-| 13 Estatísticas | `m` meses |
-| 14 Gráficos | `m` meses |
-| 15 Previsão | `m` meses |
-| 16 Simulação | `s` simular |
-| 17 Como usar | — (só documentação) |
+| 1 Início | `u` quitar — o que vence nos próximos 7 dias, atrasadas e faturas |
+| 2 Saldo | `t` transferir, `z` zerar banco |
+| 3 Contas | `a` `e` `t` extrato `l` `x` |
+| 4 Carteiras | `a` `e` `t` extrato `l` `x` |
+| 5 Grupos | `a` `e` `v` ver despesas, `l` `x` |
+| 6 Categorias | `a` `e` renomear `c` classe `x`, `r` nova regra, `d` apagar regra |
+| 7 Cartões | `a` `e` `t` ver fatura, `p` pagar fatura, `l` `x` |
+| 8 Pagar/Receber | `p` a pagar, `r` a receber, `b` colar boleto/Pix, `u` quitar (`espaço` marca várias), `e` editar, `x`, `f` filtrar |
+| 9 Recorrências | `a` `e` `f` filtrar `x` |
+| 10 Assinaturas | `a` `e` `x` |
+| 11 Emergência | `a`, `p` ver plano, `e`, `l`, `u` quitar, `x` |
+| 12 Metas | `a` nova, `g` guardar, `t` retirar, `e`, `c` concluir, `x` |
+| 13 Planejamento | `a`, `e`, `s` status, `l`, `x` |
+| 14 Relatório | `m` meses, `p` fechamento do mês (PDF) |
+| 15 Estatísticas | `m` meses |
+| 16 Gráficos | `m` meses |
+| 17 Previsão | `m` meses |
+| 18 Simulação | `s` simular |
+| 19 Como usar | — (só documentação) |
 
 ## A interface web (--web)
 
@@ -109,6 +111,9 @@ A navegação espelha a TUI:
 - As teclas dos botões de ação funcionam como atalhos (`a` adiciona, `e` edita, `x` remove...).
 - `↑/↓` ou um clique selecionam a linha da tabela, e o id selecionado já vem preenchido nos formulários de quitar, editar e remover.
 - Em Pagar/Receber, cada linha tem uma caixa de marcar (ou use `espaço`): marque várias contas e clique em **quitar** — o botão mostra quantas estão marcadas, e o formulário já vem com todos os ids. As contas quitadas aparecem riscadas.
+- Nas tabelas, cada linha ganha botões **✓ quitar · ✎ editar · ✕ remover** (aparecem ao passar o mouse; no celular ficam sempre visíveis), sem precisar saber o id.
+- A primeira tela, **Início**, mostra em cards o saldo, o que falta pagar e receber no mês, as contas dos próximos 7 dias (atrasadas em vermelho, as de hoje em amarelo, cada uma com o botão **✓ pago**) e as faturas dos cartões com o uso do limite.
+- Em Pagar/Receber, **importar extrato** (tecla `i`) recebe o OFX ou CSV do banco: escolha o arquivo e a conta, confira a **prévia** (os já existentes aparecem riscados e são ignorados) e confirme. Cada importação pode ser **desfeita** inteira pela mesma janela; antes de gravar, o banco ganha uma cópia em `backups/web-antes-*.db`. **Exportar CSV** (tecla `c`) baixa os lançamentos do mês aberto.
 - Nas telas com abas (Estatísticas, Gráficos), `←/→` ou um clique na régua trocam a visão. Em Pagar/Receber, `←/→` muda o mês e `t` alterna entre pagar, receber e todos.
 - Nos formulários, `enter` confirma e `esc` cancela; campos com `*` são obrigatórios; em edições, campos vazios mantêm o valor atual.
 - Remoções e o "zerar banco" pedem confirmação, como na TUI.
@@ -128,7 +133,12 @@ prisma remover-atalho     # tira o atalho
 - Só existe uma janela: abrir o app de novo traz a que já está aberta para a frente.
 - Os links externos (como o "ver release" do aviso de versão nova) abrem no navegador do sistema.
 - Usa o banco pessoal, como o `prisma` sem argumentos, inclusive no modo cliente.
-- O atalho fica em `~/.local/share/applications` no Linux, no menu Iniciar no Windows e em `~/Applications/Prisma.app` no macOS.
+- O atalho fica em `~/.local/share/applications` no Linux, no menu Iniciar no Windows e em `~/Applications/Prisma.app` no macOS. **O próprio app cria o atalho na primeira vez que abre** — quem só usa o app não precisa rodar `prisma instalar-atalho`.
+- Com o banco vazio, a tela **Início** mostra um passo a passo: cadastrar a conta, lançar a primeira conta a pagar, cadastrar o salário e (opcional) importar o extrato do banco.
+- **Exportar CSV**, no app, salva o arquivo direto na pasta Downloads (a janela não faz download como o navegador).
+- **Lembretes no computador:** com o app aberto, às 9h sai uma notificação do sistema com as contas atrasadas, as de hoje e as de amanhã (uma vez por dia). Liga e desliga no fim da tela Início. Só funciona com a janela aberta; para avisos com o computador desligado, use o bot do Telegram.
+- **Atualizar agora:** quando sai versão nova, o aviso no topo ganha o botão **atualizar agora** — baixa a versão (conferindo o SHA256), troca o app e o `prisma` ao lado e reabre a janela sozinho, sem terminal.
+- O **fechamento do mês (PDF)**, na tela Relatório, abre no navegador do sistema, onde se imprime ou salva em PDF.
 
 ## Comandos
 
@@ -178,6 +188,7 @@ prisma categoria remover 5                    # tira do catálogo (os lançament
 
 - A categoria no lançamento continua sendo **texto livre**; o catálogo é só um índice. Por isso remover do catálogo não afeta os lançamentos.
 - `editar` propaga o novo nome para os lançamentos e recorrências que usavam o nome antigo.
+- **Regras de categoria** (veja `regra`, abaixo) põem a categoria sozinhas quando o lançamento chega sem uma.
 - `--classe` diz ao Analytics como tratar a categoria: `necessidade`, `desejo`, `utilidade` (conta da casa: luz, água, internet…), `basica` (custo de vida básico: mercado, condomínio…) ou `auto`. Em `auto` (o padrão), a classe sai de palavras-chave no nome. `listar` mostra a classe de cada uma. Na TUI e na web, é a ação `c` da tela Categorias.
 
 ### cartao / fatura
@@ -199,6 +210,22 @@ prisma fatura pagar --cartao 1                      # quita o ciclo e debita a c
 - **Pagar a fatura** quita todos os gastos do ciclo de uma vez e debita a conta do cartão (ou outra, com `--conta`). A fatura é identificada pelo mês do vencimento (`--ref AAAA-MM`); sem `--ref`, é a aberta.
 - Grupos compõem com cartão: um gasto de cartão dividido conta pela **sua parte** também na fatura.
 - **Remover o cartão apaga junto os lançamentos de despesa vinculados a ele** (eles não fazem sentido sem o cartão) — diferente de remover uma conta, que só desvincula.
+
+### regra (categoria automática)
+
+```sh
+prisma regra add ifood delivery          # descrições com "ifood" vão para delivery
+prisma regra add "uber eats" delivery    # várias palavras: precisam vir seguidas
+prisma regra add uber transporte         # "UBER *TRIP" → transporte (a mais específica vence)
+prisma regra listar
+prisma regra testar "IFOOD *PIZZARIA 123"
+prisma regra remover r2
+```
+
+- Vale quando o lançamento chega **sem categoria**: `pagar add` sem `--cat`, mensagem do bot sem `#categoria`, boleto/Pix e importação de extrato (pela CLI, pela web/app ou pelo assistente) sem categoria escolhida. Categoria informada sempre vence.
+- Casa por **palavra inteira**, sem diferenciar maiúsculas nem acentos ("farmácia" casa "FARMACIA SAO JOAO"; "uber" não casa "SUBERBO"). Se mais de uma regra casar, vence a de padrão mais longo.
+- Ao trocar a categoria de um lançamento à mão, o Prisma sugere a regra que faria isso sozinho.
+- Na TUI/web: tela Categorias, teclas `r` (nova regra) e `d` (apagar). As regras aparecem abaixo do catálogo.
 
 ### pagar / receber
 
@@ -222,6 +249,20 @@ prisma receber add --desc "Freela" --valor 800 --venc 20/07/2026 --conta 1
 - `--auto-quitar` faz o lançamento quitar-se sozinho quando o vencimento chega (a varredura roda toda vez que o Prisma ou o bot executa). Na listagem, esses itens são marcados com `⏱`.
 - **Parcelas ligadas:** remover a **parcela raiz** (a 1ª) apaga todas as parcelas do grupo de uma vez; remover qualquer outra apaga só ela.
 - Dia 31 em mês curto vira o último dia do mês.
+- Sem `--cat`, vale a **regra de categoria** que casar com a descrição (ou `geral`).
+
+**Boleto e Pix:** cole o código e o Prisma cria a conta a pagar.
+
+```sh
+prisma pagar boleto "00190.50095 40144.816069 06809.350314 3 37370000000100"   # linha digitável
+prisma pagar boleto "836200000005 667800481000 180975657313 001589636081"      # conta de luz/água/telefone
+prisma pagar boleto "00020126...6304ABCD" --valor 50 --desc "Aluguel"          # Pix copia-e-cola
+```
+
+- Reconhece a linha digitável do **boleto bancário** (47 dígitos), das **contas de consumo e tributos** (48 dígitos, começando com 8), o **código de barras** (44 dígitos) e o **Pix copia-e-cola**. Os dígitos verificadores (e o CRC do Pix) são conferidos: um código copiado pela metade é recusado.
+- Valor e vencimento vêm do código; a descrição padrão é o banco do boleto, o tipo da conta ("Conta de luz/gás") ou o recebedor do Pix. Quando o código não traz o valor (Pix sem valor) ou o vencimento (contas de consumo, Pix), informe `--valor` / `--venc` (padrão: hoje).
+- O código fica guardado na **observação** do lançamento, para copiar na hora de pagar. O mesmo código não é cadastrado duas vezes.
+- Na TUI/web: Pagar/Receber, tecla `b`. No bot: mande `boleto <código>` ou só cole o código.
 
 ### lancamentos (listar, filtrar, editar, remover)
 
@@ -308,6 +349,23 @@ prisma emergencia remover 1
 
 O plano simula juros compostos e mostra o total de juros pagos e a economia de acelerar o aporte em 20%. Se o aporte não cobre nem os juros do primeiro mês, o Prisma recusa e diz o mínimo necessário. Os aportes aparecem na coluna DÍVIDAS da previsão.
 
+### meta (cofrinhos)
+
+```sh
+prisma meta add --nome "Viagem" --valor 5000 --prazo 2027-07   # prazo opcional (AAAA-MM ou DD/MM/AAAA)
+prisma meta aportar 1 --valor 300          # guardou R$ 300 (--data, --obs opcionais)
+prisma meta retirar 1 --valor 100
+prisma meta listar                         # progresso, quanto falta e quanto guardar por mês
+prisma meta editar 1 --prazo 2027-12       # --nome, --valor; --prazo - tira o prazo
+prisma meta concluir 1
+prisma meta remover 1
+```
+
+- **Por mês** é o que falta dividido pelos meses até o prazo (incluindo o atual). `listar` soma o total mensal de todas as metas.
+- O aporte é um **registro**: não mexe no saldo das contas. Para separar o dinheiro de fato, transfira para uma carteira com o nome da meta.
+- No Analytics, a tela **Metas** mostra se o superávit médio cobre os aportes das metas salvas.
+- Na TUI/web: tela Metas (`a` nova, `g` guardar, `t` retirar, `e`, `c` concluir, `x`).
+
 ### plano (planejamento)
 
 ```sh
@@ -327,9 +385,12 @@ O gasto considera lançamentos *a pagar* da categoria: quitados dentro do perío
 ```sh
 prisma relatorio --meses 6     # receitas x despesas, taxa de poupança,
                                # gastos por categoria (com barras), balanço mês a mês
+prisma relatorio --html out.html --mes 2026-10   # fechamento do mês para imprimir/salvar em PDF
 prisma extrato --conta 1 --meses 3    # movimentação com saldo corrente
 prisma extrato --carteira 1
 ```
+
+O **fechamento do mês** é uma página em A4 (receitas × despesas dos últimos 6 meses, para onde foi o dinheiro comparado com a média dos 3 meses anteriores, maiores gastos, pendências e metas). Abra no navegador e use **Imprimir → Salvar como PDF**. Na TUI, a tecla `p` da tela Relatório grava o arquivo na pasta Downloads; na web e no app, abre direto.
 
 O extrato inclui transferências (marcadas com ⇄) e mostra o saldo após cada movimento.
 
@@ -379,6 +440,14 @@ Responde **"e se eu comprar isto?"** sem gravar nada. Usa o mesmo modelo da prev
 - 🔴 **Não recomendado** — o saldo ficaria negativo em algum mês do parcelamento.
 
 Com `--juros`, a parcela é calculada pela Tabela Price (parcela fixa) e a saída mostra o total pago e quanto é só de juros. No bot do Telegram: `/simular videogame 4000 12x 2% entrada:500`.
+
+### inicio
+
+```sh
+prisma inicio   # saldo, a pagar/receber do mês, o que vence nos próximos 7 dias e as faturas
+```
+
+Compras no cartão aparecem agrupadas por fatura ("Fatura Nubank"), já que se pagam juntas. É a primeira tela da TUI e da web.
 
 ### saldo
 
@@ -463,7 +532,8 @@ Outras ações por mensagem:
 
 | Mensagem | O que faz |
 |---|---|
-| `quitar 142` | marca o lançamento como pago/recebido |
+| `quitar 142` | marca o lançamento como pago/recebido (vários: `quitar 142 143`) |
+| `boleto <código>` (ou só o código) | cria a conta a pagar de um boleto ou Pix copia-e-cola |
 | `corrigir 27,90` | conserta o **último** lançamento — aceita valor, `#categoria`, `@data`, `!` e nova descrição, na mesma gramática |
 | `transferir 200 conta:1 cart:2 [descrição]` | move dinheiro entre conta/carteira |
 | foto **com** legenda de lançamento | registra e guarda a foto como comprovante |
@@ -691,7 +761,7 @@ prisma resetar --sim           # sem confirmação (scripts — cuidado!)
 prisma resetar --sem-backup    # não cria a cópia de segurança
 ```
 
-Antes de zerar, uma cópia do banco é salva ao lado do original (`prisma.db.bak-AAAAMMDD-HHMMSS`) — para desfazer, basta renomeá-la de volta para `prisma.db`. Na TUI: tecla `z` na tela Saldo, digitando "apagar" e confirmando com `s`.
+Antes de zerar, uma cópia do banco é salva ao lado do original (`prisma.db.bak-AAAAMMDD-HHMMSS`; no modo empresa, `empresa.db.bak-...`) — para desfazer, basta renomeá-la de volta para `prisma.db`. Na TUI: tecla `z` na tela Saldo, digitando "apagar" e confirmando com `s`.
 
 ## Compartilhamento entre dispositivos (cliente/servidor)
 
@@ -762,7 +832,7 @@ Um único arquivo SQLite:
 | macOS | `~/Library/Application Support/prisma/prisma.db` |
 | Windows | `%AppData%\prisma\prisma.db` |
 
-- **Backup automático**: a cada dia de uso, uma cópia do banco é salva em `backups/` ao lado dele (ex.: `backups/prisma-2026-06-12.db`), antes da primeira sessão do dia; as 7 mais recentes ficam guardadas. **Restaurar** = copiar a cópia de volta sobre o `prisma.db`.
+- **Backup automático**: a cada dia de uso, uma cópia do banco é salva em `backups/` ao lado dele (ex.: `backups/prisma-2026-06-12.db`; o banco da empresa, `backups/empresa-2026-06-12.db`), antes da primeira sessão do dia; as 7 mais recentes de cada um ficam guardadas. O `prisma restaurar` (e `--empresa`) lista só as cópias do próprio banco. **Restaurar** = copiar a cópia de volta sobre o `prisma.db`.
 - O backup protege contra erro e corrupção local, mas mora no mesmo disco — para proteção real contra perda da máquina, copie a pasta de vez em quando para um pendrive ou nuvem.
 - A variável `PRISMA_DB` aponta para outro arquivo — útil para testar sem mexer nos seus dados: `PRISMA_DB=/tmp/teste.db prisma`.
 - O Prisma funciona offline por padrão; nada sai da sua máquina — a menos que você ative o [compartilhamento](#compartilhamento-entre-dispositivos-clienteservidor), e mesmo aí os dados só trafegam na sua rede local, criptografados.
