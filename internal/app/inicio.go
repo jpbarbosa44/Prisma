@@ -35,7 +35,11 @@ type PainelInicio struct {
 	PendReceber int64          `json:"pendReceber"` // pendente no mês
 	Avisos      []Aviso        `json:"avisos"`
 	Faturas     []FaturaInicio `json:"faturas"`
-	Vazio       bool           `json:"vazio"`
+	Insights    []Insight      `json:"insights"`
+	// Patrimonio é o patrimônio líquido, quando há investimentos cadastrados
+	Patrimonio    int64 `json:"patrimonio"`
+	TemPatrimonio bool  `json:"temPatrimonio"`
+	Vazio         bool  `json:"vazio"`
 }
 
 // pendentesDoMes soma o pendente a pagar e a receber com vencimento no mês
@@ -56,7 +60,7 @@ func pendentesDoMes(conn *sql.DB, mes string) (pagar, receber int64, err error) 
 // Inicio monta o painel da tela Início.
 func Inicio(conn *sql.DB) (PainelInicio, error) {
 	agora := time.Now()
-	p := PainelInicio{Hoje: agora.Format("2006-01-02"), Mes: agora.Format("2006-01"), Avisos: []Aviso{}, Faturas: []FaturaInicio{}}
+	p := PainelInicio{Hoje: agora.Format("2006-01-02"), Mes: agora.Format("2006-01"), Avisos: []Aviso{}, Faturas: []FaturaInicio{}, Insights: []Insight{}}
 
 	var n int
 	if err := conn.QueryRow(`SELECT (SELECT COUNT(*) FROM contas) + (SELECT COUNT(*) FROM carteiras)
@@ -113,6 +117,20 @@ func Inicio(conn *sql.DB) (PainelInicio, error) {
 		}
 		p.Faturas = append(p.Faturas, f)
 	}
+	if p.Insights, err = Insights(conn, agora); err != nil {
+		return p, err
+	}
+	var nInv int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM investimentos WHERE status = 'ativo'`).Scan(&nInv); err != nil {
+		return p, err
+	}
+	if nInv > 0 {
+		pat, err := CalculaPatrimonio(conn)
+		if err != nil {
+			return p, err
+		}
+		p.Patrimonio, p.TemPatrimonio = pat.Liquido, true
+	}
 	return p, nil
 }
 
@@ -136,6 +154,16 @@ func InicioTexto(conn *sql.DB, _ []string) error {
 	fmt.Printf("Saldo total:         %s\n", money.Format(p.Saldo))
 	fmt.Printf("A pagar no mês:      %s   (%s)\n", money.Format(p.PendPagar), mesBR)
 	fmt.Printf("A receber no mês:    %s   (%s)\n", money.Format(p.PendReceber), mesBR)
+
+	if len(p.Insights) > 0 {
+		fmt.Println()
+		fmt.Println("ATENÇÃO")
+		fmt.Println()
+		icone := map[string]string{GravAlta: "⚠", GravMedia: "•", GravBaixa: "·"}
+		for _, i := range p.Insights {
+			fmt.Printf("  %s %s\n", icone[i.Gravidade], i.Texto)
+		}
+	}
 
 	fmt.Println()
 	if len(p.Avisos) == 0 {

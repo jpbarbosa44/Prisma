@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"time"
 
 	"prisma/internal/money"
 )
@@ -35,12 +36,13 @@ func Plano(conn *sql.DB, args []string) error {
 // `prisma plano editar <id> [--valor] [--cat]`.
 func planoEditar(conn *sql.DB, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("uso: prisma plano editar <id> [--valor] [--cat]")
+		return fmt.Errorf("uso: prisma plano editar <id> [--valor] [--cat] [--acumula|--acumula=false]")
 	}
 	id := args[0]
 	fs := flag.NewFlagSet("plano editar", flag.ContinueOnError)
 	valor := fs.String("valor", "", "novo limite")
 	cat := fs.String("cat", "", "nova categoria")
+	acumula := fs.Bool("acumula", false, "a sobra passa para o período seguinte (--acumula=false desliga)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -64,6 +66,9 @@ func planoEditar(conn *sql.DB, args []string) error {
 			return fmt.Errorf("a categoria não pode ficar vazia")
 		}
 		sets, params = append(sets, "categoria = ?"), append(params, strings.ToLower(*cat))
+	}
+	if informado["acumula"] {
+		sets, params = append(sets, "acumula = ?"), append(params, *acumula)
 	}
 	if len(sets) == 0 {
 		return fmt.Errorf("nada para alterar: informe ao menos um campo")
@@ -90,6 +95,7 @@ func planoAdd(conn *sql.DB, args []string) error {
 	per := fs.String("periodo", "mes", "mes ou semana")
 	ref := fs.String("ref", "", "referência: AAAA-MM para mês, AAAA-Wnn para semana (padrão: atual)")
 	repetir := fs.Int("repetir", 1, "repete o plano pelos próximos N períodos")
+	acumula := fs.Bool("acumula", false, "a sobra de um período passa para o seguinte")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -119,14 +125,18 @@ func planoAdd(conn *sql.DB, args []string) error {
 	}
 	for _, r := range refs {
 		_, err := conn.Exec(`
-			INSERT INTO planejamentos (categoria, limite, periodo, ref) VALUES (?,?,?,?)
-			ON CONFLICT (categoria, periodo, ref) DO UPDATE SET limite = excluded.limite`,
-			strings.ToLower(*cat), limite, *per, r,
+			INSERT INTO planejamentos (categoria, limite, periodo, ref, acumula) VALUES (?,?,?,?,?)
+			ON CONFLICT (categoria, periodo, ref) DO UPDATE SET limite = excluded.limite, acumula = excluded.acumula`,
+			strings.ToLower(*cat), limite, *per, r, *acumula,
 		)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Plano: até %s em %q no período %s.\n", money.Format(limite), strings.ToLower(*cat), r)
+		extra := ""
+		if *acumula {
+			extra = " (a sobra passa para o período seguinte)"
+		}
+		fmt.Printf("Plano: até %s em %q no período %s%s.\n", money.Format(limite), strings.ToLower(*cat), r, extra)
 	}
 	return nil
 }
@@ -166,23 +176,28 @@ func refDaData(per, data string) (string, error) {
 
 func planoListar(conn *sql.DB) error {
 	rows, err := conn.Query(
-		`SELECT id, categoria, limite, periodo, ref FROM planejamentos ORDER BY ref, categoria`)
+		`SELECT id, categoria, limite, periodo, ref, acumula FROM planejamentos ORDER BY ref, categoria`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
 	w := novaTabela()
-	fmt.Fprintln(w, "ID\tPERÍODO\tREF\tCATEGORIA\tLIMITE")
+	fmt.Fprintln(w, "ID\tPERÍODO\tREF\tCATEGORIA\tLIMITE\tSOBRA")
 	achou := false
 	for rows.Next() {
 		achou = true
 		var id, limite int64
 		var cat, per, ref string
-		if err := rows.Scan(&id, &cat, &limite, &per, &ref); err != nil {
+		var acumula bool
+		if err := rows.Scan(&id, &cat, &limite, &per, &ref, &acumula); err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", id, per, ref, cat, money.Format(limite))
+		sobra := "-"
+		if acumula {
+			sobra = "acumula"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", id, per, ref, cat, money.Format(limite), sobra)
 	}
 	if !achou {
 		fmt.Println("Nenhum plano cadastrado. Use: prisma plano add --cat mercado --valor 800")
@@ -223,7 +238,7 @@ func planoStatus(conn *sql.DB, args []string) error {
 	}
 
 	rows, err := conn.Query(
-		`SELECT categoria, limite FROM planejamentos WHERE periodo = ? AND ref = ? ORDER BY categoria`,
+		`SELECT categoria, limite, acumula FROM planejamentos WHERE periodo = ? AND ref = ? ORDER BY categoria`,
 		*per, p.Rotulo,
 	)
 	if err != nil {
@@ -232,17 +247,19 @@ func planoStatus(conn *sql.DB, args []string) error {
 	defer rows.Close()
 
 	type linha struct {
-		cat           string
-		limite, gasto int64
+		cat                  string
+		limite, gasto, sobra int64
+		acumula              bool
 	}
 	var linhas []linha
 	for rows.Next() {
 		var l linha
-		if err := rows.Scan(&l.cat, &l.limite); err != nil {
+		if err := rows.Scan(&l.cat, &l.limite, &l.acumula); err != nil {
 			return err
 		}
 		linhas = append(linhas, l)
 	}
+	rows.Close()
 	if len(linhas) == 0 {
 		fmt.Printf("Nenhum plano para o período %s. Use: prisma plano add --cat mercado --valor 800 --periodo %s --ref %s\n",
 			p.Rotulo, *per, p.Rotulo)
@@ -251,22 +268,32 @@ func planoStatus(conn *sql.DB, args []string) error {
 
 	fmt.Printf("PLANEJAMENTO %s (%s a %s)\n\n", p.Rotulo, dataBR(p.Inicio), dataBR(somaDias(p.Fim, -1)))
 	w := novaTabela()
-	fmt.Fprintln(w, "CATEGORIA\tLIMITE\tGASTO\tRESTANTE\tUSO")
+	fmt.Fprintln(w, "CATEGORIA\tLIMITE\tSOBRA ANTERIOR\tGASTO\tRESTANTE\tUSO")
 	var estourou []string
 	for i := range linhas {
 		var err error
 		if linhas[i].gasto, err = gastoDoPlano(conn, linhas[i].cat, p); err != nil {
 			return err
 		}
-		l := linhas[i]
-		restante := l.limite - l.gasto
-		pct := float64(0)
-		if l.limite > 0 {
-			pct = float64(l.gasto) / float64(l.limite) * 100
+		if linhas[i].acumula {
+			if linhas[i].sobra, err = sobraAcumulada(conn, linhas[i].cat, *per, p.Rotulo); err != nil {
+				return err
+			}
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s %.0f%%\n",
-			l.cat, money.Format(l.limite), money.Format(l.gasto), money.Format(restante),
-			barra(l.gasto, l.limite), pct)
+		l := linhas[i]
+		efetivo := l.limite + l.sobra
+		restante := efetivo - l.gasto
+		pct := float64(0)
+		if efetivo > 0 {
+			pct = float64(l.gasto) / float64(efetivo) * 100
+		}
+		sobra := "-"
+		if l.acumula {
+			sobra = "+" + money.Format(l.sobra)
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s %.0f%%\n",
+			l.cat, money.Format(l.limite), sobra, money.Format(l.gasto), money.Format(restante),
+			barra(l.gasto, efetivo), pct)
 		if restante < 0 {
 			estourou = append(estourou, l.cat)
 		}
@@ -283,7 +310,168 @@ func planoStatus(conn *sql.DB, args []string) error {
 // PlanoUso é o consumo de um plano de gastos em um período.
 type PlanoUso struct {
 	Periodo, Ref  string
-	Limite, Gasto int64
+	Limite, Gasto int64 // Limite já inclui a sobra acumulada, quando há
+	Categoria     string
+}
+
+// Pct é o uso do limite, em %.
+func (u PlanoUso) Pct() int64 {
+	if u.Limite <= 0 {
+		return 0
+	}
+	return u.Gasto * 100 / u.Limite
+}
+
+// refAnterior é o período imediatamente antes de ref.
+func refAnterior(per, ref string) (string, error) {
+	p, err := resolvePeriodo(per, ref)
+	if err != nil {
+		return "", err
+	}
+	return refDaData(per, somaDias(p.Inicio, -1))
+}
+
+// sobraAcumulada é quanto sobrou dos períodos anteriores para o plano de ref
+// (que acumula): o limite efetivo do anterior menos o gasto dele, nunca
+// negativo — o estouro não passa adiante. Volta no máximo 24 períodos e só
+// segue para trás enquanto o anterior também acumula.
+func sobraAcumulada(conn *sql.DB, cat, per, ref string) (int64, error) {
+	type elo struct {
+		ref     string
+		limite  int64
+		acumula bool
+	}
+	var cadeia []elo
+	atual := ref
+	for i := 0; i < 24; i++ {
+		ant, err := refAnterior(per, atual)
+		if err != nil {
+			return 0, err
+		}
+		var e elo
+		err = conn.QueryRow(`SELECT limite, acumula FROM planejamentos WHERE categoria = ? AND periodo = ? AND ref = ?`,
+			cat, per, ant).Scan(&e.limite, &e.acumula)
+		if err == sql.ErrNoRows {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+		e.ref = ant
+		cadeia = append(cadeia, e)
+		if !e.acumula {
+			break
+		}
+		atual = ant
+	}
+	var sobra int64
+	for i := len(cadeia) - 1; i >= 0; i-- { // do mais antigo para o mais novo
+		e := cadeia[i]
+		p, err := resolvePeriodo(per, e.ref)
+		if err != nil {
+			return 0, err
+		}
+		gasto, err := gastoDoPlano(conn, cat, p)
+		if err != nil {
+			return 0, err
+		}
+		efetivo := e.limite
+		if e.acumula {
+			efetivo += sobra
+		}
+		sobra = max(0, efetivo-gasto)
+	}
+	return sobra, nil
+}
+
+// AvisoPlano é a linha de alerta depois de um gasto novo: quando o plano da
+// categoria passa de 80% ou estoura ("" quando está tudo bem).
+func AvisoPlano(conn *sql.DB, cat, data string) string {
+	usos, err := PlanosDaCategoria(conn, cat, data)
+	if err != nil {
+		return ""
+	}
+	rot := map[string]string{"mes": "do mês", "semana": "da semana"}
+	var b strings.Builder
+	for _, u := range usos {
+		switch {
+		case u.Limite <= 0:
+		case u.Gasto > u.Limite:
+			fmt.Fprintf(&b, "⚠ Plano de %s %s estourado: %s de %s.\n", u.Categoria, rot[u.Periodo], money.Format(u.Gasto), money.Format(u.Limite))
+		case u.Pct() >= 80:
+			fmt.Fprintf(&b, "⚠ Plano de %s %s em %d%%: %s de %s.\n", u.Categoria, rot[u.Periodo], u.Pct(), money.Format(u.Gasto), money.Format(u.Limite))
+		}
+	}
+	return b.String()
+}
+
+// AlertasOrcamento lista os planos do período atual (mês e semana) que já
+// passaram de 80% do limite efetivo.
+func AlertasOrcamento(conn *sql.DB, hoje time.Time) ([]PlanoUso, error) {
+	var out []PlanoUso
+	for _, per := range []string{"mes", "semana"} {
+		ref, err := refDaData(per, hoje.Format("2006-01-02"))
+		if err != nil {
+			return nil, err
+		}
+		rows, err := conn.Query(`SELECT categoria FROM planejamentos WHERE periodo = ? AND ref = ? ORDER BY categoria`, per, ref)
+		if err != nil {
+			return nil, err
+		}
+		var cats []string
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			cats = append(cats, c)
+		}
+		rows.Close()
+		for _, c := range cats {
+			usos, err := PlanosDaCategoria(conn, c, hoje.Format("2006-01-02"))
+			if err != nil {
+				return nil, err
+			}
+			for _, u := range usos {
+				if u.Periodo == per && u.Limite > 0 && u.Pct() >= 80 {
+					out = append(out, u)
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// NovosAlertasOrcamento devolve só os alertas ainda não avisados (cada plano
+// avisa uma vez ao passar de 80% e outra ao estourar) e os marca como
+// avisados — para a notificação do app e a mensagem diária do bot (cada canal,
+// "app" ou "bot", avisa por conta própria).
+func NovosAlertasOrcamento(conn *sql.DB, hoje time.Time, canal string) ([]PlanoUso, error) {
+	todos, err := AlertasOrcamento(conn, hoje)
+	if err != nil {
+		return nil, err
+	}
+	var novos []PlanoUso
+	for _, u := range todos {
+		nivel := "80"
+		if u.Gasto > u.Limite {
+			nivel = "100"
+		}
+		chave := "alerta:" + canal + ":" + u.Categoria + ":" + u.Periodo + ":" + u.Ref + ":" + nivel
+		v, err := Pref(conn, chave)
+		if err != nil {
+			return nil, err
+		}
+		if v != "" {
+			continue
+		}
+		if err := SetPref(conn, chave, hoje.Format("2006-01-02")); err != nil {
+			return nil, err
+		}
+		novos = append(novos, u)
+	}
+	return novos, nil
 }
 
 // PlanosDaCategoria devolve limite e gasto dos planos (mensal e/ou semanal)
@@ -298,10 +486,11 @@ func PlanosDaCategoria(conn *sql.DB, cat, data string) ([]PlanoUso, error) {
 			return nil, err
 		}
 		var limite int64
+		var acumula bool
 		err = conn.QueryRow(
-			`SELECT limite FROM planejamentos WHERE categoria = ? AND periodo = ? AND ref = ?`,
+			`SELECT limite, acumula FROM planejamentos WHERE categoria = ? AND periodo = ? AND ref = ?`,
 			cat, per, ref,
-		).Scan(&limite)
+		).Scan(&limite, &acumula)
 		if err == sql.ErrNoRows {
 			continue
 		}
@@ -312,19 +501,18 @@ func PlanosDaCategoria(conn *sql.DB, cat, data string) ([]PlanoUso, error) {
 		if err != nil {
 			return nil, err
 		}
-		var gasto int64
-		err = conn.QueryRow(`
-			SELECT COALESCE(SUM(`+valEf("lancamentos")+`), 0) FROM lancamentos
-			WHERE tipo = 'pagar' AND categoria = ?
-			  AND ((cartao_id IS NOT NULL AND data_compra >= ? AND data_compra < ?)
-			    OR (cartao_id IS NULL AND status = 'quitado' AND quitado_em >= ? AND quitado_em < ?)
-			    OR (cartao_id IS NULL AND status = 'pendente' AND vencimento >= ? AND vencimento < ?))`,
-			cat, p.Inicio, p.Fim, p.Inicio, p.Fim, p.Inicio, p.Fim,
-		).Scan(&gasto)
+		gasto, err := gastoDoPlano(conn, cat, p)
 		if err != nil {
 			return nil, err
 		}
-		usos = append(usos, PlanoUso{Periodo: per, Ref: ref, Limite: limite, Gasto: gasto})
+		if acumula {
+			sobra, err := sobraAcumulada(conn, cat, per, ref)
+			if err != nil {
+				return nil, err
+			}
+			limite += sobra
+		}
+		usos = append(usos, PlanoUso{Periodo: per, Ref: ref, Limite: limite, Gasto: gasto, Categoria: cat})
 	}
 	return usos, nil
 }

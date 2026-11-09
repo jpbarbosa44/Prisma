@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,6 +314,38 @@ func (s *servidorWeb) apiAtualizar(w http.ResponseWriter, r *http.Request) {
 }
 
 // apiRelatorio é o fechamento do mês (?mes=AAAA-MM) em HTML para imprimir.
+// apiIR serve a ajuda para o IR (?ano=AAAA) como página para imprimir.
+func (s *servidorWeb) apiIR(w http.ResponseWriter, r *http.Request) {
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	ano, err := app.AnoIR(r.URL.Query().Get("ano"))
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	modo := r.URL.Query().Get("modo")
+	link := func(a int) string {
+		u := fmt.Sprintf("ir?ano=%d", a)
+		if modo != "" {
+			u += "&modo=" + url.QueryEscape(modo)
+		}
+		return u
+	}
+	var b bytes.Buffer
+	s.mu.Lock()
+	err = IRHTML(m.conn, ano, link, &b)
+	s.mu.Unlock()
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(b.Bytes())
+}
+
 func (s *servidorWeb) apiRelatorio(w http.ResponseWriter, r *http.Request) {
 	m, err := s.modo(r)
 	if err != nil {

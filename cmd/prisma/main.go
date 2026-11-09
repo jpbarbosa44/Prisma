@@ -21,7 +21,8 @@ const ajuda = `prisma — gerenciador de finanças pessoais
 
 USO
   prisma                                  abre a interface no terminal
-  prisma --web [--porta N]                abre a interface no navegador
+  prisma --web [--porta N] [--rede]       abre a interface no navegador (--rede: também no celular)
+  prisma pin [definir|remover|tempo N|rede on|off]  PIN da web e do app; libera o celular
   prisma app                              abre o Prisma numa janela própria (app desktop)
   prisma instalar-atalho                  põe o Prisma no menu de aplicativos, com ícone
   prisma remover-atalho                   tira o atalho do menu
@@ -62,6 +63,17 @@ COMANDOS
   previsao     Projeção de saldo futuro    [--meses N]
   simular      E se eu comprar isto?       --valor 4000 --parcelas 12 [--juros N] [--entrada N]
   inicio       O que vence nos próximos dias
+  calendario   Contas dia a dia no mês      [--mes AAAA-MM] (com o saldo previsto)
+  tags         #tags das descrições        [tag] (ex.: prisma tags viagem)
+  anexar       Guarda comprovante          <id do lançamento> <foto ou PDF>
+  anexos       Comprovantes guardados      [id do lançamento] | salvar <id> <arq> | remover <id>
+  insights     Avisos automáticos          gasto acima do normal, plano estourando, saldo negativo...
+  investimento Carteira de investimentos   add | listar | aportar | resgatar | atualizar <id> <valor> | remover
+  patrimonio   Patrimônio líquido          saldo + rendimento − faturas − dívidas, mês a mês
+  ir           Ajuda para o IR             [--ano AAAA] [--html arq.html] | categorias [--saude ...]
+  acerto       Quem deve a quem nos grupos [grupo]
+  acertar      Acerta com uma pessoa       <grupo> <pessoa> [--conta N]
+  buscar       Busca em tudo               buscar mercado | buscar 89,90 | buscar "#viagem"
   saldo        Posição geral consolidada
   exportar     Lançamentos em CSV          [--saida arq.csv] [--mes AAAA-MM]
   importar     Extrato bancário OFX/CSV    --arquivo extrato.ofx --conta 1
@@ -252,6 +264,15 @@ func main() {
 		return
 	}
 
+	// `prisma pin` mexe no PIN da web e do app, sem abrir o banco
+	if len(os.Args) >= 2 && os.Args[1] == "pin" {
+		if err := cmdPIN(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// `prisma restaurar` troca o banco por uma cópia de backup — roda antes de
 	// abrir qualquer conexão, para não substituir o arquivo com o banco em uso.
 	if len(os.Args) >= 2 && (os.Args[1] == "restaurar" || os.Args[1] == "restore") {
@@ -349,8 +370,13 @@ func despacha(conn *sql.DB, modoEmpresa bool, cmd string, args []string) error {
 		return app.Capital(conn, args)
 	case "imposto", "impostos":
 		return app.Imposto(conn, args)
-	case "investimento", "investimentos":
-		return app.Investimento(conn, args)
+	case "investimento", "investimentos", "investir":
+		if modoEmpresa {
+			return app.Investimento(conn, args)
+		}
+		return app.Investir(conn, args)
+	case "patrimonio", "patrimônio":
+		return app.PatrimonioCmd(conn, args)
 	case "lucro":
 		return app.Lucro(conn, args)
 	case "cartao", "cartoes", "cartão", "cartões":
@@ -392,6 +418,27 @@ func despacha(conn *sql.DB, modoEmpresa bool, cmd string, args []string) error {
 		return app.Previsao(conn, args)
 	case "simular", "simulacao", "simulação":
 		return app.Simular(conn, args)
+	case "calendario", "calendário", "agenda":
+		return app.CalendarioCmd(conn, args)
+	case "tags", "tag":
+		return app.TagsCmd(conn, args)
+	case "anexar":
+		return app.AnexarCmd(conn, args)
+	case "anexos", "anexo":
+		return app.AnexosCmd(conn, args)
+	case "insights", "atencao", "atenção":
+		return app.InsightsCmd(conn, args)
+	case "ir", "imposto-de-renda":
+		if saida, ano, ok := argsIRHTML(args); ok {
+			return irHTML(conn, saida, ano)
+		}
+		return app.IRCmd(conn, args)
+	case "acerto", "acertos":
+		return app.AcertoCmd(conn, args)
+	case "acertar":
+		return app.AcertarCmd(conn, args)
+	case "buscar", "busca":
+		return app.BuscarCmd(conn, args)
 	case "inicio", "início", "hoje":
 		return app.InicioTexto(conn, args)
 	case "saldo":
@@ -444,5 +491,45 @@ func relatorioHTML(conn *sql.DB, saida, mes string) error {
 		return err
 	}
 	fmt.Printf("Fechamento salvo em %s — abra no navegador e use Imprimir → Salvar como PDF.\n", saida)
+	return nil
+}
+
+// argsIRHTML acha --html arq e --ano AAAA em `prisma ir`.
+func argsIRHTML(args []string) (saida, ano string, ok bool) {
+	for i := 0; i < len(args); i++ {
+		a, v, temValor := strings.Cut(args[i], "=")
+		if !temValor && i+1 < len(args) && (a == "--html" || a == "--ano") {
+			v = args[i+1]
+			i++
+		}
+		switch a {
+		case "--html":
+			saida, ok = v, true
+		case "--ano":
+			ano = v
+		}
+	}
+	return saida, ano, ok && saida != ""
+}
+
+// irHTML grava a ajuda para o IR num arquivo HTML para imprimir.
+func irHTML(conn *sql.DB, saida, anoStr string) error {
+	ano, err := app.AnoIR(anoStr)
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(saida)
+	if err != nil {
+		return err
+	}
+	link := func(a int) string { return fmt.Sprintf("prisma-ir-%d.html", a) }
+	if err := tui.IRHTML(conn, ano, link, f); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	fmt.Printf("Ajuda para o IR salva em %s — abra no navegador e use Imprimir → Salvar como PDF.\n", saida)
 	return nil
 }

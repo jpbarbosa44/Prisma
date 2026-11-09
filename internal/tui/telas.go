@@ -438,9 +438,29 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 				if len(p) > 1 && p[0] == "ver" {
 					return captura(func() error { return app.Lancamentos(conn, []string{"--grupo", p[1]}) })
 				}
-				return captura(func() error { return app.Grupo(conn, []string{"listar"}) })
+				return captura(func() error {
+					if err := app.Grupo(conn, []string{"listar"}); err != nil {
+						return err
+					}
+					fmt.Println()
+					fmt.Println("ACERTO DE CONTAS")
+					fmt.Println()
+					return app.AcertoCmd(conn, nil)
+				})
 			},
 			acoes: []acao{
+				{
+					tecla: "s", rotulo: "acertar com alguém",
+					campos: []campo{
+						{rotulo: "grupo", dica: "número do grupo", obrigatorio: true},
+						{rotulo: "pessoa", dica: "nome, como está no grupo", obrigatorio: true},
+						{rotulo: "conta", opcoes: opcoesVinculo(conn, "contas", opcao{"", "nenhuma"})},
+					},
+					executar: func(v []string) (string, error) {
+						args := append([]string{v[0], v[1]}, par("--conta", v[2])...)
+						return exec(func() error { return app.AcertarCmd(conn, args) })
+					},
+				},
 				{
 					tecla: "a", rotulo: "adicionar",
 					campos: []campo{
@@ -1166,9 +1186,13 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 						{rotulo: "período", opcoes: opcoesFixas("mes", "mês", "semana", "semana")},
 						{rotulo: "referência", dica: "AAAA-MM ou AAAA-Wnn (padrão: atual)"},
 						{rotulo: "repetir", dica: "nº de períodos (padrão: 1)"},
+						{rotulo: "sobra", opcoes: opcoesFixas("nao", "fica no período", "sim", "passa para o seguinte")},
 					},
 					executar: func(v []string) (string, error) {
 						args := []string{"add"}
+						if v[5] == "sim" {
+							args = append(args, "--acumula")
+						}
 						args = append(args, par("--cat", v[0])...)
 						args = append(args, par("--valor", v[1])...)
 						args = append(args, par("--periodo", v[2])...)
@@ -1183,21 +1207,28 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 						{rotulo: "id", dica: "número do plano", obrigatorio: true},
 						{rotulo: "valor", dica: "novo limite, vazio mantém"},
 						{rotulo: "categoria", dica: "vazio mantém", sugestoes: sugestoesCategorias(conn)},
+						{rotulo: "sobra", opcoes: opcoesFixas("nao", "fica no período", "sim", "passa para o seguinte")},
 					},
 					carregar: func(id string) ([]string, error) {
 						var cat string
 						var limite int64
-						err := conn.QueryRow(`SELECT limite, categoria FROM planejamentos WHERE id = ?`, id).
-							Scan(&limite, &cat)
+						var acumula bool
+						err := conn.QueryRow(`SELECT limite, categoria, acumula FROM planejamentos WHERE id = ?`, id).
+							Scan(&limite, &cat, &acumula)
 						if err != nil {
 							return nil, err
 						}
-						return []string{valorForm(limite), cat}, nil
+						sobra := "nao"
+						if acumula {
+							sobra = "sim"
+						}
+						return []string{valorForm(limite), cat, sobra}, nil
 					},
 					executar: func(v []string) (string, error) {
 						args := []string{"editar", v[0]}
 						args = append(args, par("--valor", v[1])...)
 						args = append(args, par("--cat", v[2])...)
+						args = append(args, "--acumula="+fmt.Sprint(v[3] == "sim"))
 						return exec(func() error { return app.Plano(conn, args) })
 					},
 				},
@@ -1249,6 +1280,17 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 							return "", err
 						}
 						return "Fechamento salvo em " + arq + " — abra no navegador e use Imprimir → Salvar como PDF", nil
+					},
+				},
+				{
+					tecla: "i", rotulo: "ajuda para o IR (PDF)", abre: "api/ir",
+					campos: []campo{{rotulo: "ano", dica: "ano-calendário (padrão: o ano passado)"}},
+					executar: func(v []string) (string, error) {
+						arq, err := SalvaIR(conn, strings.TrimSpace(v[0]))
+						if err != nil {
+							return "", err
+						}
+						return "Ajuda para o IR salva em " + arq + " — abra no navegador e use Imprimir → Salvar como PDF", nil
 					},
 				},
 			},
@@ -1375,7 +1417,19 @@ func novasTelas(conn *sql.DB, modoEmpresa bool) []tela {
 	if !modoEmpresa {
 		for i := range telas {
 			if telas[i].titulo == "Planejamento" {
-				telas = append(telas[:i], append([]tela{telaMetas(conn)}, telas[i:]...)...)
+				telas = append(telas[:i], append([]tela{telaMetas(conn), telaInvestimentos(conn)}, telas[i:]...)...)
+				break
+			}
+		}
+		for i := range telas {
+			if telas[i].titulo == "Categorias" {
+				telas = append(telas[:i+1], append([]tela{telaTags(conn)}, telas[i+1:]...)...)
+				break
+			}
+		}
+		for i := range telas {
+			if telas[i].titulo == "Pagar/Receber" {
+				telas = append(telas[:i+1], append([]tela{telaCalendario(conn)}, telas[i+1:]...)...)
 				break
 			}
 		}
@@ -1672,6 +1726,127 @@ func acaoQuitar(conn *sql.DB) acao {
 			args = append(args, par("--data", v[1])...)
 			return captura(func() error { return app.Quitar(conn, args) })
 		},
+	}
+}
+
+// telaInvestimentos é a carteira de investimentos e o patrimônio líquido; na
+// web vira cards, o gráfico de 12 meses e a lista com o rendimento.
+func telaInvestimentos(conn *sql.DB) tela {
+	exec := func(f func() error) (string, error) { return captura(f) }
+	id := campo{rotulo: "id", dica: "número do investimento", obrigatorio: true}
+	locais := func(extra string) func() []opcao {
+		l := opcoesLocais(conn)
+		return func() []opcao { return append([]opcao{{"", extra}}, l()...) }
+	}
+	tipos := []string{}
+	for _, t := range app.TiposInvestimento {
+		tipos = append(tipos, t, t)
+	}
+	return tela{
+		titulo: "Investimentos",
+		resumo: "aplicações, rendimento e patrimônio",
+		visual: "investimentos",
+		conteudo: func(_ []string) (string, error) {
+			return captura(func() error {
+				if err := app.Investir(conn, []string{"listar"}); err != nil {
+					return err
+				}
+				fmt.Println()
+				return app.PatrimonioCmd(conn, nil)
+			})
+		},
+		acoes: []acao{
+			{
+				tecla: "a", rotulo: "novo investimento",
+				campos: []campo{
+					{rotulo: "nome", dica: "ex.: CDB Nubank 110%", obrigatorio: true},
+					{rotulo: "tipo", opcoes: opcoesFixas(tipos...)},
+					{rotulo: "instituição", dica: "banco ou corretora"},
+					{rotulo: "já aplicado", dica: "opcional, ex.: 5.000,00"},
+					{rotulo: "saiu de", opcoes: locais("já estava aplicado (não sai de conta)")},
+				},
+				executar: func(v []string) (string, error) {
+					args := append([]string{"add"}, par("--nome", v[0])...)
+					args = append(args, par("--tipo", v[1])...)
+					args = append(args, par("--instituicao", v[2])...)
+					args = append(args, par("--valor", v[3])...)
+					args = append(args, par("--de", v[4])...)
+					return exec(func() error { return app.Investir(conn, args) })
+				},
+			},
+			{
+				tecla: "g", rotulo: "aportar",
+				campos: []campo{id, {rotulo: "valor", obrigatorio: true}, {rotulo: "saiu de", opcoes: locais("de fora (não sai de conta)")}, {rotulo: "data", dica: "opcional (padrão: hoje)"}},
+				executar: func(v []string) (string, error) {
+					args := append([]string{"aportar", v[0]}, par("--valor", v[1])...)
+					args = append(args, par("--de", v[2])...)
+					args = append(args, par("--data", v[3])...)
+					return exec(func() error { return app.Investir(conn, args) })
+				},
+			},
+			{
+				tecla: "r", rotulo: "resgatar",
+				campos: []campo{id, {rotulo: "valor", obrigatorio: true}, {rotulo: "vai para", opcoes: locais("para fora (não entra em conta)")}, {rotulo: "data", dica: "opcional (padrão: hoje)"}},
+				executar: func(v []string) (string, error) {
+					args := append([]string{"resgatar", v[0]}, par("--valor", v[1])...)
+					args = append(args, par("--para", v[2])...)
+					args = append(args, par("--data", v[3])...)
+					return exec(func() error { return app.Investir(conn, args) })
+				},
+			},
+			{
+				tecla: "v", rotulo: "atualizar valor",
+				campos: []campo{id, {rotulo: "valor hoje", dica: "quanto vale agora (veja no app do banco)", obrigatorio: true}, {rotulo: "data", dica: "opcional (padrão: hoje)"}},
+				executar: func(v []string) (string, error) {
+					args := append([]string{"atualizar", v[0], v[1]}, par("--data", v[2])...)
+					return exec(func() error { return app.Investir(conn, args) })
+				},
+			},
+			{
+				tecla: "x", rotulo: "remover", confirma: true,
+				campos: []campo{id},
+				executar: func(v []string) (string, error) {
+					return exec(func() error { return app.Investir(conn, []string{"remover", v[0]}) })
+				},
+			},
+		},
+	}
+}
+
+// telaTags resume as #tags das descrições e abre os lançamentos de uma.
+func telaTags(conn *sql.DB) tela {
+	return tela{
+		titulo: "Tags",
+		resumo: "#viagem, #reforma: somas que cruzam categorias",
+		conteudo: func(p []string) (string, error) {
+			return captura(func() error { return app.TagsCmd(conn, p) })
+		},
+		acoes: []acao{
+			{
+				tecla: "v", rotulo: "ver tag",
+				campos: []campo{{rotulo: "tag", dica: "ex.: viagem", obrigatorio: true}},
+				params: func(v []string) []string { return []string{v[0]} },
+			},
+			{
+				tecla: "l", rotulo: "todas",
+				params: func(_ []string) []string { return nil },
+			},
+		},
+	}
+}
+
+// telaCalendario mostra as contas dia a dia, com o saldo previsto; na web vira
+// uma grade do mês.
+func telaCalendario(conn *sql.DB) tela {
+	return tela{
+		titulo: "Calendário",
+		resumo: "contas dia a dia e saldo previsto",
+		visual: "calendario",
+		porMes: true,
+		conteudo: func(p []string) (string, error) {
+			return captura(func() error { return app.CalendarioCmd(conn, p) })
+		},
+		acoes: []acao{acaoQuitar(conn)},
 	}
 }
 

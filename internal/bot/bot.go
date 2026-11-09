@@ -546,9 +546,20 @@ func (s *sessao) trataFoto(m *mensagem, legenda string) {
 }
 
 func (s *sessao) anexaComprovante(lancamentoID int64, fileID string) error {
-	_, err := s.conn.Exec(
-		`INSERT INTO comprovantes (lancamento_id, file_id) VALUES (?, ?)`, lancamentoID, fileID)
-	return err
+	if _, err := s.conn.Exec(
+		`INSERT INTO comprovantes (lancamento_id, file_id) VALUES (?, ?)`, lancamentoID, fileID); err != nil {
+		return err
+	}
+	// guarda também uma cópia local (📎 na web e no app); se falhar, o
+	// comprovante continua no Telegram
+	dados, err := s.cli.baixar(fileID, app.MaxAnexo)
+	if err == nil {
+		_, err = app.Anexar(s.conn, lancamentoID, "telegram.jpg", dados)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aviso: cópia local do comprovante: %v\n", err)
+	}
+	return nil
 }
 
 // alvoUltimo devolve o lançamento mais recente: o último criado pelo bot
@@ -759,10 +770,28 @@ func (s *sessao) enviaLembretes(hoje string) {
 		})
 		n++
 	}
-	if n == 0 {
+	atencao, err := app.AtencaoDoDia(s.conn, time.Now(), "bot")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aviso: atenção do dia: %v\n", err)
+	}
+	if n == 0 && len(atencao) == 0 {
 		return // nada vencendo, nada de spam
 	}
-	if err := s.cli.enviar(s.cfg.ChatID, b.String(), &teclado); err != nil {
+	if n == 0 {
+		b.Reset()
+		b.WriteString("🔔 Atenção")
+	}
+	if len(atencao) > 0 && n > 0 {
+		b.WriteString("\n")
+	}
+	for _, a := range atencao {
+		fmt.Fprintf(&b, "\n⚠️ %s", a)
+	}
+	var botoes []*tecladoInline
+	if len(teclado.Linhas) > 0 {
+		botoes = append(botoes, &teclado)
+	}
+	if err := s.cli.enviar(s.cfg.ChatID, b.String(), botoes...); err != nil {
 		fmt.Fprintf(os.Stderr, "aviso: enviando lembretes: %v\n", err)
 	}
 }

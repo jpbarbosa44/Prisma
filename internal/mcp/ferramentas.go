@@ -309,6 +309,34 @@ func init() {
 			},
 		},
 		{
+			nome:      "insights",
+			descricao: "Avisos automáticos de hoje: saldo previsto negativo nos próximos 30 dias, planos de gasto em 80% ou estourados, categorias acima da média, assinaturas que ficaram mais caras, gastos fora do comum, faturas acima da média e quem deve a quem nos grupos.",
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
+				return captura(func() error { return app.InsightsCmd(conn, nil) })
+			},
+		},
+		{
+			nome:      "buscar",
+			descricao: "Busca em todos os meses: lançamentos pela descrição, categoria, observação ou valor (\"89,90\" acha valores a menos de 1%; \"#viagem\" acha a tag), e contas, carteiras, cartões, recorrências e metas pelo nome. Sem caixa nem acento; vários termos precisam todos aparecer.",
+			params: []param{
+				{nome: "termo", tipo: "string", descricao: "o que procurar, ex.: mercado, 89,90, #viagem", obrigatorio: true},
+				{nome: "limite", tipo: "integer", descricao: "máximo de resultados, de 1 a 200 (padrão 30)"},
+			},
+			rodar: func(ss *Sessao, a argumentos) (string, error) {
+				conn := ss.leitura
+				termo := a.texto("termo")
+				if strings.TrimSpace(termo) == "" {
+					return "", fmt.Errorf("informe o termo")
+				}
+				n, err := a.inteiro("limite", 30, 1, 200)
+				if err != nil {
+					return "", err
+				}
+				return captura(func() error { return app.BuscarCmd(conn, []string{fmt.Sprintf("--limite=%d", n), termo}) })
+			},
+		},
+		{
 			nome:      "relatorio",
 			descricao: "Gastos por categoria e receita/despesa mês a mês no período.",
 			params:    []param{pMeses(6)},

@@ -6,9 +6,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"prisma/internal/db"
+	"prisma/internal/seguranca"
 )
 
 // dbTeste abre um banco temporário migrado, isolado por teste.
@@ -105,5 +107,39 @@ func TestArgsRelatorioHTML(t *testing.T) {
 		if s != c.saida || m != c.mes || ok != c.ok {
 			t.Errorf("%v: %q %q %v", c.args, s, m, ok)
 		}
+	}
+}
+
+func TestCmdPIN(t *testing.T) {
+	t.Setenv("PRISMA_DB", filepath.Join(t.TempDir(), "p.db"))
+	var out strings.Builder
+	if err := cmdPIN([]string{"rede", "on"}, strings.NewReader(""), &out); err == nil {
+		t.Fatal("rede sem PIN deveria falhar")
+	}
+	if err := cmdPIN([]string{"definir"}, strings.NewReader("1234\n4321\n"), &out); err == nil {
+		t.Fatal("confirmação diferente deveria falhar")
+	}
+	if err := cmdPIN([]string{"definir"}, strings.NewReader("1234\n1234\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdPIN([]string{"definir"}, strings.NewReader("9999\n5555\n5555\n"), &out); err == nil {
+		t.Fatal("trocar com o atual errado deveria falhar")
+	}
+	if err := cmdPIN([]string{"rede", "on"}, nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdPIN([]string{"tempo", "30"}, nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	cmdPIN(nil, nil, &out)
+	if !strings.Contains(out.String(), "30 min") || !strings.Contains(out.String(), "ligado") {
+		t.Fatalf("status: %s", out.String())
+	}
+	if err := cmdPIN([]string{"remover"}, strings.NewReader("1234\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := seguranca.Carrega(); c.TemPIN() || c.Rede {
+		t.Fatalf("remover: %+v", c)
 	}
 }

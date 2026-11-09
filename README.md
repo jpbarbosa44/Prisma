@@ -58,6 +58,10 @@ prisma remover-atalho
 
 O app cria o atalho sozinho na primeira abertura. A tela **Início** mostra o que vence na semana com botões de pagar, e com o banco vazio guia os primeiros passos; o extrato do banco (OFX/CSV) se importa pela própria janela, com prévia e desfazer.
 
+**No celular e com PIN:** em **⚙ Ajustes** você define um PIN (ou `prisma pin definir`) e libera o acesso pela rede de casa — o app mostra um QR code; no celular, aponte a câmera, digite o PIN e use **Adicionar à tela inicial** para ter o Prisma como um ícone. Também há tema claro e busca em tudo com `Ctrl+K` (`prisma buscar` no terminal).
+
+Ainda no app e na web: **calendário** das contas com o saldo previsto dia a dia, avisos automáticos na tela Início (gasto acima do normal, plano estourando, saldo que vai ficar negativo, assinatura que subiu), **comprovantes** (foto ou PDF) em cada lançamento, **#tags**, **investimentos** com rendimento e patrimônio líquido, **acerto de contas** nos grupos (quem deve a quem) e a **ajuda para o Imposto de Renda** em PDF.
+
 O servidor sobe numa porta livre de `127.0.0.1` e fecha junto com a janela. Abrir o app de novo traz a janela que já está aberta para a frente, e os links externos abrem no navegador. O atalho fica em `~/.local/share/applications` no Linux, no menu Iniciar no Windows e em `~/Applications/Prisma.app` no macOS. Requisitos: no Linux, o WebKitGTK (`libwebkit2gtk-4.1-0` no Debian/Ubuntu, `webkit2gtk4.1` no Fedora); no Windows, o WebView2, que já vem no Windows 10 e 11; no macOS 11 ou mais novo, nada além do sistema.
 
 **Documentação:** [MANUAL.md](MANUAL.md) tem o guia de uso completo (todas as telas, comandos, filtros e receitas prontas); [INSTALL.md](INSTALL.md) cobre a instalação em cada sistema.

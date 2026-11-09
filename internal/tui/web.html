@@ -6,10 +6,26 @@
 
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title id="tituloPagina">Prisma — finanças pessoais</title>
-  <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,8 95,92 5,92' fill='%234dd8e6'/></svg>">
+  <!-- instalável no celular: "Adicionar à tela inicial" abre sem a barra do navegador -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icone-192.png">
+  <link rel="apple-touch-icon" href="icone-180.png">
+  <meta name="theme-color" content="#0e1014">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Prisma">
+  <script>
+    /* tema (auto / claro / escuro) aplicado antes de pintar, sem piscar */
+    (function () {
+      let t = "auto";
+      try { t = localStorage.getItem("prisma.tema") || "auto"; } catch (e) { }
+      const claro = t === "claro" || (t === "auto" && matchMedia("(prefers-color-scheme: light)").matches);
+      if (claro) document.documentElement.dataset.tema = "claro";
+    })();
+  </script>
   <style>
     :root {
       --bg: #0e1014;
@@ -36,6 +52,14 @@
       --s6: #d05050;
       --rec: #3fa050;
       --desp: #d05050;
+      --fx: #fff;
+      --dim-ativo: #93a1b3;
+      --brilho: #131923;
+      --brilho-cy: rgba(77, 216, 230, .28);
+      --anel: rgba(77, 216, 230, .15);
+      --aviso-bg: rgba(230, 200, 77, .1);
+      --hover-graf: rgba(255, 255, 255, .04);
+      --barra-rolagem: #3a4658;
       --gutter: clamp(20px, 2.6vw, 56px);
       --r: 8px;
       --r-sm: 6px;
@@ -43,15 +67,59 @@
       --tempo: .14s ease;
     }
 
+    /* tema claro: os mesmos papéis, calibrados para fundo branco (contraste
+       de texto ≥ 4.5:1; séries dos gráficos ≥ 3:1 sobre o painel) */
+    :root[data-tema="claro"] {
+      --bg: #f3f5f8;
+      --painel: #ffffff;
+      --painel2: #eef2f6;
+      --borda: #dbe1e8;
+      --borda-forte: #c3ccd7;
+      --fg: #1d232b;
+      --dim: #5d6673;
+      --sel: #dcf0f3;
+      --cy: #00778a;
+      --ok: #2c7f3b;
+      --err: #b83227;
+      --amar: #8a5d00;
+      --mag: #8a3fa3;
+      --s1: #00849a;
+      --s2: #a86f00;
+      --s3: #2f6cc0;
+      --s4: #2f8a40;
+      --s5: #9a4cb4;
+      --s6: #c0392b;
+      --rec: #2f8a40;
+      --desp: #c0392b;
+      --fx: #1d232b;
+      --dim-ativo: #44505e;
+      --brilho: #e6eef5;
+      --brilho-cy: transparent;
+      --anel: rgba(0, 119, 138, .18);
+      --aviso-bg: rgba(138, 93, 0, .08);
+      --hover-graf: rgba(0, 0, 0, .04);
+      --barra-rolagem: #a9b4c2;
+      --sombra: 0 1px 2px rgba(20, 30, 45, .08), 0 8px 24px rgba(20, 30, 45, .08);
+      color-scheme: light;
+    }
+
+    :root {
+      color-scheme: dark;
+    }
+
     * {
       box-sizing: border-box;
+    }
+
+    [hidden] {
+      display: none !important;
     }
 
     body {
       margin: 0;
       min-height: 100vh;
       background:
-        radial-gradient(1100px 520px at 78% -8%, #131923 0%, transparent 60%),
+        radial-gradient(1100px 520px at 78% -8%, var(--brilho) 0%, transparent 60%),
         var(--bg);
       color: var(--fg);
       font: 14px/1.55 ui-monospace, "JetBrains Mono", "Fira Mono", Consolas, monospace;
@@ -81,7 +149,7 @@
     }
 
     *::-webkit-scrollbar-thumb:hover {
-      background: #3a4658;
+      background: var(--barra-rolagem);
       background-clip: padding-box;
     }
 
@@ -96,7 +164,7 @@
     }
 
     .fx {
-      color: #fff;
+      color: var(--fx);
     }
 
     .vm,
@@ -182,7 +250,7 @@
       font-size: 26px;
       letter-spacing: 6px;
       font-weight: bold;
-      text-shadow: 0 0 18px rgba(77, 216, 230, .28);
+      text-shadow: 0 0 18px var(--brilho-cy);
     }
 
     #marca p {
@@ -213,7 +281,7 @@
       display: none;
       margin: 0 var(--gutter) 4px;
       padding: 8px 14px;
-      background: rgba(230, 200, 77, .1);
+      background: var(--aviso-bg);
       border: 1px solid var(--amar);
       border-radius: var(--r-sm);
       color: var(--amar);
@@ -287,7 +355,7 @@
     }
 
     #menu .item.ativo .dim {
-      color: #93a1b3;
+      color: var(--dim-ativo);
     }
 
     #menu .num {
@@ -716,7 +784,7 @@
     }
 
     .grafico g.hit:hover .fundo {
-      fill: rgba(255, 255, 255, .04);
+      fill: var(--hover-graf);
     }
 
     .grafico g.hit:hover .marca {
@@ -885,7 +953,7 @@
     #campos select:focus {
       outline: none;
       border-color: var(--cy);
-      box-shadow: 0 0 0 3px rgba(77, 216, 230, .15);
+      box-shadow: 0 0 0 3px var(--anel);
     }
 
     #form-msg {
@@ -959,7 +1027,7 @@
     #imp-campos select:focus {
       outline: none;
       border-color: var(--cy);
-      box-shadow: 0 0 0 3px rgba(77, 216, 230, .15);
+      box-shadow: 0 0 0 3px var(--anel);
     }
 
     #imp-resumo {
@@ -1039,6 +1107,11 @@
 
       main {
         flex-direction: column;
+        align-items: stretch;
+      }
+
+      #painel {
+        width: 100%;
       }
 
       #menu {
@@ -1049,6 +1122,695 @@
 
       #encolhe {
         align-self: center;
+      }
+    }
+    /* ---- botões do topo: buscar, ajustes e trancar ---- */
+    #topo {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    #modos[style*="flex"]+#topo {
+      margin-left: 0;
+    }
+
+    #topo button {
+      background: var(--painel);
+      border: 1px solid var(--borda);
+      border-radius: 999px;
+      color: var(--dim);
+      font: inherit;
+      padding: 4px 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color var(--tempo), border-color var(--tempo);
+    }
+
+    #topo button:hover {
+      color: var(--cy);
+      border-color: var(--cy);
+    }
+
+    #topo kbd {
+      font: inherit;
+      font-size: 11px;
+      color: var(--dim);
+      margin-left: 4px;
+    }
+
+    header #topo {
+      margin-left: auto;
+    }
+
+    /* ---- busca global (Ctrl+K) ---- */
+    #busca {
+      width: min(720px, calc(100vw - 24px));
+      padding: 16px 18px 12px;
+      margin-top: 8vh;
+    }
+
+    #busca-q {
+      width: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font: inherit;
+      font-size: 16px;
+      border: 1px solid var(--borda-forte);
+      border-radius: var(--r-sm);
+      padding: 9px 12px;
+    }
+
+    #busca-q:focus {
+      outline: none;
+      border-color: var(--cy);
+      box-shadow: 0 0 0 3px var(--anel);
+    }
+
+    #busca-res {
+      margin-top: 10px;
+      max-height: 58vh;
+      overflow: auto;
+    }
+
+    #busca-res .grupo {
+      color: var(--dim);
+      font-size: 12px;
+      margin: 10px 4px 4px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    #busca-res .res {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 2px 14px;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      color: var(--fg);
+      font: inherit;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+
+    #busca-res .res.ativo,
+    #busca-res .res:hover {
+      background: var(--sel);
+      border-color: var(--cy);
+    }
+
+    #busca-res .res .det {
+      grid-column: 1 / -1;
+      color: var(--dim);
+      font-size: 12px;
+    }
+
+    #busca-res .res.quitado .tit {
+      text-decoration: line-through;
+      opacity: .7;
+    }
+
+    #busca-res .vazio {
+      color: var(--dim);
+      padding: 14px 6px;
+    }
+
+    /* ---- ajustes: tema, PIN e acesso pelo celular ---- */
+    #ajustes {
+      width: min(560px, calc(100vw - 24px));
+    }
+
+    #ajustes h3 {
+      margin: 0 0 4px;
+      color: var(--cy);
+      font-size: 15px;
+    }
+
+    #ajustes section {
+      padding: 14px 0;
+      border-top: 1px solid var(--borda);
+    }
+
+    #ajustes section:first-of-type {
+      border-top: 0;
+    }
+
+    #ajustes h4 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    #ajustes p {
+      margin: 0 0 8px;
+    }
+
+    .segmentado {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--borda);
+      border-radius: 999px;
+      background: var(--bg);
+    }
+
+    .segmentado button {
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      color: var(--dim);
+      font: inherit;
+      padding: 4px 14px;
+      cursor: pointer;
+    }
+
+    .segmentado button.ativo {
+      background: var(--sel);
+      border-color: var(--cy);
+      color: var(--cy);
+    }
+
+    #pin-campos {
+      display: grid;
+      grid-template-columns: 14ch 1fr;
+      gap: 8px 10px;
+      align-items: center;
+      margin: 8px 0;
+    }
+
+    #pin-campos input {
+      background: var(--bg);
+      color: var(--fg);
+      font: inherit;
+      border: 1px solid var(--borda);
+      border-radius: var(--r-sm);
+      padding: 6px 9px;
+      min-width: 0;
+    }
+
+    #pin-campos input:focus {
+      outline: none;
+      border-color: var(--cy);
+      box-shadow: 0 0 0 3px var(--anel);
+    }
+
+    #rede-info {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    #rede-info img {
+      width: 168px;
+      height: 168px;
+      border-radius: var(--r-sm);
+      background: #fff;
+      padding: 6px;
+    }
+
+    #rede-info code {
+      user-select: all;
+      color: var(--cy);
+    }
+
+    .linha-botoes {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    /* ---- celular: menu embaixo, alvos de toque grandes, sem enfeites ---- */
+    @media (max-width: 640px) {
+      :root {
+        --gutter: 12px;
+      }
+
+      body {
+        font-size: 13px;
+        padding-bottom: calc(66px + env(safe-area-inset-bottom));
+      }
+
+      header {
+        gap: 10px;
+        padding: calc(10px + env(safe-area-inset-top)) var(--gutter) 6px;
+      }
+
+      #marca h1 {
+        font-size: 18px;
+        letter-spacing: 4px;
+      }
+
+      .selo-corp,
+      .selo-analytics {
+        font-size: 13px;
+      }
+
+      #marca p {
+        display: none;
+      }
+
+      #modos {
+        order: 3;
+        margin: 0;
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      #modos button {
+        flex: 1;
+        padding: 6px 4px;
+      }
+
+      #topo {
+        margin-left: auto;
+      }
+
+      #topo kbd,
+      #topo .rot {
+        display: none;
+      }
+
+      #topo button {
+        min-width: 40px;
+        min-height: 36px;
+      }
+
+      main {
+        padding: 8px var(--gutter) 20px;
+        gap: 10px;
+      }
+
+      /* o menu vira uma barra fixa embaixo, rolável de lado */
+      #menu,
+      #menu.encolhido {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        z-index: 20;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 2px;
+        padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+        background: var(--painel);
+        border-top: 1px solid var(--borda-forte);
+        box-shadow: 0 -6px 20px rgba(0, 0, 0, .18);
+        scrollbar-width: none;
+      }
+
+      #menu::-webkit-scrollbar {
+        display: none;
+      }
+
+      #encolhe {
+        display: none;
+      }
+
+      #menu .item,
+      #menu.encolhido .item {
+        flex: none;
+        min-width: 64px;
+        min-height: 48px;
+        padding: 4px 8px;
+        text-align: center;
+        font-size: 11px;
+        line-height: 1.2;
+      }
+
+      #menu .item .num {
+        display: block;
+        margin: 0 0 2px;
+        font-size: 13px;
+      }
+
+      #menu .item .texto,
+      #menu.encolhido .item .texto {
+        display: block;
+        white-space: nowrap;
+      }
+
+      #menu .item .texto .dim,
+      #menu .item .texto br {
+        display: none;
+      }
+
+      #menu .item.ativo::before {
+        left: 10px;
+        right: 10px;
+        top: -1px;
+        bottom: auto;
+        width: auto;
+        height: 3px;
+      }
+
+      #titulo {
+        font-size: 15px;
+        margin-bottom: 8px;
+      }
+
+      #saida {
+        padding: 10px;
+        font-size: 11.5px;
+        line-height: 1.7;
+      }
+
+      #acoes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      #acoes .acao {
+        min-height: 40px;
+      }
+
+      #dicas {
+        display: none;
+      }
+
+      #saida .acoes-linha button {
+        padding: 6px 9px;
+        font-size: 13px;
+      }
+
+      dialog {
+        min-width: 0;
+        width: calc(100vw - 16px);
+        max-width: calc(100vw - 16px);
+        padding: 16px;
+      }
+
+      #campos label {
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      #campos label span.rotulo {
+        width: 100%;
+      }
+
+      #campos input,
+      #campos select,
+      #busca-q,
+      #pin-campos input {
+        font-size: 16px; /* abaixo disso o iPhone dá zoom ao focar */
+        min-height: 40px;
+      }
+
+      #imp-campos,
+      #pin-campos {
+        grid-template-columns: 1fr;
+      }
+
+      .botoes button {
+        min-height: 42px;
+        flex: 1;
+      }
+
+      #busca {
+        margin-top: 2vh;
+      }
+    }
+    /* ---- investimentos: cada aplicação numa linha com dois botões ---- */
+    .venc.inv {
+      grid-template-columns: 48px 1fr auto auto auto;
+    }
+
+    .venc.inv .valor {
+      text-align: right;
+      line-height: 1.35;
+    }
+
+    @media (max-width: 640px) {
+      .venc.inv {
+        grid-template-columns: 1fr auto;
+      }
+    }
+
+    /* ---- insights da tela Início ---- */
+    .insights {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .insight {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      text-align: left;
+      background: var(--painel2);
+      border: 1px solid var(--borda);
+      border-left: 3px solid var(--dim);
+      border-radius: var(--r-sm);
+      color: var(--fg);
+      font: inherit;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+
+    .insight:hover {
+      border-color: var(--cy);
+    }
+
+    .insight.alta {
+      border-left-color: var(--err);
+    }
+
+    .insight.alta .ic {
+      color: var(--err);
+    }
+
+    .insight.media {
+      border-left-color: var(--amar);
+    }
+
+    .insight.media .ic {
+      color: var(--amar);
+    }
+
+    /* ---- tags e comprovantes ---- */
+    #saida .tag {
+      color: var(--mag);
+      cursor: pointer;
+      border-radius: 3px;
+    }
+
+    #saida .tag:hover {
+      text-decoration: underline;
+    }
+
+    #anexosDlg {
+      width: min(640px, calc(100vw - 24px));
+    }
+
+    #anexosDlg h3 {
+      margin: 0 0 10px;
+      color: var(--cy);
+      font-size: 15px;
+    }
+
+    #anx-lista {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    #anx-lista .anx {
+      border: 1px solid var(--borda);
+      border-radius: var(--r-sm);
+      padding: 6px;
+      background: var(--painel2);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      min-width: 0;
+    }
+
+    #anx-lista .anx img {
+      width: 100%;
+      height: 110px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: var(--bg);
+    }
+
+    #anx-lista .anx .pdf {
+      height: 110px;
+      display: grid;
+      place-items: center;
+      font-size: 34px;
+      background: var(--bg);
+      border-radius: 4px;
+    }
+
+    #anx-lista .anx a {
+      color: var(--fg);
+      text-decoration: none;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #anx-envio {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    /* ---- calendário: grade do mês ---- */
+    .cal-topo {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: center;
+      margin-bottom: 12px;
+      white-space: normal;
+    }
+
+    .cal-topo h3 {
+      margin: 0;
+      font-size: 15px;
+      color: var(--fg);
+      min-width: 13ch;
+      text-align: center;
+    }
+
+    .cal-alerta {
+      color: var(--err);
+    }
+
+    .cal-grade {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 4px;
+      white-space: normal;
+    }
+
+    .cal-sem {
+      color: var(--dim);
+      font-size: 11px;
+      text-transform: uppercase;
+      text-align: center;
+      padding: 2px 0;
+    }
+
+    .cal-dia {
+      min-height: 92px;
+      padding: 5px 6px;
+      background: var(--painel2);
+      border: 1px solid var(--borda);
+      border-radius: var(--r-sm);
+      font-size: 11.5px;
+      line-height: 1.35;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      text-align: left;
+      color: var(--fg);
+      font-family: inherit;
+    }
+
+    .cal-dia.vazio {
+      background: none;
+      border-color: transparent;
+      cursor: default;
+    }
+
+    .cal-dia.passado {
+      opacity: .62;
+    }
+
+    .cal-dia.hoje {
+      border-color: var(--cy);
+      box-shadow: inset 0 0 0 1px var(--cy);
+    }
+
+    .cal-dia.negativo,
+    .cal-dia.atrasada {
+      border-color: var(--err);
+    }
+
+    .cal-dia.sel {
+      background: var(--sel);
+    }
+
+    .cal-dia .n {
+      font-weight: 600;
+      color: var(--dim);
+    }
+
+    .cal-dia.hoje .n {
+      color: var(--cy);
+    }
+
+    .cal-dia .it {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cal-dia .it.q {
+      text-decoration: line-through;
+      opacity: .6;
+    }
+
+    .cal-dia .saldo {
+      margin-top: auto;
+      font-size: 10.5px;
+      color: var(--dim);
+    }
+
+    .cal-dia.negativo .saldo {
+      color: var(--err);
+    }
+
+    .cal-detalhe {
+      margin-top: 14px;
+      white-space: normal;
+    }
+
+    .cal-detalhe h4 {
+      margin: 0 0 8px;
+      color: var(--cy);
+      font-size: 13px;
+    }
+
+    @media (max-width: 640px) {
+
+      /* no celular, a grade vira lista dos dias com conta */
+      .cal-grade {
+        grid-template-columns: 1fr;
+      }
+
+      .cal-sem,
+      .cal-dia.vazio,
+      .cal-dia.semnada {
+        display: none;
+      }
+
+      .cal-dia {
+        min-height: 0;
+        font-size: 13px;
+      }
+
+      .cal-dia .n::after {
+        content: attr(data-sem);
+        margin-left: 6px;
+        font-weight: 400;
       }
     }
   </style>
@@ -1063,6 +1825,11 @@
       <p id="subtituloMarca" class="dim">— finanças pessoais</p>
     </div>
     <nav id="modos" aria-label="Modo"></nav>
+    <div id="topo">
+      <button type="button" id="btBusca" title="buscar em tudo (Ctrl+K ou /)">🔍<span class="rot"> buscar</span><kbd>Ctrl K</kbd></button>
+      <button type="button" id="btAjustes" title="tema, PIN e acesso pelo celular">⚙<span class="rot"> ajustes</span></button>
+      <button type="button" id="btTrancar" title="trancar (pede o PIN de novo)" hidden>🔒</button>
+    </div>
   </header>
   <div id="aviso"></div>
   <main>
@@ -1121,11 +1888,79 @@
     </div>
     <div id="imp-lotes"></div>
   </dialog>
+  <dialog id="anexosDlg">
+    <h3 id="anx-titulo">Comprovantes</h3>
+    <div id="anx-lista"></div>
+    <div id="anx-envio">
+      <input id="anx-arquivo" type="file" accept="image/*,application/pdf">
+      <button type="button" class="botao-mini" id="anx-envia">guardar</button>
+    </div>
+    <p class="dim" style="margin:6px 0 0">Foto (no celular, abre a câmera) ou PDF, até 10 MB.</p>
+    <div id="anx-msg" class="err" style="min-height:1.4em;margin-top:6px"></div>
+    <div class="botoes"><button type="button" id="anx-fecha">fechar</button></div>
+  </dialog>
+  <dialog id="busca" aria-label="Buscar">
+    <input id="busca-q" type="search" placeholder="buscar lançamentos, contas, metas… (valor: 89,90 · tag: #viagem)"
+      autocomplete="off" enterkeyhint="search">
+    <div id="busca-res"></div>
+    <p class="dim" style="margin:8px 0 0">↑/↓ escolhem · enter abre · esc fecha</p>
+  </dialog>
+  <dialog id="ajustes">
+    <h3>Ajustes</h3>
+    <section>
+      <h4>Tema</h4>
+      <div class="segmentado" id="tema-opcoes">
+        <button type="button" data-tema="auto">automático</button>
+        <button type="button" data-tema="claro">claro</button>
+        <button type="button" data-tema="escuro">escuro</button>
+      </div>
+    </section>
+    <section>
+      <h4>PIN</h4>
+      <p class="dim" id="pin-estado"></p>
+      <div id="pin-campos" hidden>
+        <label for="pin-atual" id="pin-atual-rot">PIN atual</label><input id="pin-atual" type="password" inputmode="numeric" autocomplete="current-password">
+        <label for="pin-novo">PIN novo</label><input id="pin-novo" type="password" inputmode="numeric" autocomplete="new-password" placeholder="4 a 32 caracteres">
+        <label for="pin-repete">repita</label><input id="pin-repete" type="password" inputmode="numeric" autocomplete="new-password">
+      </div>
+      <div class="linha-botoes">
+        <button type="button" class="botao-mini" id="pin-definir"></button>
+        <button type="button" class="botao-mini" id="pin-salvar" hidden>salvar PIN</button>
+        <button type="button" class="botao-mini" id="pin-remover" hidden>remover PIN</button>
+      </div>
+      <div id="pin-msg" class="err" style="min-height:1.4em;margin-top:6px"></div>
+    </section>
+    <section id="sec-rede" hidden>
+      <h4>Acessar pelo celular</h4>
+      <p class="dim">Abre o Prisma no celular, na mesma rede Wi-Fi deste computador, enquanto ele estiver ligado e com o
+        Prisma aberto. Pede o PIN.</p>
+      <label class="linha-botoes"><input type="checkbox" id="rede-liga"> liberar o acesso pela rede de casa</label>
+      <div id="rede-info"></div>
+      <div id="rede-msg" class="err" style="min-height:1.4em;margin-top:6px"></div>
+    </section>
+    <div class="botoes"><button type="button" id="ajustes-fecha">fechar</button></div>
+  </dialog>
   <div id="tip" role="tooltip"></div>
 
   <script>
     "use strict";
     const $ = s => document.querySelector(s);
+    /* com PIN, uma sessão vencida responde 401: volta para a tela do PIN. Uma
+       consulta (GET) que cai na rede — comum no Wi-Fi do celular — tenta de novo
+       uma vez antes de desistir. */
+    const fetchOriginal = window.fetch.bind(window);
+    window.fetch = async (url, op) => {
+      let r;
+      try {
+        r = await fetchOriginal(url, op);
+      } catch (e) {
+        if (op && op.method && op.method !== "GET") throw e;
+        await new Promise(z => setTimeout(z, 400));
+        r = await fetchOriginal(url, op);
+      }
+      if (r.status === 401) location.replace("login?volta=" + encodeURIComponent(location.pathname + location.search));
+      return r;
+    };
     const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const escAttr = s => esc(s).replace(/"/g, "&quot;");
     const span = (cls, s) => `<span class="${cls}">${s}</span>`;
@@ -1160,6 +1995,7 @@
 
     /* ---- esquema de cores: porte fiel de cores.go ---- */
     const reValor = /-?R\$ [0-9.,]+/g;
+    const reTagTexto = /#(\p{L}[\p{L}\p{N}_\-\/]*)/gu; // #tags das descrições
     function ehCabecalhoTabela(t) {
       if (t.includes("R$") || t !== t.toUpperCase()) return false;
       if (t[0] >= "0" && t[0] <= "9") return false;
@@ -1201,7 +2037,8 @@
       if (pagar && receber && l.includes("|"))
         return l.split("|").map(colorir).join("|");
 
-      l = esc(l).replace(reValor, v => {
+      l = esc(l).replace(reTagTexto, (m, t) => `<span class="tag" data-tag="${escAttr(t)}" title="buscar #${escAttr(t)}">${m}</span>`)
+        .replace(reValor, v => {
         if (v.startsWith("-")) return span("err", v);
         if (pagar && !receber) return span("err", v);
         if (receber && !pagar) return span("ok", v);
@@ -1250,6 +2087,7 @@
       try {
         const v = await (await fetch(api("api/versao"))).json();
         mostraModos(v);
+        configuraSeguranca(v);
         if (v.modoEmpresa) {
           document.title = "Prisma CORP — finanças empresariais";
           $("#seloCorp").style.display = "inline-block";
@@ -1329,9 +2167,11 @@
       abaSel[i] = 0; // abre sempre na primeira visão, como a TUI
       history.replaceState(null, "", "#t=" + (i + 1)); // link direto para a tela
       document.querySelectorAll("#menu .item").forEach((b, j) => b.classList.toggle("ativo", j === i));
+      const itemAtivo = document.querySelector("#menu .item.ativo"); // no celular, o menu de baixo rola até ele
+      if (itemAtivo && matchMedia("(max-width: 640px)").matches) itemAtivo.scrollIntoView({ inline: "center", block: "nearest" });
       $("#titulo").textContent = telas[i].titulo;
       // telas com desenho próprio (Início) têm os botões nos cards
-      $("#acoes").innerHTML = (telas[i].visual ? [] : telas[i].acoes || []).map((a, j) =>
+      $("#acoes").innerHTML = (telas[i].visual === "inicio" ? [] : telas[i].acoes || []).map((a, j) =>
         `<button class="acao" data-j="${j}"><kbd>${esc(a.tecla)}</kbd>${esc(a.rotulo)}` +
         `${a.multi ? '<span class="conta"></span>' : ""}</button>`).join("") +
         (telas[i].listaMensal ? `<button class="acao" id="btImportar"><kbd>i</kbd>importar extrato</button>` +
@@ -1416,6 +2256,8 @@
       const t = telas[atual];
       if (t.titulo === "Gráficos") return renderGraficos();
       if (t.visual === "inicio") return renderInicio();
+      if (t.visual === "calendario") return renderCalendario();
+      if (t.visual === "investimentos") return renderInvestimentos();
       const q = new URLSearchParams([["tela", atual], ...params[atual].map(p => ["p", p])]);
       if (t.abas && t.abas.length) q.set("aba", abaSel[atual]); // visão escolhida pelas abas
       const r = await (await fetch(api("api/conteudo?" + q))).json();
@@ -1471,7 +2313,15 @@
         card("A pagar no mês", d.pendPagar, "err", mes) +
         card("A receber no mês", d.pendReceber, "ok", mes) +
         card("Posição no fim do mês", d.saldo - d.pendPagar + d.pendReceber, "", "saldo − a pagar + a receber") +
+        (d.temPatrimonio ? card("Patrimônio líquido", d.patrimonio, d.patrimonio < 0 ? "err" : "", "com o rendimento dos investimentos") : "") +
         `</div>`;
+
+      if (d.insights && d.insights.length) {
+        const icone = { alta: "⚠", media: "•", baixa: "·" };
+        h += `<div><h3>Atenção</h3><div class="insights">` + d.insights.map(i =>
+          `<button type="button" class="insight ${i.gravidade}" data-tela="${escAttr(i.tela)}" title="abrir ${escAttr(i.tela)}">` +
+          `<span class="ic">${icone[i.gravidade] || "•"}</span><span>${esc(i.texto)}</span></button>`).join("") + `</div></div>`;
+      }
 
       const sit = { atrasada: "atrasada", hoje: "vence hoje", proxima: "" };
       h += `<div><h3>Próximos 7 dias</h3>`;
@@ -1523,6 +2373,7 @@
       const jQuitar = (telas[atual].acoes || []).findIndex(a => a.tecla === "u");
       $("#saida").querySelectorAll("[data-quitar]").forEach(b => b.onclick = () => executa(jQuitar, [b.dataset.quitar, ""]));
       $("#saida").querySelectorAll("[data-fatura]").forEach(b => b.onclick = () => irPara("Cartões"));
+      $("#saida").querySelectorAll(".insight[data-tela]").forEach(b => b.onclick = () => irPara(b.dataset.tela));
     }
 
     /* ---- gráficos em SVG (espelham a tela ASCII "Gráficos") ----
@@ -1677,7 +2528,7 @@
       // rótulos do eixo X (primeiro, último e alguns intermediários)
       const passo = Math.max(1, Math.ceil(n / 8));
       rotulos.forEach((r, k) => {
-        if (k % passo === 0 || k === n - 1)
+        if ((k % passo === 0 && k <= n - 1 - passo) || k === n - 1)
           s += `<text x="${X(k)}" y="${H - 8}" text-anchor="middle" fill="var(--dim)" font-size="10.5">${esc(mesBR(r))}</text>`;
       });
       // rótulo direto no fim da série única (o valor "de agora")
@@ -1792,7 +2643,19 @@
       if (!ids.includes(selecionado[atual])) selecionado[atual] = ids[0] || null;
       document.querySelectorAll("#saida .clic").forEach(d =>
         d.onclick = () => { selecionado[atual] = d.dataset.id; marcaSelecao(); });
-      document.querySelectorAll("#saida .acoes-linha button").forEach(b =>
+      document.querySelectorAll("#saida .acoes-linha button.anexo").forEach(b =>
+        b.onclick = ev => {
+          ev.stopPropagation();
+          abreAnexos(b.closest(".clic").dataset.id);
+        });
+      document.querySelectorAll("#saida .tag").forEach(t =>
+        t.onclick = ev => {
+          ev.stopPropagation();
+          abreBusca();
+          $("#busca-q").value = "#" + t.dataset.tag;
+          executaBusca();
+        });
+      document.querySelectorAll("#saida .acoes-linha button[data-j]").forEach(b =>
         b.onclick = ev => {
           ev.stopPropagation();
           const id = b.closest(".clic").dataset.id;
@@ -1815,6 +2678,7 @@
         .filter(({ a }) => a.linha && iconesLinha[a.tecla] && !(quitada && a.tecla === "u"))
         .map(({ a, j }) => `<button type="button" class="${a.tecla}" data-j="${j}" title="${escAttr(a.rotulo)}"` +
           ` aria-label="${escAttr(a.rotulo)}">${iconesLinha[a.tecla]}</button>`);
+      if (telas[atual].listaMensal) bts.push(`<button type="button" class="anexo" title="comprovantes (foto ou PDF)" aria-label="comprovantes">📎</button>`);
       return bts.length ? `<span class="acoes-linha">${bts.join("")}</span>` : "";
     }
     function alternaMarca(id, marcar) {
@@ -1837,6 +2701,8 @@
     function marcaSelecao() {
       document.querySelectorAll("#saida .clic").forEach(d =>
         d.classList.toggle("sel", d.dataset.id === selecionado[atual]));
+      const sel = document.querySelector("#saida .clic.sel");
+      if (sel) sel.scrollIntoView({ block: "nearest" });
     }
     function moveSelecao(delta) {
       const divs = [...document.querySelectorAll("#saida .clic")];
@@ -2036,7 +2902,14 @@
 
     /* ---- atalhos de teclado, como na TUI ---- */
     document.addEventListener("keydown", ev => {
-      if ($("#form").open || $("#confirma").open || $("#importar").open || ev.target.matches("input, select, textarea")) return;
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "k") {
+        ev.preventDefault();
+        abreBusca();
+        return;
+      }
+      if ($("#form").open || $("#confirma").open || $("#importar").open || $("#busca").open || $("#ajustes").open || $("#anexosDlg").open ||
+        ev.target.matches("input, select, textarea")) return;
+      if (ev.key === "/") { ev.preventDefault(); abreBusca(); return; }
       if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
       if (ev.key >= "0" && ev.key <= "9") {
         if (prefixoTimer) { clearTimeout(prefixoTimer); prefixoTimer = null; }
@@ -2083,7 +2956,7 @@
       if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
         const delta = ev.key === "ArrowLeft" ? -1 : 1;
         if (t.abas && t.abas.length) { cicleAba(delta); ev.preventDefault(); return; }
-        if (t.listaMensal) { ajustaMes(delta); ev.preventDefault(); return; }
+        if (t.listaMensal || t.porMes) { ajustaMes(delta); ev.preventDefault(); return; }
       }
       // t: alterna pagar/receber/todos nas listagens mensais (antes das ações, como na TUI)
       if (t.listaMensal && ev.key === "t") { cicleTipo(); ev.preventDefault(); return; }
@@ -2105,6 +2978,357 @@
       ev.preventDefault();
       window.abrirExterno(a.href);
     });
+
+    /* ---- investimentos: patrimônio, evolução e aplicações ---- */
+    async function renderInvestimentos() {
+      const resp = await fetch(api("api/patrimonio"));
+      const p = await resp.json().catch(() => ({}));
+      if (!resp.ok) { $("#saida").textContent = "erro: " + (p.erro || resp.status); return; }
+      selecionado[atual] = null;
+      const card = (rot, val, cls, sub) =>
+        `<div class="card"><div class="rot">${esc(rot)}</div><div class="val ${cls || ""}">${brl(val)}</div>` +
+        (sub ? `<div class="sub">${sub}</div>` : "") + `</div>`;
+      const pctTxt = (r, base) => base > 0 ? ((r >= 0 ? "+" : "") + (r * 100 / base).toFixed(1).replace(".", ",") + "%") : "";
+      let h = `<div class="inicio"><div class="cards">` +
+        card("Patrimônio líquido", p.liquido, p.liquido < 0 ? "err" : "", "saldo + rendimento − faturas − dívidas") +
+        card("Aplicado", p.investido, "", (p.aplicacoes || []).length + " aplicação(ões)") +
+        card("Valor hoje", p.valorInvest, "") +
+        card("Rendimento", p.rendimento, p.rendimento < 0 ? "err" : "ok", pctTxt(p.rendimento, p.investido)) +
+        `</div>`;
+      if ((p.evolucao || []).length > 1) {
+        h += `<div class="grafico"><h3>Patrimônio líquido — fim de cada mês</h3>` +
+          svgLinhas(p.evolucao.map(e => e.rotulo), [{ nome: "Patrimônio", cor: "var(--s1)", vals: p.evolucao.map(e => e.valor) }], { direto: true }) +
+          `</div>`;
+      }
+      const ap = p.aplicacoes || [];
+      h += `<div><h3>Aplicações</h3>`;
+      if (!ap.length) {
+        h += `<p class="dim" style="margin:0">Nenhuma ainda. Use <b>novo investimento</b>: CDB, Tesouro, ações, FIIs... ` +
+          `O dinheiro que sai da conta vira uma transferência, e o rendimento entra no patrimônio quando você informa o valor de hoje.</p>`;
+      } else {
+        h += `<div class="vencs">` + ap.map(i => {
+          const at = i.atualizado ? "valor de " + dataBR(i.atualizado) : "valor ainda não informado";
+          return `<div class="venc inv"><span class="data">#${i.id}</span>` +
+            `<span class="desc" title="${escAttr(i.nome)}">${esc(i.nome)}<br><span class="dim">${esc(i.tipo)}${i.instituicao ? " · " + esc(i.instituicao) : ""} · ${at}</span></span>` +
+            `<span class="valor">${brl(i.valor)}<br><span class="${i.rendimento < 0 ? "err" : "ok"}">${i.rendimento >= 0 ? "+" : ""}${brl(i.rendimento)} ${pctTxt(i.rendimento, i.aplicado)}</span></span>` +
+            `<button class="botao-mini" data-inv="${i.id}" data-tecla="v">atualizar valor</button>` +
+            `<button class="botao-mini" data-inv="${i.id}" data-tecla="g">aportar</button></div>`;
+        }).join("") + `</div>`;
+      }
+      h += `</div></div>`;
+      $("#saida").innerHTML = h;
+      $("#saida").querySelectorAll("[data-inv]").forEach(b => b.onclick = () => {
+        const j = (telas[atual].acoes || []).findIndex(a => a.tecla === b.dataset.tecla);
+        if (j >= 0) dispara(j, b.dataset.inv);
+      });
+    }
+
+    /* ---- comprovantes (📎): foto ou PDF guardados no lançamento ---- */
+    let anxLanc = null;
+    async function abreAnexos(id) {
+      if (anxLanc !== id || !$("#anexosDlg").open) $("#anx-msg").textContent = "";
+      anxLanc = id;
+      $("#anx-titulo").textContent = `Comprovantes do lançamento #${id}`;
+      $("#anx-arquivo").value = "";
+      if (!$("#anexosDlg").open) $("#anexosDlg").showModal();
+      const lista = await (await fetch(api("api/anexos?lancamento=" + id))).json().catch(() => []);
+      $("#anx-lista").innerHTML = !Array.isArray(lista) || !lista.length
+        ? `<p class="dim">Nenhum comprovante ainda.</p>`
+        : lista.map(a => {
+          const url = api("api/anexo?id=" + a.id);
+          const previa = a.tipo.startsWith("image/") ? `<img src="${escAttr(url)}" alt="" loading="lazy">` : `<div class="pdf">📄</div>`;
+          return `<div class="anx"><a href="${escAttr(url)}" target="_blank" rel="noopener" title="${escAttr(a.nome)}">${previa}</a>` +
+            `<a href="${escAttr(url)}" target="_blank" rel="noopener">${esc(a.nome)}</a>` +
+            `<button type="button" class="botao-mini" data-remove="${a.id}">remover</button></div>`;
+        }).join("");
+      $("#anx-lista").querySelectorAll("[data-remove]").forEach(b => b.onclick = async () => {
+        const { ok, r } = await postJSON(api("api/anexos/remover"), { id: +b.dataset.remove });
+        $("#anx-msg").className = ok ? "ok" : "err";
+        $("#anx-msg").textContent = ok ? r.msg : r.erro;
+        abreAnexos(anxLanc);
+      });
+    }
+    $("#anx-envia").onclick = async () => {
+      const arq = $("#anx-arquivo").files[0];
+      if (!arq) { $("#anx-msg").textContent = "escolha a foto ou o PDF"; return; }
+      const f = new FormData();
+      f.append("lancamento", anxLanc);
+      f.append("arquivo", arq);
+      $("#anx-envia").disabled = true;
+      const resp = await fetch(api("api/anexos"), { method: "POST", body: f });
+      $("#anx-envia").disabled = false;
+      const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
+      $("#anx-msg").className = resp.ok ? "ok" : "err";
+      $("#anx-msg").textContent = resp.ok ? `guardado: ${r.nome}` : r.erro;
+      if (resp.ok) abreAnexos(anxLanc);
+    };
+    $("#anx-fecha").onclick = () => $("#anexosDlg").close();
+
+    /* ---- calendário: grade do mês com as contas e o saldo previsto ---- */
+    let calDia = null;
+    const semanaCurta = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+    async function renderCalendario() {
+      const mes = getArg(params[atual], "--mes");
+      const resp = await fetch(api("api/calendario" + (mes ? "?mes=" + mes : "")));
+      const c = await resp.json().catch(() => ({}));
+      if (!resp.ok) { $("#saida").textContent = "erro: " + (c.erro || resp.status); return; }
+      selecionado[atual] = null;
+      if (!calDia || calDia.slice(0, 7) !== c.mes) calDia = c.mes === c.hoje.slice(0, 7) ? c.hoje : null;
+      const [ano, m] = c.mes.split("-").map(Number);
+      const nome = new Date(ano, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      let h = `<div class="cal-topo"><button class="botao-mini" data-mes="-1" title="mês anterior (←)">◀</button>` +
+        `<h3>${esc(nome)}</h3><button class="botao-mini" data-mes="1" title="próximo mês (→)">▶</button>` +
+        `<span>a pagar ${span("err", brl(c.pagar))} · a receber ${span("ok", brl(c.receber))}</span>`;
+      if (c.diaMenor) {
+        h += c.menorSaldo < 0
+          ? `<span class="cal-alerta">⚠ saldo previsto fica negativo: ${brl(c.menorSaldo)} em ${dataBR(c.diaMenor)}</span>`
+          : `<span class="dim">menor saldo previsto: ${brl(c.menorSaldo)} em ${dataBR(c.diaMenor)}</span>`;
+      }
+      h += `</div><div class="cal-grade">` + semanaCurta.map(d => `<div class="cal-sem">${d}</div>`).join("");
+      const primeiro = new Date(ano, m - 1, 1).getDay();
+      for (let i = 0; i < primeiro; i++) h += `<div class="cal-dia vazio"></div>`;
+      for (const d of c.dias) {
+        const dia = +d.data.slice(8, 10), sem = semanaCurta[new Date(ano, m - 1, dia).getDay()];
+        let cls = "cal-dia";
+        if (d.data < c.hoje) cls += d.pagar > 0 || d.receber > 0 ? " atrasada" : " passado";
+        if (d.data === c.hoje) cls += " hoje";
+        if (d.temSaldo && d.saldo < 0) cls += " negativo";
+        if (d.data === calDia) cls += " sel";
+        if (!d.itens.length && d.data !== c.hoje) cls += " semnada";
+        const mostra = d.itens.slice(0, 3).map(it =>
+          `<span class="it${it.quitado ? " q" : ""}">${span(it.tipo === "receber" ? "ok" : "err", it.tipo === "receber" ? "+" : "−")} ${esc(it.descricao)}</span>`).join("");
+        const mais = d.itens.length > 3 ? `<span class="dim">+${d.itens.length - 3}</span>` : "";
+        const saldo = d.temSaldo && d.itens.length ? `<span class="saldo">saldo ${brlCurto(d.saldo)}</span>` : "";
+        h += `<button type="button" class="${cls}" data-dia="${d.data}"><span class="n" data-sem="${sem}">${dia}</span>${mostra}${mais}${saldo}</button>`;
+      }
+      h += `</div><div class="cal-detalhe" id="calDetalhe"></div>`;
+      $("#saida").innerHTML = h;
+      $("#saida").querySelectorAll("[data-mes]").forEach(b => b.onclick = () => { calDia = null; ajustaMes(+b.dataset.mes); });
+      $("#saida").querySelectorAll(".cal-dia[data-dia]").forEach(b => b.onclick = () => {
+        calDia = b.dataset.dia;
+        $("#saida").querySelectorAll(".cal-dia.sel").forEach(x => x.classList.remove("sel"));
+        b.classList.add("sel");
+        detalheDia(c);
+      });
+      detalheDia(c);
+    }
+    function detalheDia(c) {
+      const el = $("#calDetalhe");
+      const d = c.dias.find(x => x.data === calDia);
+      if (!d) { el.innerHTML = `<p class="dim">Clique num dia para ver as contas.</p>`; return; }
+      let h = `<h4>${dataBR(d.data)}/${d.data.slice(0, 4)}` + (d.temSaldo ? ` · saldo previsto ${brl(d.saldo)}` : "") + `</h4>`;
+      if (!d.itens.length) h += `<p class="dim">Nada vence neste dia.</p>`;
+      else h += `<div class="vencs">` + d.itens.map(it => {
+        const cor = it.tipo === "receber" ? "ok" : "err";
+        const botao = it.quitado ? `<span class="dim">quitado</span>`
+          : it.tipo === "fatura" ? `<button class="botao-mini" data-fatura="1">ver fatura</button>`
+            : `<button class="botao-mini ok" data-quitar="${it.id}">✓ ${it.tipo === "receber" ? "recebido" : "pago"}</button>`;
+        return `<div class="venc${it.quitado ? "" : d.data < c.hoje ? " atrasada" : ""}"><span class="data">${it.id ? "#" + it.id : ""}</span>` +
+          `<span class="desc" title="${escAttr(it.descricao)}">${esc(it.descricao)}</span>` +
+          `<span class="valor ${cor}">${brl(it.valor)}</span><span></span>${botao}</div>`;
+      }).join("") + `</div>`;
+      el.innerHTML = h;
+      const jQuitar = (telas[atual].acoes || []).findIndex(a => a.tecla === "u");
+      el.querySelectorAll("[data-quitar]").forEach(b => b.onclick = () => executa(jQuitar, [b.dataset.quitar, ""]));
+      el.querySelectorAll("[data-fatura]").forEach(b => b.onclick = () => irPara("Cartões"));
+    }
+
+    /* ---- tema: automático (segue o sistema), claro ou escuro ---- */
+    function temaGuardado() {
+      try { return localStorage.getItem("prisma.tema") || "auto"; } catch (e) { return "auto"; }
+    }
+    const mqClaro = matchMedia("(prefers-color-scheme: light)");
+    function aplicaTema(t) {
+      const claro = t === "claro" || (t === "auto" && mqClaro.matches);
+      if (claro) document.documentElement.dataset.tema = "claro";
+      else delete document.documentElement.dataset.tema;
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.content = claro ? "#f3f5f8" : "#0e1014";
+      document.querySelectorAll("#tema-opcoes button").forEach(b => b.classList.toggle("ativo", b.dataset.tema === t));
+      if (atual >= 0 && telas[atual] && telas[atual].titulo === "Gráficos") recarrega(); // SVG lê as cores na hora
+    }
+    mqClaro.addEventListener("change", () => aplicaTema(temaGuardado()));
+    document.querySelectorAll("#tema-opcoes button").forEach(b => b.onclick = () => {
+      try { localStorage.setItem("prisma.tema", b.dataset.tema); } catch (e) { }
+      aplicaTema(b.dataset.tema);
+    });
+
+    /* ---- PIN: trancar, tempo parado e o painel de ajustes ---- */
+    let estadoSeg = { pin: false, local: true, ociosidade: 15 };
+    let ultimoUso = Date.now(), vigiaOcio = null;
+    function configuraSeguranca(v) {
+      estadoSeg = { pin: !!v.pin, local: v.local !== false, ociosidade: v.ociosidade || 15 };
+      $("#btTrancar").hidden = !estadoSeg.pin;
+      if (estadoSeg.pin && !vigiaOcio) {
+        // a página parada não fala com o servidor: tranca pelo relógio daqui
+        for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"])
+          addEventListener(ev, () => { ultimoUso = Date.now(); }, { passive: true });
+        vigiaOcio = setInterval(() => {
+          if (Date.now() - ultimoUso > estadoSeg.ociosidade * 60000) trancar();
+        }, 20000);
+      }
+    }
+    async function trancar() {
+      await fetch("api/trancar", { method: "POST" }).catch(() => { });
+      location.replace("login?volta=" + encodeURIComponent(location.pathname + location.search));
+    }
+    $("#btTrancar").onclick = trancar;
+
+    async function postJSON(url, corpo) {
+      const resp = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo),
+      });
+      const r = await resp.json().catch(() => ({ erro: "resposta inválida" }));
+      return { ok: resp.ok, r };
+    }
+
+    function mostraPIN() {
+      const tem = estadoSeg.pin;
+      $("#pin-estado").textContent = tem
+        ? `O Prisma pede o PIN ao abrir e tranca depois de ${estadoSeg.ociosidade} min parado.`
+        : "Sem PIN: qualquer pessoa neste computador abre o Prisma direto.";
+      $("#pin-definir").textContent = tem ? "trocar PIN" : "definir PIN";
+      $("#pin-definir").hidden = false;
+      $("#pin-remover").hidden = !tem;
+      $("#pin-salvar").hidden = true;
+      $("#pin-campos").hidden = true;
+      $("#pin-atual").hidden = $("#pin-atual-rot").hidden = !tem;
+      for (const id of ["#pin-atual", "#pin-novo", "#pin-repete"]) $(id).value = "";
+    }
+    $("#pin-definir").onclick = () => {
+      $("#pin-campos").hidden = false;
+      $("#pin-salvar").hidden = false;
+      $("#pin-definir").hidden = true;
+      $("#pin-msg").textContent = "";
+      (estadoSeg.pin ? $("#pin-atual") : $("#pin-novo")).focus();
+    };
+    $("#pin-salvar").onclick = async () => {
+      const novo = $("#pin-novo").value;
+      if (novo !== $("#pin-repete").value) { $("#pin-msg").textContent = "os dois PINs não batem"; return; }
+      if (novo.length < 4) { $("#pin-msg").textContent = "o PIN precisa ter pelo menos 4 caracteres"; return; }
+      const { ok, r } = await postJSON("api/pin", { atual: $("#pin-atual").value, novo });
+      $("#pin-msg").className = ok ? "ok" : "err";
+      $("#pin-msg").textContent = ok ? r.mensagem : r.erro;
+      if (ok) { estadoSeg.pin = true; configuraSeguranca(estadoSeg); mostraPIN(); mostraRede(); }
+    };
+    $("#pin-remover").onclick = async () => {
+      if ($("#pin-campos").hidden) {
+        $("#pin-campos").hidden = false;
+        $("#pin-novo").parentNode && ($("#pin-novo").hidden = $("#pin-repete").hidden = true);
+        document.querySelector('label[for="pin-novo"]').hidden = document.querySelector('label[for="pin-repete"]').hidden = true;
+        $("#pin-definir").hidden = true;
+        $("#pin-msg").className = "dim";
+        $("#pin-msg").textContent = "digite o PIN atual e clique em remover de novo";
+        $("#pin-atual").focus();
+        return;
+      }
+      const { ok, r } = await postJSON("api/pin", { atual: $("#pin-atual").value, novo: "" });
+      $("#pin-msg").className = ok ? "ok" : "err";
+      $("#pin-msg").textContent = ok ? r.mensagem : r.erro;
+      $("#pin-novo").hidden = $("#pin-repete").hidden = false;
+      document.querySelector('label[for="pin-novo"]').hidden = document.querySelector('label[for="pin-repete"]').hidden = false;
+      if (ok) { estadoSeg.pin = false; $("#btTrancar").hidden = true; mostraPIN(); mostraRede(); }
+    };
+
+    async function mostraRede(estado) {
+      $("#sec-rede").hidden = !estadoSeg.local;
+      if (!estadoSeg.local) return;
+      const e = estado || await (await fetch("api/rede")).json().catch(() => ({}));
+      $("#rede-liga").checked = !!e.ligado;
+      $("#rede-liga").disabled = !e.pin;
+      $("#rede-msg").className = "err";
+      $("#rede-msg").textContent = e.erro || (e.pin ? "" : "defina um PIN acima para liberar o celular");
+      const ends = e.enderecos || [];
+      $("#rede-info").innerHTML = !e.ligado ? "" : ends.length === 0
+        ? `<p class="amar">Este computador não parece estar numa rede Wi-Fi/cabo.</p>`
+        : `<img src="api/qr?n=0&t=${Date.now()}" alt="QR code do endereço">` +
+        `<div><p>No celular, aponte a câmera para o código ou abra:</p>` +
+        ends.map(u => `<p><code>${esc(u)}</code></p>`).join("") +
+        `<p class="dim">Depois, no menu do navegador: <b>Adicionar à tela inicial</b>.</p></div>`;
+    }
+    $("#rede-liga").onchange = async () => {
+      $("#rede-liga").disabled = true;
+      const { ok, r } = await postJSON("api/rede", { ligado: $("#rede-liga").checked });
+      if (!ok) { $("#rede-msg").textContent = r.erro; $("#rede-liga").checked = false; $("#rede-liga").disabled = false; return; }
+      mostraRede(r);
+    };
+
+    $("#btAjustes").onclick = () => {
+      aplicaTema(temaGuardado());
+      mostraPIN();
+      $("#pin-msg").textContent = "";
+      mostraRede();
+      $("#ajustes").showModal();
+    };
+    $("#ajustes-fecha").onclick = () => $("#ajustes").close();
+
+    /* ---- busca global: Ctrl+K, / ou o botão 🔍 ---- */
+    let buscaRes = [], buscaSel = 0, buscaTimer = null, buscaSeq = 0;
+    const nomesTipo = {
+      lancamento: "lançamentos", conta: "contas", carteira: "carteiras", cartao: "cartões",
+      recorrencia: "recorrências", meta: "metas",
+    };
+    function abreBusca() {
+      if (!telas.length) return;
+      $("#busca").showModal();
+      $("#busca-q").select();
+      if (!$("#busca-q").value) $("#busca-res").innerHTML = `<div class="vazio">digite para buscar em todos os meses</div>`;
+    }
+    $("#btBusca").onclick = abreBusca;
+    $("#busca-q").addEventListener("input", () => {
+      clearTimeout(buscaTimer);
+      buscaTimer = setTimeout(executaBusca, 160);
+    });
+    async function executaBusca() {
+      const q = $("#busca-q").value.trim();
+      const seq = ++buscaSeq;
+      if (!q) { buscaRes = []; $("#busca-res").innerHTML = ""; return; }
+      const r = await (await fetch(api("api/busca?q=" + encodeURIComponent(q)))).json().catch(() => []);
+      if (seq !== buscaSeq) return; // chegou atrasada: já há outra busca
+      buscaRes = Array.isArray(r) ? r : [];
+      buscaSel = 0;
+      desenhaBusca();
+    }
+    function desenhaBusca() {
+      if (!buscaRes.length) { $("#busca-res").innerHTML = `<div class="vazio">nada encontrado</div>`; return; }
+      let html = "", grupo = "";
+      buscaRes.forEach((r, i) => {
+        if (r.tipo !== grupo) { grupo = r.tipo; html += `<div class="grupo">${esc(nomesTipo[grupo] || grupo)}</div>`; }
+        const det = (r.data ? dataBR(r.data) + "/" + r.data.slice(0, 4) + " · " : "") + r.detalhe;
+        const valor = r.tipo === "lancamento" && r.detalhe.startsWith("pagar") ? span("err", esc(brl(r.valor)))
+          : r.tipo === "lancamento" ? span("ok", esc(brl(r.valor))) : esc(r.valor ? brl(r.valor) : "");
+        html += `<button type="button" class="res${i === buscaSel ? " ativo" : ""}${r.quitado ? " quitado" : ""}" data-i="${i}">` +
+          `<span class="tit">${esc(r.titulo)}</span><span>${valor}</span><span class="det">${esc(det)}</span></button>`;
+      });
+      $("#busca-res").innerHTML = html;
+      $("#busca-res").querySelectorAll(".res").forEach(b => b.onclick = () => abreResultado(buscaRes[+b.dataset.i]));
+      const at = $("#busca-res .res.ativo");
+      if (at) at.scrollIntoView({ block: "nearest" });
+    }
+    $("#busca").addEventListener("keydown", ev => {
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        if (!buscaRes.length) return;
+        buscaSel = (buscaSel + (ev.key === "ArrowDown" ? 1 : -1) + buscaRes.length) % buscaRes.length;
+        desenhaBusca();
+        ev.preventDefault();
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        if (buscaRes[buscaSel]) abreResultado(buscaRes[buscaSel]);
+      }
+    });
+    $("#busca").addEventListener("click", ev => { if (ev.target === $("#busca")) $("#busca").close(); });
+    /* abre a tela do achado; num lançamento, já no mês dele e com a linha selecionada */
+    function abreResultado(r) {
+      $("#busca").close();
+      const i = telas.findIndex(t => t.titulo === r.tela);
+      if (i < 0) { mensagem(`a tela ${r.tela} não existe neste modo`, true); return; }
+      if (r.tipo === "lancamento" && telas[i].listaMensal && r.data) {
+        params[i] = setArg(params[i], "--mes", r.data.slice(0, 7));
+        params[i] = setArg(params[i], "--tipo", "");
+      }
+      selecionado[i] = String(r.id);
+      abre(i); // recarrega já no mês do achado e mantém a seleção
+    }
 
     init();
   </script>

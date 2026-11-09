@@ -53,6 +53,9 @@ type LancamentoParams struct {
 	// com a sua parte (valor ÷ pessoas do grupo) e a parte das outras pessoas
 	// vira uma receita pendente separada (o reembolso que elas te devem).
 	RecebePagamento bool
+	// PagoPor (com GrupoID, tipo pagar): a despesa foi paga por outra pessoa do
+	// grupo; o lançamento fica pendente com a sua parte, que você deve a ela
+	PagoPor string
 }
 
 // LancamentoCriado resume um lançamento inserido por CriarLancamentos.
@@ -69,6 +72,18 @@ type LancamentoCriado struct {
 func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []LancamentoCriado, bool, error) {
 	if p.RecebePagamento && (p.GrupoID == 0 || p.Tipo != "pagar") {
 		return nil, nil, false, fmt.Errorf("recebe-pagamento exige --grupo e tipo pagar")
+	}
+	if p.PagoPor != "" {
+		if p.GrupoID == 0 || p.Tipo != "pagar" || p.RecebePagamento || p.CartaoID != 0 {
+			return nil, nil, false, fmt.Errorf("pago-por exige --grupo, tipo pagar, e não combina com recebe-pagamento nem cartão")
+		}
+		nome, err := pessoaDoGrupo(conn, p.GrupoID, p.PagoPor)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		p.PagoPor = nome
+		p.Quitado = false // é o que você deve: fica pendente até o acerto
+		p.AutoQuit = false
 	}
 	if p.Repetir < 1 {
 		p.Repetir = 1
@@ -229,9 +244,9 @@ func CriarLancamentos(conn *sql.DB, p LancamentoParams) ([]LancamentoCriado, []L
 			recebePagItem = 1
 		}
 		res, err := tx.Exec(`
-			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id, cartao_id, data_compra, observacao, auto_quitar, recebe_pagamento)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			p.Tipo, descItem, minhaParte, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo, cartao, dataCompraItem, p.Obs, autoQuit, recebePagItem,
+			INSERT INTO lancamentos (tipo, descricao, valor, categoria, vencimento, status, quitado_em, conta_id, carteira_id, grupo_id, cartao_id, data_compra, observacao, auto_quitar, recebe_pagamento, pago_por)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			p.Tipo, descItem, minhaParte, strings.ToLower(p.Cat), vencItem, status, quitadoEm, conta, carteira, grupo, cartao, dataCompraItem, p.Obs, autoQuit, recebePagItem, p.PagoPor,
 		)
 		if err != nil {
 			return nil, nil, categoriaNova, err
@@ -285,6 +300,7 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	autoQuit := fs.Bool("auto-quitar", false, "quita sozinho ao chegar o vencimento")
 	quitado := fs.Bool("quitado", false, "já marca como quitado (pago/recebido)")
 	recebePag := fs.Bool("recebe-pagamento", false, "as outras pessoas do grupo te pagam: a despesa fica só com a sua parte e o resto vira receita de reembolso")
+	pagoPor := fs.String("pago-por", "", "quem do grupo pagou a despesa (você fica devendo a sua parte a essa pessoa)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -312,7 +328,7 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 		Tipo: tipo, Desc: *desc, Valor: centavos, Cat: *cat, Venc: data,
 		ContaID: *contaID, CartID: *cartID, GrupoID: *grupoID, CartaoID: *cartaoID,
 		Repetir: *repetir, Parcelas: *parcelas, Obs: *obs, AutoQuit: *autoQuit, Quitado: *quitado,
-		RecebePagamento: *recebePag,
+		RecebePagamento: *recebePag, PagoPor: *pagoPor,
 	})
 	if err != nil {
 		return err
@@ -329,6 +345,14 @@ func lancamentoAdd(conn *sql.DB, tipo string, args []string) error {
 	if categoriaNova {
 		fmt.Printf("Aviso: primeira vez usando a categoria %q — confira se não é um erro de digitação.\n",
 			strings.ToLower(*cat))
+	}
+	// o gasto novo encostou (80%) ou estourou o plano da categoria?
+	if tipo == "pagar" && len(criados) > 0 {
+		var catFinal, dataPlano string
+		if conn.QueryRow(`SELECT categoria, COALESCE(data_compra, vencimento) FROM lancamentos WHERE id = ?`,
+			criados[0].ID).Scan(&catFinal, &dataPlano) == nil {
+			fmt.Print(AvisoPlano(conn, catFinal, dataPlano))
+		}
 	}
 	return nil
 }

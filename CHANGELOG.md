@@ -7,6 +7,32 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.6.0] - 2026-11-09
+
+### Adicionado
+
+- **PIN** para a web e o app (`prisma pin definir`, ou **⚙ Ajustes** na página): pede o PIN ao abrir e tranca depois de 15 min parado (configurável com `prisma pin tempo N`; botão 🔒 tranca na hora). Só o hash vai para o disco (PBKDF2-SHA256, em `seguranca.json`), e erros seguidos impõem uma espera crescente.
+- **Prisma no celular**: com PIN, o acesso pela rede de casa (**⚙ Ajustes**, `prisma pin rede on` ou `prisma --web --rede`) abre o Prisma em `http://<ip-do-computador>:8765/`, com QR code para a câmera. A página é instalável na tela inicial (manifesto e ícones) e ganhou layout de celular: menu embaixo, alvos de toque maiores e formulários sem zoom.
+- **Tema claro** (automático, claro ou escuro, em **⚙ Ajustes**), inclusive nos gráficos.
+- **Busca em tudo** (`Ctrl+K` ou `/` na web e no app; `prisma buscar` no terminal; ferramenta `buscar` no MCP): lançamentos de qualquer mês por descrição, categoria, observação, valor (`89,90`) ou tag (`#viagem`), e contas, carteiras, cartões, recorrências e metas pelo nome, sem diferenciar acentos. O achado abre na tela certa, no mês dele.
+
+- **Calendário** (tela nova; `prisma calendario`): o mês em grade com as contas de cada dia e o saldo previsto dia a dia, com aviso quando fica negativo. No celular, vira lista.
+- **Atenção / insights** (tela Início; `prisma insights`; ferramenta `insights` no MCP): saldo previsto negativo, planos em 80% ou estourados, categoria acima da média, assinatura mais cara, gasto fora do comum, fatura acima da média e quem deve a quem. O lembrete diário do app e do bot passa a incluir o saldo negativo e os planos que cruzaram 80% ou 100% (uma vez cada).
+- **Orçamento que acumula** (`prisma plano add ... --acumula`): a sobra de um período soma no seguinte; aviso na hora ao lançar um gasto que leva o plano a 80%.
+- **#tags** nas descrições (`prisma tags`, tela Tags, busca por `#tag`; na web viram link para a busca).
+- **Comprovantes (📎)** em cada lançamento (`prisma anexar`, `prisma anexos`; na web e no app, com a câmera do celular): foto ou PDF até 10 MB, na pasta `anexos` ao lado do banco. As fotos mandadas ao bot ganham cópia local.
+- **Investimentos e patrimônio** (tela Investimentos; `prisma investimento`, `prisma patrimonio`): aplicações com aportes e resgates (como transferências), valor de hoje, rendimento total e do mês, e o patrimônio líquido (saldo + rendimento − faturas − dívidas) com a evolução em 12 meses. Também no Início e no Analytics.
+- **Ajuda para o IR** (`prisma ir [--ano] [--html]`; tela Relatório › `i`): despesas dedutíveis (saúde, educação, PGBL) com os limites, rendimentos por categoria e saldos em 31/12 para Bens e Direitos, numa página A4 para imprimir.
+- **Acerto de contas** nos grupos (`prisma acerto`, `prisma acertar`; `--pago-por` no `pagar add`; `pagou:Nome` no bot; tela Grupos › `s`): quem deve a quem, quitando as duas pontas de uma vez — também em grupos de 3 ou mais.
+
+### Alterado
+
+- No modo pessoal, `prisma investimento` passa a ser a carteira de investimentos (no modo empresa continua o lançamento da empresa).
+- Telas novas na TUI e na web (Tags, Calendário, Investimentos): os atalhos numéricos das telas seguintes mudaram — veja a tabela no manual.
+- O patrimônio do Analytics passa a descontar as faturas em aberto e somar o rendimento dos investimentos.
+- Com PIN, abrir o relatório ou a ajuda do IR no navegador do sistema pede o PIN e volta para a página pedida.
+- `golang.org/x/sys` 0.44.0 (corrige GO-2026-5024, só no Windows e numa função que o Prisma não usa).
+
 ## [1.5.0] - 2026-11-09
 
 > Quem está na 1.4.0 atualiza esta vez com `prisma atualizar` (ou baixando o pacote de novo); a partir daqui, o app atualiza sozinho pelo botão **atualizar agora**.
@@ -425,7 +451,8 @@ em uso desde a série 0.10.
 - Bot de Telegram: registra e consulta lançamentos por mensagem.
 - Primeira versão do projeto (CLI de finanças em Go + SQLite).
 
-[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v1.5.0...HEAD
+[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.2.0...v1.3.0

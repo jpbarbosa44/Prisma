@@ -144,6 +144,7 @@ func TestTodasAsFerramentasLeem(t *testing.T) {
 		"simular":      {"valor": "4.000,00", "parcelas": 12, "juros": 1.5, "entrada": 500},
 		"consulta_sql": {"sql": "SELECT categoria, SUM(valor) FROM lancamentos GROUP BY categoria"},
 		"analise":      {"tipo": "health_score"},
+		"buscar":       {"termo": "mercado 89,90", "limite": 5},
 	}
 	var msgs []string
 	for i, f := range ferramentas {

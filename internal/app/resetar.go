@@ -31,6 +31,9 @@ func Resetar(conn *sql.DB, args []string, modoEmpresa bool) error {
 		{"aportes_capital", "aporte(s) de capital"},
 		{"socios", "sócio(s)"},
 		{"comprovantes", "comprovante(s)"},
+		{"anexos", "anexo(s)"},
+		{"investimentos_movs", "movimento(s) de investimento"},
+		{"investimentos", "investimento(s)"},
 		{"grupo_pessoas", "pessoa(s) de grupo"},
 		{"lancamentos", "lançamento(s)"},
 		{"transferencias", "transferência(s)"},
@@ -45,6 +48,7 @@ func Resetar(conn *sql.DB, args []string, modoEmpresa bool) error {
 		{"categorias", "categoria(s)"},
 		{"carteiras", "carteira(s)"},
 		{"contas", "conta(s)"},
+		{"preferencias", "preferência(s)"},
 	}
 	total := 0
 	resumo := make([]string, 0, len(tabelas))

@@ -105,6 +105,8 @@ type tela struct {
 	// visual: na web, a tela tem um desenho próprio em vez do texto da CLI
 	// ("inicio" = cards de /api/inicio); a TUI usa o conteudo de sempre.
 	visual string
+	// porMes liga só o ←/→ de mês (filtro --mes), sem o t de pagar/receber
+	porMes bool
 }
 
 // selecionavel é uma linha de tabela cujo primeiro campo é um ID numérico.
@@ -568,6 +570,16 @@ func (m model) teclaTela(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	// listagens mensais: ←/→ muda o mês, t alterna pagar/receber/todos
+	if m.telas[m.atual].porMes {
+		switch tecla {
+		case "left":
+			m.ajustaMes(-1)
+			return m, nil
+		case "right":
+			m.ajustaMes(1)
+			return m, nil
+		}
+	}
 	if m.telas[m.atual].listaMensal {
 		switch tecla {
 		case "left":
@@ -1004,6 +1016,9 @@ func (m model) viewTela() string {
 	}
 	if t.listaMensal {
 		teclas = append(teclas, "←/→ mês", "t pagar/receber")
+	}
+	if t.porMes {
+		teclas = append(teclas, "←/→ mês")
 	}
 	if m.selPos >= 0 && t.temMulti() {
 		teclas = append(teclas, "espaço marcar")

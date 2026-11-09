@@ -827,33 +827,28 @@ func linhaPilar(nome string, parte, total int64, ideal int, cor string) {
 	fmt.Printf("  %-18s %s %5.1f%%  (ideal %d%%, %s)\n", nome, b.String(), p, ideal, money.Format(parte))
 }
 
-// AnalyticsPatrimonio (RF10) mostra o patrimônio líquido (ativos − dívidas) e
-// sua evolução mês a mês.
+// AnalyticsPatrimonio (RF10) mostra o patrimônio líquido (saldo + rendimento
+// dos investimentos − faturas em aberto − dívidas) e sua evolução mês a mês —
+// o mesmo cálculo da tela Investimentos (CalculaPatrimonio).
 func AnalyticsPatrimonio(conn *sql.DB) error {
-	ativos, err := saldoTotal(conn)
+	p, err := CalculaPatrimonio(conn)
 	if err != nil {
 		return err
 	}
-	dividas, err := dividasEstimadas(conn)
-	if err != nil {
-		return err
-	}
-	liquido := ativos - dividas
-
 	fmt.Println("PATRIMÔNIO LÍQUIDO — Net Worth")
 	fmt.Println()
-	fmt.Printf("  Ativos (contas + carteiras):  %s\n", money.Format(ativos))
-	fmt.Printf("  Dívidas (emergências ativas): %s  (saldo devedor estimado)\n", money.Format(dividas))
-	fmt.Printf("  Patrimônio líquido:           %s\n\n", money.Format(liquido))
-
-	saldos, err := SaldoMensal(conn, 12)
-	if err != nil {
-		return err
+	fmt.Printf("  Ativos (contas + carteiras):  %s\n", money.Format(p.Saldo))
+	if p.Investido > 0 || p.Rendimento != 0 {
+		fmt.Printf("  Rendimento dos investimentos: %s  (sobre %s aplicados)\n", money.Format(p.Rendimento), money.Format(p.Investido))
 	}
+	fmt.Printf("  Faturas em aberto:            %s\n", money.Format(p.Faturas))
+	fmt.Printf("  Dívidas (emergências ativas): %s  (saldo devedor estimado)\n", money.Format(p.Dividas))
+	fmt.Printf("  Patrimônio líquido:           %s\n\n", money.Format(p.Liquido))
+
 	fmt.Println("Evolução (patrimônio líquido ao fim de cada mês):")
-	serie := make([]int64, len(saldos))
-	for i, s := range saldos {
-		serie[i] = s.Valor - dividas
+	serie := make([]int64, len(p.Evolucao))
+	for i, s := range p.Evolucao {
+		serie[i] = s.Valor
 	}
 	var capP string
 	if n := len(serie); n > 0 {

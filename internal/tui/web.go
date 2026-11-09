@@ -20,6 +20,7 @@ import (
 	"prisma/internal/app"
 	"prisma/internal/db"
 	"prisma/internal/remote"
+	"prisma/internal/seguranca"
 	"prisma/internal/update"
 )
 
@@ -66,12 +67,14 @@ type servidorWeb struct {
 	modos         map[string]*modoWeb
 	extras        []*sql.DB // bancos abertos pela troca de modo, fechados no Shutdown
 	mu            sync.Mutex
+	seg           *estadoSeguranca // PIN, sessões e o acesso pelo celular
 }
 
 // novoServidorWeb monta o servidor já com o modo inicial aberto sobre conn.
 func novoServidorWeb(modo string, conn *sql.DB) *servidorWeb {
 	return &servidorWeb{
 		inicial: modo,
+		seg:     novoEstadoSeguranca(),
 		modos:   map[string]*modoWeb{modo: {conn: conn, telas: telasDoModo(modo, conn), dono: modo != webAnalytics}},
 	}
 }
@@ -222,8 +225,23 @@ func rodaWeb(s *servidorWeb, args []string) error {
 			porta = p
 		case "--sem-abrir":
 			abrir = false
+		case "--rede":
+			// libera o celular (e lembra a escolha); exige PIN
+			c, err := seguranca.Carrega()
+			if err != nil {
+				return err
+			}
+			if !c.TemPIN() {
+				return fmt.Errorf("defina um PIN antes de liberar o acesso pela rede: prisma pin definir")
+			}
+			if !c.Rede {
+				c.Rede = true
+				if err := seguranca.Salva(c); err != nil {
+					return err
+				}
+			}
 		default:
-			return fmt.Errorf("opção desconhecida: %q (use --porta N ou --sem-abrir)", args[i])
+			return fmt.Errorf("opção desconhecida: %q (use --porta N, --sem-abrir ou --rede)", args[i])
 		}
 	}
 
@@ -233,6 +251,13 @@ func rodaWeb(s *servidorWeb, args []string) error {
 	}
 	url := "http://" + ouvinte.Addr().String()
 	fmt.Printf("prisma web em %s — ctrl+c encerra\n", url)
+	if e := s.estadoRede(); e["ligado"] == true {
+		for _, end := range e["enderecos"].([]string) {
+			fmt.Printf("no celular (mesma rede): %s\n", end)
+		}
+	} else if e["erro"] != "" {
+		fmt.Printf("acesso pela rede: %s\n", e["erro"])
+	}
 	if abrir {
 		AbreNavegador(url)
 	}
@@ -300,6 +325,7 @@ func (s *servidorWeb) prepara(porta int) (net.Listener, *http.Server, error) {
 			}
 			s.muModos.Unlock()
 			for _, c := range bancos {
+				app.LimpaAnexosOrfaos(c)
 				if _, err := app.GerarRecorrencias(c); err != nil {
 					fmt.Fprintf(os.Stderr, "aviso: recorrências: %v\n", err)
 				}
@@ -320,6 +346,13 @@ func (s *servidorWeb) prepara(porta int) (net.Listener, *http.Server, error) {
 		MaxHeaderBytes:    1 << 16, // 64 KiB
 	}
 	srv.RegisterOnShutdown(s.fechaExtras)
+	srv.RegisterOnShutdown(s.desligaRede)
+	// o acesso pelo celular volta sozinho se ficou ligado da última vez
+	if cfg := s.seg.config(); cfg.Rede && cfg.TemPIN() {
+		if err := s.ligaRede(); err != nil {
+			fmt.Fprintf(os.Stderr, "aviso: acesso pela rede: %v\n", err)
+		}
+	}
 	return ouvinte, srv, nil
 }
 
@@ -331,6 +364,13 @@ func (s *servidorWeb) rotas() http.Handler {
 	mux.HandleFunc("/api/conteudo", s.apiConteudo)
 	mux.HandleFunc("/api/graficos", s.apiGraficos)
 	mux.HandleFunc("/api/inicio", s.apiInicio)
+	mux.HandleFunc("GET /api/busca", s.apiBusca)
+	mux.HandleFunc("GET /api/calendario", s.apiCalendario)
+	mux.HandleFunc("GET /api/patrimonio", s.apiPatrimonio)
+	mux.HandleFunc("GET /api/anexos", s.apiAnexos)
+	mux.HandleFunc("POST /api/anexos", s.apiEnviarAnexo)
+	mux.HandleFunc("GET /api/anexo", s.apiAnexo)
+	mux.HandleFunc("POST /api/anexos/remover", s.apiRemoverAnexo)
 	mux.HandleFunc("/api/form", s.apiForm)
 	mux.HandleFunc("/api/executar", s.apiExecutar)
 	mux.HandleFunc("GET /api/destinos", s.apiDestinos)
@@ -339,6 +379,7 @@ func (s *servidorWeb) rotas() http.Handler {
 	mux.HandleFunc("POST /api/desfazer-lote", s.apiDesfazerLote)
 	mux.HandleFunc("GET /api/exportar.csv", s.apiExportar)
 	mux.HandleFunc("GET /api/relatorio", s.apiRelatorio)
+	mux.HandleFunc("GET /api/ir", s.apiIR)
 	if s.aoFocar != nil {
 		// só no app desktop: focar a janela e salvar a exportação em Downloads
 		mux.HandleFunc("POST /api/focar", s.apiFocar)
@@ -350,7 +391,8 @@ func (s *servidorWeb) rotas() http.Handler {
 	if s.atualizar != nil {
 		mux.HandleFunc("POST /api/atualizar", s.apiAtualizar)
 	}
-	return protegeLocal(mux)
+	s.rotasSeguranca(mux)
+	return protegeLocal(s.exigeSessao(mux))
 }
 
 // hostLocal diz se um hostname é o próprio computador.
@@ -371,13 +413,15 @@ func protegeLocal(h http.Handler) http.Handler {
 			host = apenas
 		}
 		host = strings.Trim(host, "[]") // [::1] com IPv6 sem porta
-		if !hostLocal(host) {
+		if !hostLocal(host) && !hostDaRede(host) {
 			http.Error(w, "host não permitido", http.StatusForbidden)
 			return
 		}
 		if origem := r.Header.Get("Origin"); origem != "" && r.Method != http.MethodGet {
+			// do próprio computador, ou da mesma origem (o celular abrindo
+			// http://192.168.x.y:8765 manda Origin igual ao Host)
 			u, err := url.Parse(origem)
-			if err != nil || !hostLocal(u.Hostname()) {
+			if err != nil || !(hostLocal(u.Hostname()) || u.Host == r.Host) {
 				http.Error(w, "origem não permitida", http.StatusForbidden)
 				return
 			}
@@ -425,6 +469,11 @@ func (s *servidorWeb) apiVersao(w http.ResponseWriter, r *http.Request) {
 		"modoEmpresa":   modo == webEmpresa,
 		"modoAnalytics": modo == webAnalytics,
 	}
+	if cfg := s.seg.config(); cfg.TemPIN() {
+		v["pin"] = true
+		v["ociosidade"] = int(cfg.Ociosidade().Minutes())
+	}
+	v["local"] = ipLocal(r) // o painel do celular só aparece no computador
 	if s.lembretes != nil { // só no app: a página mostra o interruptor
 		v["lembretes"] = s.lembretes()
 	}
@@ -452,6 +501,7 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 		Padrao      []string   `json:"padrao"`
 		Abas        []string   `json:"abas,omitempty"`   // visões alternáveis por ←/→ (vazio = sem abas)
 		ListaMensal bool       `json:"listaMensal"`      // ←/→ muda o mês, t alterna pagar/receber
+		PorMes      bool       `json:"porMes,omitempty"` // só ←/→ muda o mês
 		Visual      string     `json:"visual,omitempty"` // desenho próprio na web ("inicio")
 		Acoes       []acaoJSON `json:"acoes"`
 	}
@@ -462,7 +512,7 @@ func (s *servidorWeb) apiTelas(w http.ResponseWriter, r *http.Request) {
 	}
 	saida := make([]telaJSON, len(m.telas))
 	for i, t := range m.telas {
-		tj := telaJSON{Titulo: t.titulo, Resumo: t.resumo, Padrao: t.padrao, ListaMensal: t.listaMensal, Visual: t.visual}
+		tj := telaJSON{Titulo: t.titulo, Resumo: t.resumo, Padrao: t.padrao, ListaMensal: t.listaMensal, Visual: t.visual, PorMes: t.porMes}
 		for _, ab := range t.abas {
 			tj.Abas = append(tj.Abas, ab.nome)
 		}
@@ -542,6 +592,57 @@ func (s *servidorWeb) apiGraficos(w http.ResponseWriter, r *http.Request) {
 
 // apiInicio devolve o painel da tela Início (saldo, vencimentos da semana,
 // faturas e se o banco está vazio), para a página desenhar os cards.
+// apiCalendario devolve o calendário do mês (?mes=AAAA-MM) para a grade.
+func (s *servidorWeb) apiCalendario(w http.ResponseWriter, r *http.Request) {
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	s.mu.Lock()
+	c, err := app.Calendario(m.conn, r.URL.Query().Get("mes"))
+	s.mu.Unlock()
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	responde(w, c)
+}
+
+// apiPatrimonio devolve o patrimônio líquido e as aplicações (tela Investimentos).
+func (s *servidorWeb) apiPatrimonio(w http.ResponseWriter, r *http.Request) {
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	s.mu.Lock()
+	p, err := app.CalculaPatrimonio(m.conn)
+	s.mu.Unlock()
+	if err != nil {
+		respondeErro(w, http.StatusInternalServerError, err)
+		return
+	}
+	responde(w, p)
+}
+
+// apiBusca é a busca global (Ctrl+K): lançamentos e cadastros pelo termo q.
+func (s *servidorWeb) apiBusca(w http.ResponseWriter, r *http.Request) {
+	m, err := s.modo(r)
+	if err != nil {
+		respondeErro(w, http.StatusBadRequest, err)
+		return
+	}
+	s.mu.Lock()
+	rs, err := app.Buscar(m.conn, r.URL.Query().Get("q"), 40)
+	s.mu.Unlock()
+	if err != nil {
+		respondeErro(w, http.StatusInternalServerError, err)
+		return
+	}
+	responde(w, rs)
+}
+
 func (s *servidorWeb) apiInicio(w http.ResponseWriter, r *http.Request) {
 	m, err := s.modo(r)
 	if err != nil {

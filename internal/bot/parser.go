@@ -26,6 +26,7 @@ import (
 //	grupo:1+           idem, e além disso lança a parte das outras pessoas como
 //	                   receita de reembolso pendente (elas vão te pagar)
 //	cartao:1           lança no cartão; a data vira a da compra e vai pra fatura
+//	pagou:Ana          (com grupo:N) quem pagou foi a Ana: você deve a sua parte
 //
 // O que sobra vira descrição; sem descrição, usa o nome da categoria.
 
@@ -36,6 +37,7 @@ var (
 	reCarteira = regexp.MustCompile(`^(?:cart|carteira):(\d+)$`)
 	reGrupo    = regexp.MustCompile(`^grupo:(\d+)(\+)?$`)
 	reCartao   = regexp.MustCompile(`^(?:cartao|cartão):(\d+)$`)
+	rePagou    = regexp.MustCompile(`^pagou:(\pL[\pL\pN_-]*)$`)
 	reDia      = regexp.MustCompile(`^\d{1,2}$`)
 	reDiaMes   = regexp.MustCompile(`^(\d{1,2})/(\d{1,2})$`)
 )
@@ -74,6 +76,8 @@ func parseMensagem(msg string, agora time.Time) (app.LancamentoParams, error) {
 			m := reGrupo.FindStringSubmatch(tok)
 			p.GrupoID, _ = strconv.ParseInt(m[1], 10, 64)
 			p.RecebePagamento = m[2] == "+"
+		case rePagou.MatchString(tok):
+			p.PagoPor = rePagou.FindStringSubmatch(tok)[1]
 		case reCartao.MatchString(tok):
 			p.CartaoID, _ = strconv.ParseInt(reCartao.FindStringSubmatch(tok)[1], 10, 64)
 		case !temValor && pareceValor(tok):

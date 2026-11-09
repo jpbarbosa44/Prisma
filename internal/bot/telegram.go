@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -172,4 +173,26 @@ func (c *cliente) responderCallback(id, texto string) error {
 		params.Set("text", texto)
 	}
 	return c.chamar("answerCallbackQuery", params, nil)
+}
+
+// baixar busca o arquivo de uma foto (getFile + download), até max bytes.
+func (c *cliente) baixar(fileID string, max int64) ([]byte, error) {
+	var f struct {
+		Caminho string `json:"file_path"`
+	}
+	if err := c.chamar("getFile", url.Values{"file_id": {fileID}}, &f); err != nil {
+		return nil, err
+	}
+	if f.Caminho == "" {
+		return nil, fmt.Errorf("getFile: sem caminho")
+	}
+	resp, err := c.http.Get(c.base + "/file/bot" + c.token + "/" + f.Caminho)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download: %s", resp.Status)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, max+1))
 }

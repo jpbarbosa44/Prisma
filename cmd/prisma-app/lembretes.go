@@ -46,10 +46,23 @@ func lembreteDoDia(conn *sql.DB, agora time.Time) {
 	muEstado.Unlock()
 
 	avisos, err := app.Vencimentos(conn, agora, 1)
-	if err != nil || len(avisos) == 0 {
+	if err != nil {
+		return
+	}
+	atencao, _ := app.AtencaoDoDia(conn, agora, "app")
+	if len(avisos) == 0 && len(atencao) == 0 {
 		return
 	}
 	titulo, texto := textoLembrete(avisos)
+	if len(avisos) == 0 {
+		titulo = "Prisma: atenção"
+	}
+	for _, a := range atencao {
+		if texto != "" {
+			texto += "\n"
+		}
+		texto += "⚠ " + a
+	}
 	notifica.Enviar(titulo, texto)
 }
 

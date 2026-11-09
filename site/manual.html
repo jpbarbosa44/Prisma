@@ -242,25 +242,28 @@ Telas e seus atalhos específicos:
 
 | Tela | Atalhos |
 |---|---|
-| 1 Início | `u` quitar — o que vence nos próximos 7 dias, atrasadas e faturas |
+| 1 Início | `u` quitar — o que vence nos próximos 7 dias, avisos (atenção), atrasadas e faturas |
 | 2 Saldo | `t` transferir, `z` zerar banco |
 | 3 Contas | `a` `e` `t` extrato `l` `x` |
 | 4 Carteiras | `a` `e` `t` extrato `l` `x` |
-| 5 Grupos | `a` `e` `v` ver despesas, `l` `x` |
+| 5 Grupos | `s` acertar com alguém, `a` `e` `v` ver despesas, `l` `x` |
 | 6 Categorias | `a` `e` renomear `c` classe `x`, `r` nova regra, `d` apagar regra |
-| 7 Cartões | `a` `e` `t` ver fatura, `p` pagar fatura, `l` `x` |
-| 8 Pagar/Receber | `p` a pagar, `r` a receber, `b` colar boleto/Pix, `u` quitar (`espaço` marca várias), `e` editar, `x`, `f` filtrar |
-| 9 Recorrências | `a` `e` `f` filtrar `x` |
-| 10 Assinaturas | `a` `e` `x` |
-| 11 Emergência | `a`, `p` ver plano, `e`, `l`, `u` quitar, `x` |
-| 12 Metas | `a` nova, `g` guardar, `t` retirar, `e`, `c` concluir, `x` |
-| 13 Planejamento | `a`, `e`, `s` status, `l`, `x` |
-| 14 Relatório | `m` meses, `p` fechamento do mês (PDF) |
-| 15 Estatísticas | `m` meses |
-| 16 Gráficos | `m` meses |
-| 17 Previsão | `m` meses |
-| 18 Simulação | `s` simular |
-| 19 Como usar | — (só documentação) |
+| 7 Tags | `v` ver tag, `l` todas |
+| 8 Cartões | `a` `e` `t` ver fatura, `p` pagar fatura, `l` `x` |
+| 9 Pagar/Receber | `p` a pagar, `r` a receber, `b` colar boleto/Pix, `u` quitar (`espaço` marca várias), `e` editar, `x`, `f` filtrar |
+| 10 Calendário | `←/→` mês, `u` quitar |
+| 11 Recorrências | `a` `e` `f` filtrar `x` |
+| 12 Assinaturas | `a` `e` `x` |
+| 13 Emergência | `a`, `p` ver plano, `e`, `l`, `u` quitar, `x` |
+| 14 Metas | `a` nova, `g` guardar, `t` retirar, `e`, `c` concluir, `x` |
+| 15 Investimentos | `a` novo, `g` aportar, `r` resgatar, `v` atualizar valor, `x` |
+| 16 Planejamento | `a`, `e`, `s` status, `l`, `x` |
+| 17 Relatório | `m` meses, `p` fechamento do mês (PDF), `i` ajuda para o IR (PDF) |
+| 18 Estatísticas | `m` meses |
+| 19 Gráficos | `m` meses |
+| 20 Previsão | `m` meses |
+| 21 Simulação | `s` simular |
+| 22 Como usar | — (só documentação) |
 
 ## A interface web (--web)
 
@@ -270,9 +273,10 @@ As mesmas telas da TUI, no navegador:
 prisma --web                      # sobe o servidor e abre o navegador
 prisma --web --porta 8080         # outra porta (padrão: 7747)
 prisma --web --sem-abrir          # só sobe o servidor, sem abrir o navegador
+prisma --web --rede               # libera também o celular (exige PIN; veja abaixo)
 ```
 
-O servidor escuta **somente em `127.0.0.1`** — nada fica acessível pela rede e nenhum dado sai da sua máquina. A página inteira vai embutida no binário; não há dependências nem arquivos extras. `ctrl+c` no terminal encerra.
+O servidor escuta **somente em `127.0.0.1`** — nada fica acessível pela rede e nenhum dado sai da sua máquina, a menos que você libere o [acesso pelo celular](#no-celular). A página inteira vai embutida no binário; não há dependências nem arquivos extras. `ctrl+c` no terminal encerra.
 
 A navegação espelha a TUI:
 
@@ -287,7 +291,36 @@ A navegação espelha a TUI:
 - Nas telas com abas (Estatísticas, Gráficos), `←/→` ou um clique na régua trocam a visão. Em Pagar/Receber, `←/→` muda o mês e `t` alterna entre pagar, receber e todos.
 - Nos formulários, `enter` confirma e `esc` cancela; campos com `*` são obrigatórios; em edições, campos vazios mantêm o valor atual.
 - Remoções e o "zerar banco" pedem confirmação, como na TUI.
+- **Atenção**, na tela Início: avisos automáticos — o saldo previsto que fica negativo, planos em 80% ou estourados, categorias bem acima da média dos 3 meses anteriores, assinaturas que ficaram mais caras, gastos fora do comum, faturas acima da média e quem deve a quem nos grupos. Um clique abre a tela do assunto.
+- **Calendário**: o mês em grade, com as contas de cada dia (as do cartão juntas, como fatura) e o **saldo previsto** ao fim de cada dia; dias com saldo negativo ou conta atrasada ficam em vermelho. Clique no dia para ver as contas e marcar como pagas. No celular, vira uma lista dos dias com conta.
+- **📎 Comprovantes**: em Pagar/Receber, o botão 📎 da linha guarda a foto (no celular, direto da câmera) ou o PDF do comprovante e mostra os já guardados.
+- **#tags**: as `#palavras` das descrições aparecem destacadas; um clique busca todos os lançamentos da tag.
+- **Investimentos**: patrimônio líquido, aplicado, valor de hoje e rendimento em cards, o gráfico do patrimônio em 12 meses e as aplicações com os botões **atualizar valor** e **aportar**.
+- **Busca** (`Ctrl+K`, `/` ou o botão 🔍 no topo): acha lançamentos de qualquer mês pela descrição, categoria, observação ou valor (`89,90` acha valores a menos de 1%; `#viagem` acha a tag), e contas, carteiras, cartões, recorrências e metas pelo nome — sem diferenciar acentos. `enter` abre a tela do achado já no mês dele, com a linha selecionada.
+- **⚙ Ajustes** (no topo): tema **automático** (segue o sistema), **claro** ou **escuro**; o [PIN](#pin); e o [acesso pelo celular](#no-celular).
 - O seletor **Pessoal · Empresa · Analytics** no topo troca de modo sem reiniciar nada: o mesmo servidor atende o banco pessoal, o da empresa (como `prisma --empresa`) e o Analytics (como `prisma --analytics`, somente leitura). O banco de cada modo só é aberto na primeira vez que você o escolhe, e o modo fica na URL (`?modo=empresa`), então dá para guardar nos favoritos. `prisma --empresa --web` e `prisma --analytics --web` só mudam o modo em que a página abre.
+
+### PIN
+
+Com um PIN, a web e o app pedem o PIN ao abrir e trancam sozinhos depois de 15 minutos parados (o botão 🔒 no topo tranca na hora). Defina em **⚙ Ajustes** ou pelo terminal:
+
+```sh
+prisma pin definir      # cria ou troca (pede o atual, se houver)
+prisma pin tempo 30     # tranca depois de 30 min parado
+prisma pin remover      # tira o PIN (e desliga o acesso pelo celular)
+prisma pin              # mostra como está
+```
+
+O PIN vale para este computador (os três modos e o celular) e fica em `seguranca.json`, ao lado do banco — só o hash, nunca o PIN. Depois de 5 erros seguidos, o Prisma espera 30 s antes de aceitar outra tentativa, e a espera dobra a cada novo erro. Esqueceu o PIN? Apague o `seguranca.json` (os dados não são afetados).
+
+### No celular
+
+Com PIN definido, marque **liberar o acesso pela rede de casa** em **⚙ Ajustes** (ou rode `prisma pin rede on`, ou `prisma --web --rede`). O Prisma passa a atender também na porta **8765** da rede local e mostra o endereço (`http://192.168.x.y:8765/`) e um **QR code**: aponte a câmera do celular, digite o PIN e, no menu do navegador, toque em **Adicionar à tela inicial** — o Prisma vira um ícone que abre em tela cheia, como um app.
+
+- No celular o menu fica embaixo, rolável de lado; as tabelas rolam para o lado dentro da caixa.
+- Só funciona com o computador ligado, com o app ou o `prisma --web` aberto, e com o celular na **mesma rede**. Para usar fora de casa, instale o [Tailscale](https://tailscale.com) no computador e no celular e use o endereço `100.x.y.z:8765` que ele dá.
+- A escolha fica guardada: o acesso volta sozinho na próxima vez que o app abrir. Ligar e desligar só pelo próprio computador.
+- A conexão na rede de casa é HTTP (sem cadeado). O PIN protege contra quem abrir o endereço, mas evite liberar o acesso em Wi-Fi público.
 
 ### O app desktop (prisma app)
 
@@ -309,6 +342,7 @@ prisma remover-atalho     # tira o atalho
 - **Lembretes no computador:** com o app aberto, às 9h sai uma notificação do sistema com as contas atrasadas, as de hoje e as de amanhã (uma vez por dia). Liga e desliga no fim da tela Início. Só funciona com a janela aberta; para avisos com o computador desligado, use o bot do Telegram.
 - **Atualizar agora:** quando sai versão nova, o aviso no topo ganha o botão **atualizar agora** — baixa a versão (conferindo o SHA256), troca o app e o `prisma` ao lado e reabre a janela sozinho, sem terminal.
 - O **fechamento do mês (PDF)**, na tela Relatório, abre no navegador do sistema, onde se imprime ou salva em PDF.
+- Com [PIN](#pin), a janela abre na tela do PIN e tranca depois do tempo parado; o [acesso pelo celular](#no-celular) liga e desliga em **⚙ Ajustes**.
 
 ## Comandos
 
@@ -545,10 +579,15 @@ prisma plano add --cat mercado --valor 900 --ref 2026-07    # mês específico
 prisma plano status                                         # uso x limite do mês atual
 prisma plano status --periodo semana --ref 2026-W30
 prisma plano editar 3 --valor 850,00
+prisma plano add --cat mercado --valor 800 --repetir 12 --acumula   # a sobra passa para o mês seguinte
+prisma plano editar 3 --acumula=false
 prisma plano remover 3
 ```
 
 O gasto considera lançamentos *a pagar* da categoria: quitados dentro do período + pendentes com vencimento nele. Limite estourado gera alerta ⚠.
+
+- Com `--acumula`, o que sobrar de um período soma no limite do seguinte (o estouro não passa adiante): R$ 800 por mês, gastou R$ 600 em março → abril tem R$ 1.000. O `status` mostra a coluna **sobra anterior**.
+- Ao lançar um gasto que leva o plano a 80% ou mais, o Prisma avisa na hora (na CLI, na web, no app e no bot). Os planos em 80% ou estourados aparecem em **Atenção**, na tela Início, e no lembrete diário do app e do bot.
 
 ### relatorio / extrato
 
@@ -618,6 +657,118 @@ prisma inicio   # saldo, a pagar/receber do mês, o que vence nos próximos 7 di
 ```
 
 Compras no cartão aparecem agrupadas por fatura ("Fatura Nubank"), já que se pagam juntas. É a primeira tela da TUI e da web.
+
+### calendario
+
+```sh
+prisma calendario               # o mês atual, dia a dia, com o saldo previsto
+prisma calendario --mes 2026-12
+```
+
+Mostra os dias com contas (pendentes e quitadas; as compras no cartão juntas, como fatura), o total pendente do mês e o **menor saldo previsto** — com aviso se ficar negativo. O saldo previsto parte do saldo de hoje e soma o que vence até cada dia (o atrasado conta como pago hoje). As recorrências já entram: o Prisma as lança com 3 meses de antecedência.
+
+### insights
+
+```sh
+prisma insights
+```
+
+Os avisos automáticos de hoje, os mais graves primeiro:
+
+- **saldo previsto negativo** em algum dia dos próximos 30;
+- **plano de gasto** em 80% ou estourado (veja [plano](#plano-planejamento));
+- **categoria acima do normal**: o mês já passou 30% da média dos 3 meses anteriores (ou, do dia 10 em diante, vai passar 50% no ritmo atual);
+- **assinatura mais cara**: a última cobrança veio maior que a anterior;
+- **gasto fora do comum**: na última semana, mais de 3 vezes a mediana da categoria em 6 meses;
+- **fatura** do cartão 30% acima da média das 3 anteriores;
+- **acerto**: quem te deve (ou a quem você deve) nos grupos.
+
+Aparecem também na tela Início. O lembrete diário do app (notificação) e do bot inclui o saldo negativo e os planos que acabaram de passar de 80% ou estourar — cada aviso uma vez só.
+
+### tags
+
+Tags são as `#palavras` da descrição — `prisma pagar add --desc "Hotel #viagem-japao" ...`. Servem para somar o que cruza categorias (uma viagem tem hotel, passagem, comida...). Não há campo novo: valem no cadastro, no bot, na importação e no boleto.
+
+```sh
+prisma tags            # todas as tags: quantidade, despesas, receitas e período
+prisma tags viagem     # os lançamentos da tag e as despesas por categoria
+prisma buscar "#viagem"
+```
+
+Uma tag começa com letra e pode ter números, `-`, `_` e `/` (`#reforma/cozinha`). No bot, `#palavra` continua sendo a categoria.
+
+### anexar / anexos (comprovantes)
+
+```sh
+prisma anexar 142 recibo.jpg          # guarda a foto ou o PDF no lançamento 142
+prisma anexos 142                     # lista os do lançamento (sem id: todos)
+prisma anexos salvar 3 ~/recibo.jpg   # copia o anexo 3 para um arquivo
+prisma anexos remover 3
+```
+
+- Aceita JPG, PNG, WEBP, GIF e PDF (pelo conteúdo, não pelo nome), até 10 MB.
+- Os arquivos ficam na pasta `anexos`, ao lado do banco; o banco guarda só o nome. **Faça backup dessa pasta junto com o banco.**
+- Remover o lançamento remove o anexo. O arquivo vai para `anexos/.lixeira` e fica lá 60 dias — restaurar um backup nesse prazo traz o comprovante de volta.
+- No bot, a foto do comprovante continua no Telegram e ganha uma cópia local, que aparece no 📎 da web e do app.
+
+### investimento / patrimonio
+
+```sh
+prisma investimento add --nome "CDB Nubank 110%" --tipo cdb --instituicao Nubank --valor 5.000,00 --de conta:1
+prisma investimento aportar 1 --valor 1.000,00 --de conta:1
+prisma investimento atualizar 1 6.180,00     # quanto vale hoje (veja no app do banco)
+prisma investimento resgatar 1 --valor 500,00 --para conta:1
+prisma investimento listar                   # aplicado, valor de hoje, rendimento total e no mês
+prisma investimento remover 1
+prisma patrimonio                            # patrimônio líquido e a evolução em 12 meses
+```
+
+- Tipos: `cdb`, `tesouro`, `poupanca`, `acao`, `fii`, `fundo`, `cripto`, `previdencia`, `outro`.
+- Cada investimento fica numa conta do tipo investimento (criada sozinha, ou `--conta N`). Com `--de`/`--para`, o aporte e o resgate viram **transferências** — saem da conta corrente sem virar despesa. Sem eles, o valor entra (ou sai) como já estava aplicado.
+- O **rendimento** é o valor de hoje informado menos o aplicado. Sem nenhum valor informado, o investimento vale o aplicado.
+- **Patrimônio líquido** = contas e carteiras + rendimento dos investimentos − compras no cartão ainda não pagas − dívidas das emergências. Aparece também no Início (quando há investimentos) e no Analytics.
+- No modo empresa, `prisma --empresa investimento` continua sendo o lançamento de investimento da empresa.
+
+### ir (ajuda para o Imposto de Renda)
+
+```sh
+prisma ir                          # ano-calendário passado (o que se declara este ano)
+prisma ir --ano 2025
+prisma ir --ano 2025 --html ir.html   # página para imprimir ou salvar em PDF
+prisma ir categorias               # quais categorias contam como saúde, educação e previdência
+prisma ir categorias --saude saude,dentista,farmacia --educacao escola,faculdade
+prisma ir categorias --saude -     # volta ao padrão
+```
+
+Junta, do ano: as **despesas dedutíveis** pagas (saúde, educação e previdência privada/PGBL, pelas categorias), com avisos dos limites (educação até R$ 3.561,50 por pessoa; PGBL até 12% da renda tributável); os **rendimentos** recebidos por categoria (reembolsos não entram); e os **bens e direitos**: o saldo de cada conta e carteira em 31/12 do ano e do anterior — as aplicações pelo valor aplicado, que é o custo que se declara. Na web e no app, tela Relatório › **ajuda para o IR (PDF)**. É uma ajuda: confira tudo com os informes e no programa da Receita.
+
+### acerto / acertar (quem deve a quem)
+
+Nos [grupos](#grupo), o Prisma acompanha quem deve a quem, como o Splitwise:
+
+```sh
+prisma pagar add --desc "Mercado" --valor 300 --grupo 1 --recebe-pagamento   # você pagou: a Maria te deve a parte dela
+prisma pagar add --desc "Luz" --valor 100 --grupo 1 --pago-por Maria          # a Maria pagou: você deve a sua parte
+prisma acerto                     # saldo com cada pessoa, em todos os grupos
+prisma acertar 1 Maria --conta 1  # quita as duas pontas de uma vez
+```
+
+- O que te devem são os reembolsos pendentes (divididos por igual entre as outras pessoas); o que você deve são as despesas `--pago-por`, lançadas pendentes com a sua parte.
+- Na lista de pessoas do grupo, quem se chama **Eu** é você (sem "Eu", a primeira pessoa).
+- Num grupo de 3 ou mais, acertar com uma pessoa recebe só a parte dela; o resto do reembolso continua pendente para as outras.
+- No bot: `80 #luz grupo:1 pagou:Maria`. Na web e no app, tela Grupos › **acertar com alguém**; quem deve aparece também na tela Início.
+
+### buscar
+
+```sh
+prisma buscar mercado          # descrição, categoria ou observação, em todos os meses
+prisma buscar "pao de acucar"  # sem diferenciar acentos nem maiúsculas
+prisma buscar 89,90            # pelo valor (até 1% de diferença)
+prisma buscar mercado 89,90    # os dois: todos os termos precisam bater
+prisma buscar "#viagem"        # pela tag (#palavra na descrição)
+```
+
+Também acha contas, carteiras, cartões, recorrências ativas e metas pelo nome. `--limite N` muda o máximo de resultados (padrão 30). Na web e no app, `Ctrl+K`.
 
 ### saldo
 
@@ -881,7 +1032,7 @@ claude mcp add prisma -- prisma mcp
 
 (Se o `prisma` não estiver no `PATH` do aplicativo, use o caminho completo do binário.)
 
-Ferramentas disponíveis para o assistente: `saldo`, `lancamentos` (filtros por mês, período, categoria, tipo e pendentes), `relatorio`, `extrato`, `previsao`, `estatisticas`, `cartoes`, `fatura`, `simular` (não grava nada), `analise` (as análises do Analytics, com `meses` opcional), `categorias`, `schema`, `consulta_sql` (um `SELECT` livre, até 200 linhas, como último recurso) e `ler_extrato` (lê um CSV/OFX do disco para o assistente interpretar).
+Ferramentas disponíveis para o assistente: `saldo`, `lancamentos` (filtros por mês, período, categoria, tipo e pendentes), `buscar` (em todos os meses, por texto, valor ou tag), `relatorio`, `extrato`, `previsao`, `estatisticas`, `cartoes`, `fatura`, `simular` (não grava nada), `analise` (as análises do Analytics, com `meses` opcional), `categorias`, `schema`, `consulta_sql` (um `SELECT` livre, até 200 linhas, como último recurso) e `ler_extrato` (lê um CSV/OFX do disco para o assistente interpretar).
 
 ### Importar extratos pelo assistente (`prisma mcp --escrita`)
 
@@ -1003,10 +1154,11 @@ Um único arquivo SQLite:
 | Windows | `%AppData%\prisma\prisma.db` |
 
 - **Backup automático**: a cada dia de uso, uma cópia do banco é salva em `backups/` ao lado dele (ex.: `backups/prisma-2026-06-12.db`; o banco da empresa, `backups/empresa-2026-06-12.db`), antes da primeira sessão do dia; as 7 mais recentes de cada um ficam guardadas. O `prisma restaurar` (e `--empresa`) lista só as cópias do próprio banco. **Restaurar** = copiar a cópia de volta sobre o `prisma.db`.
+- Ao lado do banco também ficam a pasta `anexos/` (os [comprovantes](#anexar--anexos-comprovantes), que **não** entram no backup diário — copie a pasta junto) e o `seguranca.json` (o [PIN](#pin), só o hash).
 - O backup protege contra erro e corrupção local, mas mora no mesmo disco — para proteção real contra perda da máquina, copie a pasta de vez em quando para um pendrive ou nuvem.
 - A variável `PRISMA_DB` aponta para outro arquivo — útil para testar sem mexer nos seus dados: `PRISMA_DB=/tmp/teste.db prisma`.
 - O Prisma funciona offline por padrão; nada sai da sua máquina — a menos que você ative o [compartilhamento](#compartilhamento-entre-dispositivos-clienteservidor), e mesmo aí os dados só trafegam na sua rede local, criptografados.
-  </script>
+</script>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script>

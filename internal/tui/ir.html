@@ -1,0 +1,374 @@
+<!doctype html>
+<!-- Ajuda para o Imposto de Renda: despesas dedutíveis, rendimentos e saldos em
+     31/12 de um ano-calendário, para imprimir ou salvar em PDF. Gerado por ir.go
+     a partir de app.RelatorioIR; mesmo visual do fechamento do mês. -->
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prisma — IR {{.D.Ano}}</title>
+  <style>
+    :root {
+      --tinta: #1d232b;
+      --dim: #66707c;
+      --linha: #dde2e8;
+      --fundo: #f6f8fa;
+      --rec: #2f8a40;
+      --desp: #c0392b;
+      --acento: #00849a;
+    }
+
+    @page {
+      size: A4;
+      margin: 14mm 12mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #fff;
+      color: var(--tinta);
+      font: 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    main {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--linha);
+    }
+
+    nav a,
+    nav button {
+      color: var(--acento);
+      text-decoration: none;
+      font: inherit;
+      background: none;
+      border: 1px solid var(--linha);
+      border-radius: 6px;
+      padding: 5px 12px;
+      cursor: pointer;
+    }
+
+    nav button.principal {
+      background: var(--acento);
+      border-color: var(--acento);
+      color: #fff;
+    }
+
+    @media print {
+      nav {
+        display: none;
+      }
+
+      main {
+        padding: 0;
+      }
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 2px solid var(--acento);
+      padding-bottom: 6px;
+      margin-bottom: 16px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: .02em;
+    }
+
+    header .marca {
+      color: var(--acento);
+      font-weight: 700;
+      letter-spacing: .3em;
+    }
+
+    h2 {
+      font-size: 14px;
+      margin: 22px 0 8px;
+      color: var(--acento);
+      break-after: avoid;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .card {
+      background: var(--fundo);
+      border: 1px solid var(--linha);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .card .rot {
+      color: var(--dim);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .card .val {
+      font-size: 18px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .rec {
+      color: var(--rec);
+    }
+
+    .desp {
+      color: var(--desp);
+    }
+
+    .dim {
+      color: var(--dim);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th,
+    td {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--linha);
+      text-align: left;
+    }
+
+    th {
+      color: var(--dim);
+      font-weight: 500;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    td.num,
+    th.num {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    tr {
+      break-inside: avoid;
+    }
+
+    .barra {
+      height: 8px;
+      border-radius: 4px;
+      background: var(--linha);
+      overflow: hidden;
+      min-width: 80px;
+    }
+
+    .barra i {
+      display: block;
+      height: 100%;
+      background: var(--acento);
+      border-radius: 4px;
+    }
+
+    .duas {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    svg text {
+      font: 11px system-ui, sans-serif;
+      fill: var(--dim);
+    }
+
+    footer {
+      margin-top: 28px;
+      color: var(--dim);
+      font-size: 11px;
+      border-top: 1px solid var(--linha);
+      padding-top: 6px;
+    }
+
+    @media (max-width: 640px) {
+
+      .cards,
+      .duas {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+  <style>
+    .aviso {
+      color: #8a5d00;
+      font-size: 12px;
+      margin: 4px 0 0;
+    }
+
+    .nota {
+      background: var(--fundo);
+      border: 1px solid var(--linha);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--dim);
+    }
+
+    td.data {
+      white-space: nowrap;
+      color: var(--dim);
+      width: 1%;
+    }
+
+    tr.total td {
+      font-weight: 650;
+      border-bottom: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <nav>
+    <span><a href="{{.LinkAnterior}}">◀ {{.AnoAnterior}}</a> <a href="{{.LinkProximo}}">{{.AnoProximo}} ▶</a></span>
+    <button class="principal" onclick="window.print()">Imprimir / salvar PDF</button>
+  </nav>
+  <main>
+    <header>
+      <h1>Ajuda para o IR — ano-calendário {{.D.Ano}}</h1>
+      <span class="marca">PRISMA</span>
+    </header>
+
+    <p class="nota">Resumo do que foi registrado no Prisma para preencher a declaração de {{.Declaracao}}. Confira
+      cada valor com os informes de rendimentos e os recibos — o programa da Receita é quem vale.</p>
+
+    <div class="cards" style="margin-top:14px">
+      <div class="card">
+        <div class="rot">Despesas dedutíveis</div>
+        <div class="val">{{brl .D.TotalDeduz}}</div>
+      </div>
+      <div class="card">
+        <div class="rot">Rendimentos registrados</div>
+        <div class="val rec">{{brl .D.TotalRend}}</div>
+      </div>
+      <div class="card">
+        <div class="rot">Contas e aplicações</div>
+        <div class="val">{{len .D.Bens}}</div>
+      </div>
+      <div class="card">
+        <div class="rot">Saldo em 31/12</div>
+        <div class="val">{{brl .TotalBens}}</div>
+      </div>
+    </div>
+
+    <h2>Pagamentos efetuados (despesas dedutíveis)</h2>
+    {{range .D.Deducoes}}
+    <table style="margin-bottom:10px">
+      <thead>
+        <tr>
+          <th colspan="2">{{.Nome}} <span style="text-transform:none">· categorias: {{join .Categorias}}</span></th>
+          <th class="num">{{brl .Total}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Itens}}
+        <tr>
+          <td class="data">{{data .Data}}</td>
+          <td>{{.Descricao}} <span class="dim">· {{.Categoria}}</span></td>
+          <td class="num">{{brl .Valor}}</td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="3" class="dim">Nada registrado nessas categorias.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{if .Aviso}}<p class="aviso">⚠ {{.Aviso}}</p>{{end}}
+    {{end}}
+
+    <div class="duas">
+      <div>
+        <h2>Rendimentos recebidos</h2>
+        <table>
+          <tbody>
+            {{range .D.Rendimentos}}
+            <tr>
+              <td>{{.Categoria}} <span class="dim">· {{.Qtd}}×</span></td>
+              <td class="num rec">{{brl .Total}}</td>
+            </tr>
+            {{else}}
+            <tr>
+              <td class="dim">Nenhuma receita registrada no ano.</td>
+            </tr>
+            {{end}}
+            {{if .D.Rendimentos}}
+            <tr class="total">
+              <td>Total</td>
+              <td class="num">{{brl .D.TotalRend}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+        <p class="dim" style="font-size:11px">Separe no programa da Receita os tributáveis (salário, aluguel,
+          freelas) dos isentos (FGTS, poupança, dividendos) — o Prisma não sabe a natureza de cada receita.</p>
+      </div>
+      <div>
+        <h2>Bens e direitos (saldo em 31/12)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Conta</th>
+              <th class="num">{{.AnoAnterior}}</th>
+              <th class="num">{{.D.Ano}}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .D.Bens}}
+            <tr>
+              <td>{{.Nome}}{{if .Detalhe}}<br><span class="dim">{{.Detalhe}}</span>{{end}}</td>
+              <td class="num">{{brl .Anterior}}</td>
+              <td class="num">{{brl .Atual}}</td>
+            </tr>
+            {{else}}
+            <tr>
+              <td colspan="3" class="dim">Nenhuma conta com saldo.</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+        <p class="dim" style="font-size:11px">Aplicações aparecem pelo valor aplicado (o custo), que é o que se
+          declara em Bens e Direitos.</p>
+      </div>
+    </div>
+
+    <footer>Gerado pelo Prisma em {{.Gerado}}. Educação deduz até {{brl .D.LimiteEduc}} por pessoa; PGBL, até
+      {{.D.PgblPctRenda}}% da renda tributável; saúde não tem limite. Despesas pela data do pagamento (no cartão, a
+      da compra), já com a sua parte nas divididas. Categorias dedutíveis: <code>prisma ir categorias</code>.</footer>
+  </main>
+</body>
+
+</html>

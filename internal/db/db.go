@@ -374,6 +374,47 @@ CREATE TABLE IF NOT EXISTS regras_categoria (
 	criada_em TEXT NOT NULL DEFAULT (date('now','localtime'))
 );
 
+-- anexos: comprovantes (foto/PDF) de um lançamento; o arquivo fica na pasta
+-- "anexos" ao lado do banco, aqui só o nome dele.
+CREATE TABLE IF NOT EXISTS anexos (
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	lancamento_id INTEGER NOT NULL REFERENCES lancamentos(id) ON DELETE CASCADE,
+	nome          TEXT NOT NULL,
+	arquivo       TEXT NOT NULL,
+	tipo          TEXT NOT NULL,
+	tamanho       INTEGER NOT NULL,
+	criado_em     TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_anexos_lanc ON anexos (lancamento_id);
+
+-- investimentos (modo pessoal): cada um numa conta do tipo investimento, com
+-- aportes, resgates e o valor de mercado informado de tempos em tempos.
+CREATE TABLE IF NOT EXISTS investimentos (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	nome        TEXT NOT NULL,
+	tipo        TEXT NOT NULL DEFAULT 'outro',
+	instituicao TEXT NOT NULL DEFAULT '',
+	conta_id    INTEGER REFERENCES contas(id) ON DELETE SET NULL,
+	status      TEXT NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo','resgatado')),
+	criado_em   TEXT NOT NULL DEFAULT (date('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS investimentos_movs (
+	id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	investimento_id INTEGER NOT NULL REFERENCES investimentos(id) ON DELETE CASCADE,
+	tipo            TEXT NOT NULL CHECK (tipo IN ('aporte','resgate','valor')),
+	valor           INTEGER NOT NULL,                -- centavos
+	data            TEXT NOT NULL,                   -- AAAA-MM-DD
+	obs             TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_invmov ON investimentos_movs (investimento_id, data);
+
+-- preferências do banco (chave → valor): alertas já avisados, mapas do IR etc.
+CREATE TABLE IF NOT EXISTS preferencias (
+	chave TEXT PRIMARY KEY,
+	valor TEXT NOT NULL
+);
+
 -- metas (cofrinhos): quanto juntar, até quando, e os aportes (retirada = negativo).
 CREATE TABLE IF NOT EXISTS metas (
 	id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -478,6 +519,11 @@ func migrate(conn *sql.DB) error {
 		// classe da categoria para o Analytics: necessidade | desejo | utilidade |
 		// basica, ou '' (automática, por palavra-chave no nome)
 		{"categorias", "classe", `ALTER TABLE categorias ADD COLUMN classe TEXT NOT NULL DEFAULT ''`},
+		// planejamento: a sobra de um período passa para o seguinte (1 = acumula)
+		{"planejamentos", "acumula", `ALTER TABLE planejamentos ADD COLUMN acumula INTEGER NOT NULL DEFAULT 0`},
+		// acerto de contas: despesa do grupo que OUTRA pessoa pagou (nome dela);
+		// o lançamento é a sua parte, que você deve a ela
+		{"lancamentos", "pago_por", `ALTER TABLE lancamentos ADD COLUMN pago_por TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, c := range colunas {
 		if err := conn.QueryRow(
