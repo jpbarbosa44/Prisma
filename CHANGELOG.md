@@ -7,6 +7,10 @@ e o projeto adota o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [1.5.0] - 2026-11-09
+
+> Quem está na 1.4.0 atualiza esta vez com `prisma atualizar` (ou baixando o pacote de novo); a partir daqui, o app atualiza sozinho pelo botão **atualizar agora**.
+
 ### Adicionado
 
 - **Tela Início** (a primeira, no modo pessoal): saldo, o que falta pagar e receber no mês, as contas dos próximos 7 dias e as faturas dos cartões. Na web e no app, em cards, com o botão **✓ pago** em cada conta; no terminal, `prisma inicio`. Compras no cartão aparecem agrupadas por fatura. As demais telas descem uma posição nos atalhos numéricos (Saldo passa a ser a 2).
@@ -421,7 +425,8 @@ em uso desde a série 0.10.
 - Bot de Telegram: registra e consulta lançamentos por mensagem.
 - Primeira versão do projeto (CLI de finanças em Go + SQLite).
 
-[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v1.4.0...HEAD
+[Não lançado]: https://github.com/jpbarbosa44/Prisma/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/jpbarbosa44/Prisma/compare/v1.2.0...v1.3.0
 [0.10.1]: https://github.com/jpbarbosa44/Prisma/compare/v0.10.0...v0.10.1
