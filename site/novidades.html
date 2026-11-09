@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Novidades do Prisma 1.5 e 1.6</title>
+  <meta name="description" content="Tudo o que chegou ao Prisma nas versões 1.5 e 1.6: tela Início, celular com PIN, calendário, avisos automáticos, investimentos, ajuda para o IR e acerto de contas." />
+  <meta property="og:title" content="Novidades do Prisma 1.5 e 1.6" />
+  <meta property="og:description" content="Celular com PIN, calendário de contas, avisos automáticos, investimentos, IR e acerto de contas." />
+  <meta property="og:type" content="article" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,8 95,92 5,92' fill='%234dd8e6'/></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: uma coluna de leitura; cada versão abre com o número grande e o
+     feixe de luz do prisma; as novidades em grupos de cartões por assunto. */
+  :root {
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --ink: #13202e;
+    --muted: #556271;
+    --line: #dbe2ea;
+    --accent: #0b8174;
+    --accent-soft: #e0f3f0;
+    --warn: #8a5d00;
+    --warn-soft: #fbf1db;
+    --r1: #e5484d; --r2: #f08c2b; --r3: #e2b200; --r4: #30a46c; --r5: #3e83e0; --r6: #8e4ec6;
+    --display: "Unbounded", "Trebuchet MS", system-ui, sans-serif;
+    --body: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c1622; --surface: #12202f; --ink: #e6edf3; --muted: #93a3b4; --line: #22344a;
+      --accent: #3fd6c3; --accent-soft: #123a3a; --warn: #f0c66b; --warn-soft: #3a2f14;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c1622; --surface: #12202f; --ink: #e6edf3; --muted: #93a3b4; --line: #22344a;
+    --accent: #3fd6c3; --accent-soft: #123a3a; --warn: #f0c66b; --warn-soft: #3a2f14;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 var(--body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 760px; margin: 0 auto; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+  p { margin: 0; }
+  a { color: var(--accent); }
+  code, kbd {
+    font-family: var(--mono); font-size: .86em;
+    background: var(--accent-soft); color: var(--ink);
+    padding: 1px 6px; border-radius: 5px;
+  }
+
+  /* ---- abertura ---- */
+  .abre { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; }
+  .abre .kicker { font-family: var(--mono); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .abre h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 6vw, 46px); line-height: 1.1; margin: 8px 0 14px; }
+  .abre .lead { font-size: 18px; color: var(--muted); max-width: 54ch; }
+  .prisma { width: 150px; height: auto; }
+  @media (max-width: 560px) { .abre { grid-template-columns: 1fr; } .prisma { width: 110px; order: -1; } }
+
+  .feixe { height: 4px; border-radius: 4px; background: linear-gradient(90deg, var(--r1), var(--r2), var(--r3), var(--r4), var(--r5), var(--r6)); }
+
+  /* ---- como atualizar ---- */
+  .atualizar { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .atualizar h2 { font-family: var(--display); font-weight: 500; font-size: 19px; }
+  .caminhos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 640px) { .caminhos { grid-template-columns: 1fr; } }
+  .caminho { border-top: 3px solid var(--accent); padding-top: 10px; min-width: 0; }
+  .caminho > b { display: block; margin-bottom: 4px; }
+  .caminho p { color: var(--muted); font-size: 15px; }
+
+  /* ---- versões ---- */
+  .versao { display: flex; flex-direction: column; gap: 22px; }
+  .versao-cab { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .versao-cab .num { font-family: var(--display); font-weight: 700; font-size: clamp(40px, 9vw, 64px); line-height: 1; color: var(--accent); }
+  .versao-cab h2 { font-family: var(--display); font-weight: 500; font-size: 22px; }
+  .versao-cab .data { font-family: var(--mono); font-size: 13px; color: var(--muted); width: 100%; }
+  .versao > p.resumo { font-size: 17px; max-width: 62ch; }
+
+  .grupo { display: flex; flex-direction: column; gap: 10px; }
+  .grupo h3 { font-family: var(--mono); font-weight: 600; font-size: 12.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .grupo h3::before { content: ""; width: 18px; height: 3px; border-radius: 2px; background: var(--cor, var(--accent)); }
+  .itens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 640px) { .itens { grid-template-columns: 1fr; } }
+  .item { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .item b { font-weight: 700; font-size: 16px; }
+  .item p { color: var(--muted); font-size: 15px; line-height: 1.55; }
+  .item .onde { font-family: var(--mono); font-size: 12px; color: var(--accent); margin-top: auto; padding-top: 4px; }
+  .item.largo { grid-column: 1 / -1; }
+
+  /* ---- correções e avisos ---- */
+  .lista { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 6px 18px; }
+  .lista li { padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--ink); }
+  .lista li:last-child { border-bottom: 0; }
+  .lista ul { list-style: none; margin: 0; padding: 0; }
+  .lista li span { color: var(--muted); }
+
+  .aviso { background: var(--warn-soft); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+  .aviso h3 { font-size: 16px; color: var(--warn); }
+  .aviso ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+
+  .volta { font-family: var(--mono); font-size: 13px; text-decoration: none; margin-bottom: -28px; align-self: flex-start; }
+  .volta:hover { text-decoration: underline; }
+  footer { color: var(--muted); font-size: 15px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 18px; }
+</style>
+
+</head>
+<body>
+<main>
+  <a class="volta" href="./">← Prisma</a>
+  <header class="abre">
+    <div>
+      <div class="kicker">Prisma · finanças pessoais</div>
+      <h1>O que mudou no Prisma 1.5 e 1.6</h1>
+      <p class="lead">Duas versões seguidas, pensadas para quem usa o app no computador e agora também no celular: tela inicial nova, avisos automáticos, calendário de contas, investimentos, ajuda para o Imposto de Renda e acerto de contas entre amigos.</p>
+    </div>
+    <svg class="prisma" viewBox="0 0 160 120" role="img" aria-label="Um feixe de luz atravessando um prisma e se abrindo em cores">
+      <line x1="4" y1="70" x2="62" y2="64" stroke="var(--ink)" stroke-width="4" stroke-linecap="round" />
+      <polygon points="80,14 120,96 40,96" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linejoin="round" />
+      <line x1="94" y1="62" x2="156" y2="44" stroke="var(--r1)" stroke-width="4" stroke-linecap="round" />
+      <line x1="94" y1="64" x2="156" y2="54" stroke="var(--r2)" stroke-width="4" stroke-linecap="round" />
+      <line x1="94" y1="66" x2="156" y2="64" stroke="var(--r3)" stroke-width="4" stroke-linecap="round" />
+      <line x1="94" y1="68" x2="156" y2="74" stroke="var(--r4)" stroke-width="4" stroke-linecap="round" />
+      <line x1="94" y1="70" x2="156" y2="84" stroke="var(--r5)" stroke-width="4" stroke-linecap="round" />
+      <line x1="94" y1="72" x2="156" y2="94" stroke="var(--r6)" stroke-width="4" stroke-linecap="round" />
+    </svg>
+  </header>
+
+  <section class="atualizar" aria-labelledby="t-atualizar">
+    <h2 id="t-atualizar">Como atualizar</h2>
+    <div class="caminhos">
+      <div class="caminho">
+        <b>Já está na 1.5</b>
+        <p>Abra o app. No aviso de versão nova, no topo, clique em <b>atualizar agora</b>. Ele baixa, troca e reabre sozinho.</p>
+      </div>
+      <div class="caminho">
+        <b>Está na 1.4 ou antes</b>
+        <p>Desta vez, pelo terminal: <code>prisma atualizar</code>. Daqui para a frente, o botão do app resolve.</p>
+      </div>
+      <div class="caminho">
+        <b>Ainda não instalou</b>
+        <p>Baixe o pacote do seu sistema na <a href="https://github.com/jpbarbosa44/Prisma/releases/latest" target="_blank" rel="noopener">página de versões</a>. Na primeira vez que abrir, o app se coloca no menu de aplicativos.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="feixe" aria-hidden="true"></div>
+
+  <!-- ===================== 1.6 ===================== -->
+  <section class="versao" aria-labelledby="t-16">
+    <div class="versao-cab">
+      <span class="num">1.6</span>
+      <h2 id="t-16">Celular, organização e patrimônio</h2>
+      <span class="data">9 de novembro de 2026</span>
+    </div>
+    <p class="resumo">A maior versão até agora. O Prisma passa a abrir no celular, ganha PIN, avisa sozinho quando algo foge do normal e cuida de investimentos, IR e das contas divididas com outras pessoas.</p>
+
+    <div class="grupo" style="--cor: var(--r5)">
+      <h3>No celular e com segurança</h3>
+      <div class="itens">
+        <div class="item">
+          <b>Prisma no celular</b>
+          <p>Libere o acesso pela rede de casa e o app mostra um QR code. Aponte a câmera, digite o PIN e use "Adicionar à tela inicial": o Prisma vira um ícone no celular, com menu embaixo e botões grandes.</p>
+          <span class="onde">⚙ Ajustes › Acessar pelo celular</span>
+        </div>
+        <div class="item">
+          <b>PIN</b>
+          <p>O app e a página pedem um PIN ao abrir e trancam sozinhos depois de 15 minutos parados. O botão 🔒 tranca na hora.</p>
+          <span class="onde">⚙ Ajustes › PIN</span>
+        </div>
+        <div class="item">
+          <b>Tema claro</b>
+          <p>Automático (segue o sistema), claro ou escuro, inclusive nos gráficos.</p>
+          <span class="onde">⚙ Ajustes › Tema</span>
+        </div>
+        <div class="item">
+          <b>Busca em tudo</b>
+          <p>Ache qualquer lançamento de qualquer mês pela descrição, pelo valor (<code>89,90</code>) ou pela tag (<code>#viagem</code>), sem se preocupar com acentos. O resultado abre já no mês certo.</p>
+          <span class="onde">🔍 no topo ou Ctrl+K</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grupo" style="--cor: var(--r3)">
+      <h3>Para enxergar o mês</h3>
+      <div class="itens">
+        <div class="item">
+          <b>Calendário de contas</b>
+          <p>O mês em grade, com as contas de cada dia e o saldo previsto ao fim de cada um. Dia que fica negativo ou com conta atrasada aparece em vermelho. Clique no dia para marcar como pago.</p>
+          <span class="onde">Tela Calendário</span>
+        </div>
+        <div class="item">
+          <b>Avisos automáticos</b>
+          <p>A tela Início ganhou o quadro "Atenção". Ele avisa quando o saldo vai ficar negativo, um plano de gasto está estourando, uma categoria passou muito da média, uma assinatura ficou mais cara ou apareceu um gasto fora do comum.</p>
+          <span class="onde">Tela Início › Atenção</span>
+        </div>
+        <div class="item">
+          <b>Orçamento que acumula</b>
+          <p>Nos planos de gasto, a sobra de um mês pode passar para o seguinte. O Prisma avisa na hora quando um gasto leva o plano a 80%, e o lembrete diário também avisa.</p>
+          <span class="onde">Tela Planejamento › campo "sobra"</span>
+        </div>
+        <div class="item">
+          <b>Tags e comprovantes</b>
+          <p>Escreva <code>#viagem</code> na descrição para somar tudo de uma viagem, mesmo em categorias diferentes. E o botão 📎 de cada lançamento guarda a foto do recibo (no celular, direto da câmera) ou o PDF.</p>
+          <span class="onde">Telas Tags e Pagar/Receber › 📎</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grupo" style="--cor: var(--r4)">
+      <h3>Patrimônio, impostos e contas divididas</h3>
+      <div class="itens">
+        <div class="item">
+          <b>Investimentos</b>
+          <p>Cadastre CDB, Tesouro, ações, FIIs. O dinheiro que sai da conta não conta como despesa. Informe o valor de hoje de vez em quando e veja o rendimento e o patrimônio líquido mês a mês.</p>
+          <span class="onde">Tela Investimentos</span>
+        </div>
+        <div class="item">
+          <b>Ajuda para o Imposto de Renda</b>
+          <p>Junta as despesas de saúde, educação e previdência do ano, os rendimentos e os saldos em 31/12. Sai numa página pronta para salvar em PDF e conferir na hora da declaração.</p>
+          <span class="onde">Tela Relatório › ajuda para o IR</span>
+        </div>
+        <div class="item largo">
+          <b>Acerto de contas</b>
+          <p>Para quem divide despesas com namorada, casa ou viagem: o Prisma mostra quem deve quanto a quem. Quando você pagou, a outra pessoa te deve a parte dela; quando ela pagou, você deve a sua. Um botão quita tudo com a pessoa de uma vez, também em grupos de 3 ou mais.</p>
+          <span class="onde">Tela Grupos › acertar com alguém</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="feixe" aria-hidden="true"></div>
+
+  <!-- ===================== 1.5 ===================== -->
+  <section class="versao" aria-labelledby="t-15">
+    <div class="versao-cab">
+      <span class="num">1.5</span>
+      <h2 id="t-15">Para quem não usa terminal</h2>
+      <span class="data">9 de novembro de 2026</span>
+    </div>
+    <p class="resumo">Tudo o que antes só dava para fazer pelo terminal passou a ter botão no app.</p>
+
+    <div class="grupo" style="--cor: var(--r1)">
+      <h3>Mais fácil no dia a dia</h3>
+      <div class="itens">
+        <div class="item">
+          <b>Tela Início</b>
+          <p>A primeira tela mostra o saldo, o que falta pagar e receber no mês, as contas dos próximos 7 dias com um botão "✓ pago" em cada uma, e as faturas dos cartões.</p>
+          <span class="onde">Tela Início</span>
+        </div>
+        <div class="item">
+          <b>Primeiros passos</b>
+          <p>Com o Prisma vazio, a tela Início guia o começo: cadastrar a conta do banco, a primeira conta a pagar e o salário.</p>
+          <span class="onde">Tela Início</span>
+        </div>
+        <div class="item">
+          <b>Botões na própria linha</b>
+          <p>Cada linha das tabelas tem ✓ quitar, ✎ editar e ✕ remover. Também dá para marcar várias contas e quitar todas de uma vez; as quitadas ficam riscadas.</p>
+          <span class="onde">Tela Pagar/Receber</span>
+        </div>
+        <div class="item">
+          <b>Importar e exportar</b>
+          <p>Traga o extrato do banco (OFX ou CSV) com prévia antes de gravar e um botão para desfazer. Exporte os lançamentos do mês para planilha.</p>
+          <span class="onde">Pagar/Receber › importar extrato / exportar CSV</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grupo" style="--cor: var(--r2)">
+      <h3>Recursos novos</h3>
+      <div class="itens">
+        <div class="item">
+          <b>Boleto e Pix</b>
+          <p>Cole a linha digitável do boleto, da conta de luz ou o Pix copia-e-cola: o Prisma confere o código e já cria a conta com valor e vencimento. No bot do Telegram, basta colar o código.</p>
+          <span class="onde">Pagar/Receber › colar boleto/Pix</span>
+        </div>
+        <div class="item">
+          <b>Categoria automática</b>
+          <p>Crie regras como "ifood vira delivery": os lançamentos novos e os importados ganham a categoria sozinhos.</p>
+          <span class="onde">Tela Categorias › nova regra</span>
+        </div>
+        <div class="item">
+          <b>Metas (cofrinhos)</b>
+          <p>Viagem, reserva, carro: quanto juntar, até quando, quanto guardar por mês e o progresso de cada uma.</p>
+          <span class="onde">Tela Metas</span>
+        </div>
+        <div class="item">
+          <b>Lembretes no computador</b>
+          <p>Com o app aberto, às 9h aparece uma notificação com as contas atrasadas, as de hoje e as de amanhã.</p>
+          <span class="onde">Tela Início › lembretes</span>
+        </div>
+        <div class="item">
+          <b>Atualizar pelo app</b>
+          <p>Quando sai versão nova, o aviso no topo traz o botão "atualizar agora". O app baixa a versão, troca os arquivos e reabre sozinho.</p>
+          <span class="onde">Aviso no topo do app</span>
+        </div>
+        <div class="item">
+          <b>Fechamento do mês em PDF</b>
+          <p>Uma página A4 com receitas e despesas de 6 meses, gastos por categoria comparados com a média, maiores gastos e metas.</p>
+          <span class="onde">Tela Relatório › fechamento do mês</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="feixe" aria-hidden="true"></div>
+
+  <section class="versao" aria-labelledby="t-corr">
+    <div class="versao-cab"><h2 id="t-corr">Correções e mudanças</h2></div>
+    <div class="lista">
+      <ul>
+        <li>O backup automático do banco da empresa não era feito quando o pessoal já tinha feito o do dia. <span>Corrigido na 1.5.</span></li>
+        <li>O "zerar banco" no modo empresa salvava o backup com o nome errado, e a restauração não o encontrava. <span>Corrigido na 1.5.</span></li>
+        <li>A lista de backups para restaurar misturava as cópias do banco pessoal e do da empresa. <span>Corrigido na 1.5.</span></li>
+        <li>Os lembretes do bot mostravam o valor cheio das despesas divididas; agora mostram a sua parte e juntam as compras do cartão por fatura. <span>Corrigido na 1.5.</span></li>
+        <li>O patrimônio do Analytics passou a descontar as faturas em aberto e a somar o rendimento dos investimentos. <span>1.6.</span></li>
+        <li>Os números das telas mudaram com as telas novas (Início, Metas, Tags, Calendário, Investimentos). Quem usa os atalhos de número no teclado vai notar. <span>1.5 e 1.6.</span></li>
+        <li>Atualizações de segurança das bibliotecas usadas pelo Prisma. <span>1.5 e 1.6.</span></li>
+      </ul>
+    </div>
+
+    <div class="aviso">
+      <h3>Bom saber</h3>
+      <ul>
+        <li>O acesso pelo celular só funciona com o computador ligado, o app aberto e o celular no mesmo Wi-Fi. Se não abrir, pode ser o firewall do computador bloqueando a porta 8765.</li>
+        <li>Os lembretes no computador só saem com o app aberto. Para avisos com o computador desligado, use o bot do Telegram.</li>
+        <li>Os comprovantes ficam na pasta <code>anexos</code>, ao lado dos dados do Prisma. Ao fazer backup, copie essa pasta junto.</li>
+        <li>Esqueceu o PIN? Apague o arquivo <code>seguranca.json</code> na pasta de dados do Prisma. Seus lançamentos não são afetados.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <p>Detalhes de cada recurso no <a href="manual.html">manual do Prisma</a>.</p>
+    <p>Voltar para a <a href="./">página do Prisma</a>.</p>
+    <p>Notas técnicas completas na <a href="https://github.com/jpbarbosa44/Prisma/releases/tag/v1.6.0" target="_blank" rel="noopener">página da versão 1.6.0</a>.</p>
+  </footer>
+</main>
+</body>
+</html>
