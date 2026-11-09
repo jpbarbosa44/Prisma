@@ -94,13 +94,15 @@
   .grupo { display: flex; flex-direction: column; gap: 10px; }
   .grupo h3 { font-family: var(--mono); font-weight: 600; font-size: 12.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 10px; }
   .grupo h3::before { content: ""; width: 18px; height: 3px; border-radius: 2px; background: var(--cor, var(--accent)); }
-  .itens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  @media (max-width: 640px) { .itens { grid-template-columns: 1fr; } }
-  .item { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .item b { font-weight: 700; font-size: 16px; }
-  .item p { color: var(--muted); font-size: 15px; line-height: 1.55; }
-  .item .onde { font-family: var(--mono); font-size: 12px; color: var(--accent); margin-top: auto; padding-top: 4px; }
-  .item.largo { grid-column: 1 / -1; }
+  /* texto corrido: cada novidade é um título e um parágrafo, um embaixo do outro */
+  .itens { display: flex; flex-direction: column; gap: 22px; max-width: 64ch; }
+  .item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .item > b { font-weight: 700; font-size: 18px; }
+  .item p { color: var(--ink); font-size: 16px; line-height: 1.65; }
+  .item .onde { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .item .onde::before { content: "→ "; color: var(--accent); }
+  .grupo { gap: 16px; }
+  .grupo + .grupo { margin-top: 18px; }
 
   /* ---- correções e avisos ---- */
   .lista { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 6px 18px; }
@@ -234,7 +236,7 @@
           <p>Junta as despesas de saúde, educação e previdência do ano, os rendimentos e os saldos em 31/12. Sai numa página pronta para salvar em PDF e conferir na hora da declaração.</p>
           <span class="onde">Tela Relatório › ajuda para o IR</span>
         </div>
-        <div class="item largo">
+        <div class="item">
           <b>Acerto de contas</b>
           <p>Para quem divide despesas com namorada, casa ou viagem: o Prisma mostra quem deve quanto a quem. Quando você pagou, a outra pessoa te deve a parte dela; quando ela pagou, você deve a sua. Um botão quita tudo com a pessoa de uma vez, também em grupos de 3 ou mais.</p>
           <span class="onde">Tela Grupos › acertar com alguém</span>
